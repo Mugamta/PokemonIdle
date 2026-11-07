@@ -4,9 +4,16 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
   font-family: system-ui, sans-serif;
-  background: #1e1e24;
+  background: #121216;
   color: #eee;
+  -webkit-tap-highlight-color: transparent;
 }

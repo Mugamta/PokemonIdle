@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# PokeAPI 응답 캐시 (scripts/fetch-encounters.mjs)
+scripts/.cache
