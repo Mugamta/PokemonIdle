@@ -1,20 +1,22 @@
 // 상점: 회복 아이템과 편의성 기능
+import { isMegaItem, teraShardType, Z_CRYSTALS, type Gimmick } from '../core/gimmicks'
 import type { StageKey, Status } from './battle'
 import { dexData } from './dex'
 import { heldItem, tmPrice } from './items'
 
 /** 아이템 분류 (전투 탭 아이템 목록 단위) */
-export type ItemCategory = 'heal' | 'pp' | 'status' | 'ball' | 'battle'
+export type ItemCategory = 'heal' | 'revive' | 'pp' | 'status' | 'ball' | 'battle'
 export const CATEGORY_LABELS: Record<ItemCategory, string> = {
-  heal: '체력 회복·기절 회복',
+  heal: '체력 회복',
+  revive: '기절 회복',
   pp: 'PP 회복',
   status: '상태이상 회복',
   ball: '몬스터볼',
   battle: '배틀용 도구',
 }
 /** 자동 사용·자동 구매 기능이 있는 분류 */
-export type AutoCategory = 'heal' | 'pp' | 'status' | 'ball'
-export const AUTO_CATS: AutoCategory[] = ['pp', 'heal', 'status', 'ball']
+export type AutoCategory = 'heal' | 'revive' | 'pp' | 'status' | 'ball'
+export const AUTO_CATS: AutoCategory[] = ['pp', 'heal', 'revive', 'status', 'ball']
 
 export interface ShopItem {
   /** 아이템 identifier (items.json 키, 이름·설명은 거기서) */
@@ -68,11 +70,11 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'iapapa-berry', category: 'heal', price: 300, hpFrac: 1 / 3 },
   { id: 'max-potion', category: 'heal', price: 2500, hp: 'full' },
   { id: 'full-restore', category: 'heal', price: 3000, hp: 'full', cures: ALL_STATUS },
-  { id: 'revive', category: 'heal', price: 2000, revive: 1 / 2 },
-  { id: 'max-revive', category: 'heal', price: 4000, revive: 1 },
-  { id: 'revival-herb', category: 'heal', price: 2800, revive: 1, friendship: -15 },
-  { id: 'max-honey', category: 'heal', price: 4000, revive: 1 },
-  { id: 'sacred-ash', category: 'heal', price: 50000, revive: 1, party: true },
+  { id: 'revive', category: 'revive', price: 2000, revive: 1 / 2 },
+  { id: 'max-revive', category: 'revive', price: 4000, revive: 1 },
+  { id: 'revival-herb', category: 'revive', price: 2800, revive: 1, friendship: -15 },
+  { id: 'max-honey', category: 'revive', price: 4000, revive: 1 },
+  { id: 'sacred-ash', category: 'revive', price: 50000, revive: 1, party: true },
   { id: 'ether', category: 'pp', price: 1200, pp: { amount: 10, target: 'one' } },
   { id: 'leppa-berry', category: 'pp', price: 300, pp: { amount: 10, target: 'one' } },
   { id: 'max-ether', category: 'pp', price: 2000, pp: { amount: 'full', target: 'one' } },
@@ -209,12 +211,13 @@ export const evoItem = (id: string) => EVO_ITEMS.find((i) => i.id === id)
 export const EVERSTONE_ITEM = { id: 'everstone', price: 3000 }
 
 /** 육성 아이템 분류 */
-export type TrainGroup = 'ev' | 'evDown' | 'exp' | 'pp' | 'ability' | 'iv' | 'nature'
+export type TrainGroup = 'ev' | 'evDown' | 'exp' | 'pp' | 'move' | 'ability' | 'iv' | 'nature'
 export const TRAIN_GROUP_LABELS: Record<TrainGroup, string> = {
   ev: '노력치 올리기 (영양제·깃털)',
   evDown: '노력치 내리기 (열매)',
   exp: '레벨·경험치',
   pp: 'PP 최대치',
+  move: '기술 떠올리기',
   ability: '특성',
   iv: '개체값 (병뚜껑)',
   nature: '민트 (성격)',
@@ -237,7 +240,12 @@ export interface TrainItem {
   iv?: 'one' | 'all'
   /** 민트: 바꿀 성격 */
   nature?: string
+  /** 하트비늘: 잊은 기술 하나를 다시 장착 (전투 탭 → 기술에서 사용) */
+  recall?: boolean
 }
+
+/** 잊은 기술을 되살리는 아이템 */
+export const HEART_SCALE = 'heart-scale'
 
 /** 노력치 기본 한계: 능력치 하나 / 합계 */
 export const EV_STAT_MAX = 252
@@ -278,6 +286,7 @@ export const TRAIN_ITEMS: TrainItem[] = [
   { id: 'exp-candy-xl', group: 'exp', price: 10000, exp: 30000 },
   { id: 'pp-up', group: 'pp', price: 10000, ppUp: 1 },
   { id: 'pp-max', group: 'pp', price: 30000, ppUp: 3 },
+  { id: HEART_SCALE, group: 'move', price: 1000, recall: true },
   { id: 'ability-capsule', group: 'ability', price: 10000, ability: 'capsule' },
   { id: 'ability-patch', group: 'ability', price: 50000, ability: 'patch' },
   { id: 'bottle-cap', group: 'iv', price: 20000, iv: 'one' },
@@ -306,9 +315,42 @@ export const TRAIN_ITEMS: TrainItem[] = [
 ]
 export const trainItem = (id: string) => TRAIN_ITEMS.find((i) => i.id === id)
 
-/** 상점 판매 가격 (회복·볼·배틀·진화·육성·지닌 도구·기술머신) */
+// ---------- 특수 기능 아이템 (그 기능을 해금한 뒤에 판매) ----------
+/** 원작에서 돈으로 팔지 않아 임의로 정한 가격 */
+export const MEGA_STONE_PRICE = 30000
+/** 원시회귀 구슬 (쪽빛구슬·주홍구슬) */
+export const PRIMAL_ORB_PRICE = 50000
+export const Z_CRYSTAL_PRICE = 20000
+/** 테라피스 (원작 가격). 테라스탈 타입을 바꾸려면 TERA_SHARD_COST 개 필요 */
+export const TERA_SHARD_PRICE = 500
+
+/** 특수 기능 아이템이면 그 기능과 가격 */
+export function gimmickItemOf(id: string): { gimmick: Gimmick; price: number } | undefined {
+  if (id in Z_CRYSTALS) return { gimmick: 'z', price: Z_CRYSTAL_PRICE }
+  if (teraShardType(id) && dexData.value?.items[id]) return { gimmick: 'tera', price: TERA_SHARD_PRICE }
+  if (isMegaItem(id)) return { gimmick: 'mega', price: id.endsWith('-orb') ? PRIMAL_ORB_PRICE : MEGA_STONE_PRICE }
+  return undefined
+}
+
+/** 상점에서 파는 특수 기능 아이템 (다이맥스는 아이템이 필요 없음) */
+export function gimmickShopItems(g: Gimmick): string[] {
+  const dex = dexData.value
+  if (!dex) return []
+  if (g === 'z') return Object.keys(Z_CRYSTALS).filter((id) => dex.items[id])
+  if (g === 'tera') return Object.keys(dex.items).filter((id) => teraShardType(id))
+  if (g === 'mega') {
+    // 메가진화하는 포켓몬의 도감 번호 순
+    const num = new Map(dex.index.map((p) => [p.id, p.num]))
+    const forms = Object.values(dex.forms).filter((f) => f.item && dex.items[f.item])
+    forms.sort((a, b) => (num.get(a.base) ?? 0) - (num.get(b.base) ?? 0))
+    return [...new Set(forms.map((f) => f.item!))]
+  }
+  return []
+}
+
+/** 상점 판매 가격 (회복·볼·배틀·진화·육성·지닌 도구·기술머신·특수 기능) */
 export const priceOf = (id: string): number | undefined =>
-  shopItem(id)?.price ?? evoItem(id)?.price ?? trainItem(id)?.price ?? heldItem(id)?.price ?? tmPrice(id)
+  shopItem(id)?.price ?? evoItem(id)?.price ?? trainItem(id)?.price ?? heldItem(id)?.price ?? tmPrice(id) ?? gimmickItemOf(id)?.price
 
 /** 상점에 되파는 가격: 원작 가격과 상점 가격 중 낮은 쪽의 절반 (0 = 팔 수 없음) */
 export function sellPrice(id: string): number {
@@ -320,6 +362,7 @@ export function sellPrice(id: string): number {
 /** 자동 구매 기본 품목 */
 export const DEFAULT_AUTO_BUY: Record<AutoCategory, string> = {
   heal: 'potion',
+  revive: 'revive',
   pp: 'ether',
   status: 'full-heal',
   ball: 'poke-ball',
@@ -343,8 +386,9 @@ export type EvBreakPerkId = 'evBreak:1'
 /** 차례대로 사는 기능 (먼저 사야 하는 기능이 있을 수 있음) */
 export type ChainPerkId = AiPerkId | DisplayPerkId | SpeedPerkId | StatViewPerkId | EvBreakPerkId
 /** 보스 등장 연출 생략 (켜고 끌 수 있음) */
-export type ToggleUtilPerkId = 'bossIntro:skip'
-export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId
+export type ToggleUtilPerkId = 'bossIntro:skip' | 'autoCenter:pp'
+export type DexPerkId = 'dex:reveal'
+export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId | DexPerkId
 export interface Perk {
   id: PerkId
   label: string
@@ -353,11 +397,12 @@ export interface Perk {
 }
 const AUTO_USE_DESC: Record<AutoCategory, string> = {
   pp: '자동 전투 중 PP가 0인 기술이 생기면 PP 회복 아이템을 씁니다.',
-  heal: '자동 전투 중 HP가 기준 아래로 떨어지면 회복 아이템을, 싸우던 포켓몬이 기절하면 기절 회복 아이템을 씁니다.',
+  heal: '자동 전투 중 HP가 기준 아래로 떨어지면 체력 회복 아이템을 씁니다.',
+  revive: '자동 전투 중 싸우던 포켓몬이 기절하면 기절 회복 아이템을 씁니다. (성스러운분은 쓰지 않음)',
   status: '자동 전투 중 상태이상에 걸리면 회복 아이템을 씁니다.',
   ball: '자동 전투 중 도감에 없는 야생 포켓몬을 만나면 몬스터볼을 던집니다. (가장 잡기 쉬운 볼부터)',
 }
-const AUTO_LABELS: Record<AutoCategory, string> = { pp: 'PP 회복', heal: '회복', status: '상태이상 회복', ball: '몬스터볼' }
+const AUTO_LABELS: Record<AutoCategory, string> = { pp: 'PP 회복', heal: '체력 회복', revive: '기절 회복', status: '상태이상 회복', ball: '몬스터볼' }
 export const PERKS: Perk[] = AUTO_CATS.flatMap((c) => [
   {
     id: `autoUse:${c}` as ItemPerkId,
@@ -379,6 +424,25 @@ export const BOSS_INTRO_PERK = {
   label: '보스 등장 연출 생략',
   desc: '보스에 도전할 때 경고 화면 없이 바로 전투를 시작합니다. 사면 켜지며, 이곳에서 켜고 끌 수 있습니다.',
   price: 3000,
+}
+
+/** PP 자동 센터 귀환: 싸우는 포켓몬의 모든 기술 PP가 이 비율 미만이면 회복하러 감 */
+export const AUTO_CENTER_PP_RATIO = 0.1
+/** PP가 바닥났을 때 PP 회복 아이템과 센터 귀환 중 무엇을 먼저 쓸지 */
+export type AutoCenterPriority = 'item' | 'center'
+export const AUTO_CENTER_PERK = {
+  id: 'autoCenter:pp' as ToggleUtilPerkId,
+  label: 'PP 자동 센터 귀환',
+  desc: '자동 전투 중 전투가 끝났을 때 싸우는 포켓몬의 모든 기술 PP가 10% 미만이면 자동으로 포켓몬센터에 다녀옵니다. (보스전 진행도는 유지)',
+  price: 5000,
+}
+
+/** 도감 정보 공개: 포획하지 않은 포켓몬(조우하지 않은 포켓몬 포함)의 도감 정보를 모두 볼 수 있음 */
+export const DEX_REVEAL_PERK = {
+  id: 'dex:reveal' as DexPerkId,
+  label: '도감 정보 공개',
+  desc: '조우하지 않은 포켓몬을 포함해, 포획하지 않은 모든 포켓몬의 도감 정보(도트·타입·종족값·특성·출현 장소·기술)를 볼 수 있습니다.',
+  price: 50000,
 }
 
 /** 자동 전투 AI 개선 (차례대로 구매) */

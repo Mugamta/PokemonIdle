@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import type { Gimmick } from '../core/gimmicks'
 
 /** 보관하는 최근 전투 수 */
 const MAX_BATTLES = 10
@@ -30,12 +31,24 @@ export const useBattleLogStore = defineStore('battleLog', {
     selected: null as number | null,
     /** 다음 턴을 진행할 수 있는 시각 (연출 대기) */
     readyAt: 0,
-    /** 상대가 기술을 고르는 중인 턴 (내 쪽 행동, null = 아이템 사용 등으로 행동 안 함). 준비되면 턴 계산 */
-    pending: null as { move: string | null } | null,
+    /**
+     * 상대가 기술을 고르는 중인 턴 (내 쪽 행동, null = 아이템 사용 등으로 행동 안 함). 준비되면 턴 계산.
+     * gimmick = 이번 턴에 쓰는 특수 기능 (메가진화·Z기술·다이맥스·테라스탈)
+     */
+    pending: null as { move: string | null; gimmick?: Gimmick | null } | null,
     seq: 0,
+    /** 최근 전투(쓰러뜨림·포획) 보상: 싸운 포켓몬이 얻은 경험치, 상금 */
+    rewards: [] as { exp: number; money: number }[],
   }),
   getters: {
     /** 화면에 보여 줄 전투 기록 */
+    /** 최근 MAX_BATTLES 전투의 평균 보상 (기록이 없으면 null) */
+    avgReward(state): { exp: number; money: number; n: number } | null {
+      const n = state.rewards.length
+      if (!n) return null
+      const sum = state.rewards.reduce((a, r) => ({ exp: a.exp + r.exp, money: a.money + r.money }), { exp: 0, money: 0 })
+      return { exp: Math.round(sum.exp / n), money: Math.round(sum.money / n), n }
+    },
     current(state): BattleRecord | null {
       const list = state.battles
       return list.find((b) => b.id === state.selected) ?? list[list.length - 1] ?? null
@@ -68,6 +81,11 @@ export const useBattleLogStore = defineStore('battleLog', {
     select(id: number) {
       const latest = this.battles[this.battles.length - 1]
       this.selected = latest && latest.id === id ? null : id
+    },
+    /** 전투 보상 기록 (최근 MAX_BATTLES 개 유지) */
+    recordReward(exp: number, money: number) {
+      this.rewards.push({ exp, money })
+      if (this.rewards.length > MAX_BATTLES) this.rewards.splice(0, this.rewards.length - MAX_BATTLES)
     },
     wait(ms: number) {
       this.readyAt = Date.now() + ms

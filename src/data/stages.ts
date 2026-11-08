@@ -3,6 +3,7 @@
 // 세부 스테이지 = 지방 내 야생 포켓몬 출현 장소를 스토리 진행 순으로 나열 (예: 1-1 = 1번도로)
 // 한국어 지명 출처: WikiDex "Lista de localizaciones en todos los idiomas"
 //   출처에 한국어 표기가 없어 추정한 지명에는 `// 확인필요` 주석을 달아둠
+import type { Gimmick } from '../core/gimmicks'
 import { ENCOUNTERS, type EncounterSet } from './encounters'
 import { KANTO_JOHTO_MAP } from './maps/kantoJohto'
 import type { RegionMap } from './maps/types'
@@ -31,6 +32,8 @@ export interface Region {
   map?: RegionMap
   /** 히든 지방: 지정한 포켓몬을 포획해야 이동 가능 */
   hidden?: { requiresCaught: string }
+  /** 처음 들어가면 해금되는 특수 기능 (메가진화·Z기술·다이맥스·테라스탈) */
+  unlocks?: Gimmick
 }
 
 const routes = (...nums: number[]) => nums.map((n) => `${n}번도로`)
@@ -42,6 +45,7 @@ const RAW: {
   stages: string[]
   map?: RegionMap
   hidden?: Region['hidden']
+  unlocks?: Gimmick
 }[] = [
   {
     key: 'kanto-johto',
@@ -194,6 +198,7 @@ const RAW: {
     key: 'kalos',
     gens: [6],
     name: '칼로스지방',
+    unlocks: 'mega',
     stages: [
       ...routes(2),
       '백단숲',
@@ -217,6 +222,7 @@ const RAW: {
     key: 'alola',
     gens: [7],
     name: '알로라지방',
+    unlocks: 'z',
     stages: [
       ...routes(1, 2),
       '우거진 동굴',
@@ -253,6 +259,7 @@ const RAW: {
     key: 'galar',
     gens: [8],
     name: '가라르지방',
+    unlocks: 'dynamax',
     stages: [
       ...routes(1, 2),
       '화창한 초원',
@@ -278,6 +285,7 @@ const RAW: {
     key: 'paldea',
     gens: [9],
     name: '팔데아지방',
+    unlocks: 'tera',
     // 팔데아는 번호 도로 대신 "에리어" 구역 체계. 오픈월드라 진행 순서는 권장 레벨 기준 근사치
     stages: [
       '티스푼 오솔길',
@@ -384,6 +392,7 @@ export const REGIONS: Region[] = RAW.map((r, i) => ({
   gens: r.gens,
   map: r.map,
   hidden: r.hidden,
+  unlocks: r.unlocks,
   stages: buildStages(i + 1, r.key, r.stages),
 }))
 
@@ -401,6 +410,9 @@ export function findStage(id: string): { region: Region; stage: Stage } | null {
   }
   return null
 }
+
+/** 특수 기능을 해금하는 지방 */
+export const regionOfGimmick = (g: Gimmick): Region | undefined => REGIONS.find((r) => r.unlocks === g)
 
 /** 세대 → 그 세대가 무대인 지방 */
 export function regionOfGen(gen: number): Region | undefined {

@@ -3,7 +3,7 @@
 // 구현 범위: 1:1 전투에서 의미가 있는 특성 (데미지·상성·무효·명중·급소·우선도·능력 변화·상태이상·접촉 반격·턴 종료 효과 등)
 // 미구현: 날씨·필드·교체·지닌 도구·성별·혼란·풀죽음 등 이 게임 전투에 없는 요소에 의존하는 특성 (배정은 되지만 효과 없음)
 import { battleData, type MoveFlag, type StageKey, type Status } from '../data/battle'
-import { dexData } from '../data/dex'
+import { dexData, speciesEntry } from '../data/dex'
 
 let numById: Map<string, string> | null = null
 /** 특성 이름·설명 (도감 데이터) */
@@ -19,7 +19,7 @@ export const abilityName = (id: string | null | undefined): string => abilityInf
 
 /** 포켓몬이 가질 수 있는 특성 identifier. hidden = 숨겨진 특성 포함 */
 export function speciesAbilities(species: string, hidden: boolean): string[] {
-  const entry = dexData.value?.index.find((p) => p.id === species)
+  const entry = speciesEntry(species)
   const map = battleData.value?.abilities
   if (!entry || !map) return []
   const out = entry.abilities.filter((a) => hidden || !a[1]).map((a) => map[a[0]]).filter((a): a is string => !!a)
@@ -30,7 +30,7 @@ export function speciesAbilities(species: string, hidden: boolean): string[] {
 export const normalAbilities = (species: string) => speciesAbilities(species, false)
 /** 숨겨진 특성 (없으면 null) */
 export function hiddenAbility(species: string): string | null {
-  const entry = dexData.value?.index.find((p) => p.id === species)
+  const entry = speciesEntry(species)
   const h = entry?.abilities.find((a) => a[1])
   return (h && battleData.value?.abilities[h[0]]) || null
 }
@@ -62,6 +62,8 @@ export const SKIN: Record<string, string> = {
   pixilate: 'fairy',
   refrigerate: 'ice',
   galvanize: 'electric',
+  // 메가장크로다일 (레전드 Z-A)
+  dragonize: 'dragon',
 }
 /** 특정 타입 기술 위력 배율 */
 export const TYPE_POWER: Record<string, [string, number]> = {

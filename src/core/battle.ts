@@ -1,6 +1,6 @@
 // 전투 계산 (5세대 이후 공식 기준). 상태 저장과 무관한 순수 계산만 담당
 import { battleData, STATUS_LABELS, type MoveExtra, type MoveFlag, type StageKey, type Status } from '../data/battle'
-import { dexData, learnsets, type DexEntry, type MoveInfo } from '../data/dex'
+import { dexData, learnsets, speciesEntry, type DexEntry, type MoveInfo } from '../data/dex'
 import { calcStats } from '../data/natures'
 import {
   ABSORB,
@@ -40,6 +40,7 @@ import {
   UNNERVE,
 } from './items'
 import { evolutionsOf } from '../data/evolutions'
+import { MAX_GUARD } from './gimmicks'
 
 export type Difficulty = 'easy' | 'normal' | 'hard'
 export const DIFFICULTIES: { id: Difficulty; label: string; desc: string }[] = [
@@ -94,6 +95,8 @@ export interface Volatile {
   streak?: number
   /** 곡예: 도구를 잃어 스피드 2배 */
   unburden?: boolean
+  /** 다이월: 이번 턴 상대의 기술을 막음 */
+  protect?: boolean
 }
 
 /** 상대가 알고 있는 이 포켓몬의 특성 정보 (자동 전투 AI 용) */
@@ -128,6 +131,10 @@ export interface Battler {
   vol?: Volatile
   /** 상대가 아는 이 포켓몬의 특성 정보 */
   intel?: AbilityIntel
+  /** 테라스탈한 타입 */
+  tera?: string | null
+  /** 다이맥스 중 (최대 HP 2배) */
+  dynamax?: boolean
 }
 
 export interface MoveData extends MoveInfo {
@@ -160,14 +167,17 @@ export function moveData(id: string): MoveData | null {
   return { ...info, num, extra: battleData.value?.moves[num] ?? {} }
 }
 
-export const speciesOf = (id: string): DexEntry | undefined => dexData.value?.index.find((p) => p.id === id)
+/** 포켓몬 정보 (메가진화·원시회귀 폼 포함) */
+export const speciesOf = (id: string): DexEntry | undefined => speciesEntry(id)
 
 export function statsOf(b: Pick<Battler, 'species' | 'level' | 'ivs' | 'evs' | 'nature'>): number[] {
   const sp = speciesOf(b.species)
   return sp ? calcStats(sp.stats, b.level, b.ivs, b.evs, b.nature, b.species) : [1, 1, 1, 1, 1, 1]
 }
 
-export const maxHpOf = (b: Pick<Battler, 'species' | 'level' | 'ivs' | 'evs' | 'nature'>) => statsOf(b)[0]!
+/** 최대 HP (다이맥스 중이면 2배) */
+export const maxHpOf = (b: Pick<Battler, 'species' | 'level' | 'ivs' | 'evs' | 'nature'> & { dynamax?: boolean }) =>
+  statsOf(b)[0]! * (b.dynamax ? 2 : 1)
 
 // ---------- 특성 ----------
 /** 지금 가진 특성 (바뀐 특성 우선) */
@@ -224,7 +234,8 @@ export function selectableMoves(b: Battler, moves: string[]): string[] {
   const item = itemOf(b)
   let list = moves
   if (item === 'assault-vest') list = list.filter((id) => moveData(id)?.cls !== 'status')
-  const lock = b.vol?.choice
+  // 다이맥스 중에는 구애 도구 고정이 풀림
+  const lock = b.dynamax ? undefined : b.vol?.choice
   if (lock && item && CHOICE_ITEMS.has(item) && list.includes(lock)) list = [lock]
   return list
 }
@@ -247,8 +258,22 @@ function ruleOut(b: Battler, test: (cand: Battler) => boolean, base: Battler = b
 }
 const withAbility = (b: Battler, a: string | null): Battler => ({ ...b, ability: a, vol: { ...b.vol, ability: undefined } })
 
-/** 타입 (변환자재 등으로 바뀐 타입 우선) */
-export const typesOf = (b: Battler): string[] => b.vol?.types ?? speciesOf(b.species)?.types ?? []
+/** 타입 (테라스탈 > 변환자재 등으로 바뀐 타입 > 원래 타입) */
+export const typesOf = (b: Battler): string[] => (b.tera ? [b.tera] : (b.vol?.types ?? speciesOf(b.species)?.types ?? []))
+/** 테라스탈 전 타입 (자속 보정 판정) */
+const baseTypesOf = (b: Battler): string[] => b.vol?.types ?? speciesOf(b.species)?.types ?? []
+
+/**
+ * 자속 보정 (적응력 반영). 테라스탈: 테라스탈 타입 기술 1.5배, 원래 타입과도 같으면 2배,
+ * 원래 타입 기술은 테라스탈해도 1.5배 유지
+ */
+function stabOf(att: Battler, type: string, a: string | null): number {
+  if (type === 'typeless') return 1
+  const orig = baseTypesOf(att).includes(type)
+  const adapt = a === 'adaptability'
+  if (att.tera && att.tera === type) return orig ? (adapt ? 2.25 : 2) : adapt ? 2 : 1.5
+  return orig ? (adapt ? 2 : 1.5) : 1
+}
 const typeKo = (t: string) => dexData.value?.types[t] ?? t
 const hasFlag = (m: MoveData, f: MoveFlag) => !!m.extra.fl?.includes(f)
 
@@ -407,8 +432,10 @@ export function damageOf(att: Battler, def: Battler, m: MoveData, rand: number, 
   const d = defAb(def, att)
   const physical = m.cls === 'physical'
 
-  // 위력
-  let power = (m.power ?? 0) * pow
+  // 위력 (테라스탈 타입 기술은 위력 60 미만이면 60, 연속기·선제기 제외)
+  let basePower = m.power ?? 0
+  if (att.tera === type && m.power != null && basePower < 60 && !m.extra.hits && (m.extra.pri ?? 0) <= 0) basePower = 60
+  let power = basePower * pow
   if (a === 'technician' && (m.power ?? 0) <= 60) power *= 1.5
   if (a && FLAG_POWER[a] && hasFlag(m, FLAG_POWER[a]![0])) power *= FLAG_POWER[a]![1]
   if (a && TYPE_POWER[a] && TYPE_POWER[a]![0] === type) power *= TYPE_POWER[a]![1]
@@ -464,7 +491,8 @@ export function damageOf(att: Battler, def: Battler, m: MoveData, rand: number, 
   let dmg = Math.floor(Math.floor((Math.floor((2 * att.level) / 5 + 2) * power * A) / D) / 50) + 2
   if (crit) dmg = Math.floor(dmg * (a === 'sniper' ? 2.25 : 1.5))
   dmg = Math.floor((dmg * rand) / 100)
-  if (type !== 'typeless' && typesOf(att).includes(type)) dmg = Math.floor(dmg * (a === 'adaptability' ? 2 : 1.5))
+  const stab = stabOf(att, type, a)
+  if (stab !== 1) dmg = Math.floor(dmg * stab)
   dmg = Math.floor(dmg * eff)
   if (a === 'tinted-lens' && eff < 1) dmg = Math.floor(dmg * 2)
   // 화상: 물리 데미지 절반 (근성은 제외)
@@ -534,8 +562,11 @@ export function expectedDamage(att: Battler, def: Battler, m: MoveData): number 
  * random = 무작위 / strong = 특성을 모른다고 보고 기대 데미지가 가장 큰 기술 /
  * smart = 상대 특성 후보(def.intel)와 자신의 특성까지 고려해 기대 데미지가 가장 큰 기술
  */
-export function chooseMove(att: Battler, def: Battler, mode: AiMode): string {
+export function chooseMove(att: Battler, def: Battler, mode: AiMode, transform?: (m: MoveData) => MoveData): string {
   const moves = selectableMoves(att, att.moves).map(moveData).filter((m): m is MoveData => !!m)
+  // 다이맥스 기술처럼 실제로 나가는 기술로 비교 (돌려주는 것은 원래 기술 id)
+  const real = new Map(moves.map((m) => [m, transform ? transform(m) : m]))
+  const exp = (me: Battler, f: Battler, m: MoveData) => expectedDamage(me, f, real.get(m)!)
   if (!moves.length) return 'struggle'
   if (mode === 'random') return moves[Math.floor(Math.random() * moves.length)]!.id
   // 비교 대상: strong 은 양쪽 특성을 없는 것으로, smart 는 상대 특성 후보 각각 (같은 확률로 가정)
@@ -553,14 +584,14 @@ export function chooseMove(att: Battler, def: Battler, mode: AiMode): string {
   let best: MoveData[] = []
   let bestDmg = -Infinity
   for (const m of moves) {
-    const d = foes.reduce((sum, f) => sum + Math.min(expectedDamage(me, f, m), f.hp), 0) / foes.length
+    const d = foes.reduce((sum, f) => sum + Math.min(exp(me, f, m), f.hp), 0) / foes.length
     if (d > bestDmg + 1e-9) {
       best = [m]
       bestDmg = d
     } else if (Math.abs(d - bestDmg) < 1e-9) best.push(m)
   }
   // 공격기가 하나도 효과가 없으면 (모두 0 이하) 손해 보지 않는 기술 중 무작위
-  const pool = bestDmg > 0 ? best : moves.filter((m) => foes.every((f) => expectedDamage(me, f, m) >= 0))
+  const pool = bestDmg > 0 ? best : moves.filter((m) => foes.every((f) => exp(me, f, m) >= 0))
   const list = pool.length ? pool : moves
   return list[Math.floor(Math.random() * list.length)]!.id
 }
@@ -972,9 +1003,12 @@ function applyStatusMove(user: Battler, target: Battler, m: MoveData, log: strin
   if (!did) log.push('그러나 아무 일도 일어나지 않았다!')
 }
 
-/** 기술 사용. last = 이번 턴에 나중에 행동 (애널라이즈·포커스렌즈), first = 먼저 행동 (풀죽음) */
-function useMove(att: Battler, def: Battler, moveId: string, log: string[], last: boolean) {
-  const m = moveData(moveId) ?? STRUGGLE
+/**
+ * 기술 사용. last = 이번 턴에 나중에 행동 (애널라이즈·포커스렌즈).
+ * override = 실제로 나가는 기술 (Z기술·다이맥스 기술). 없으면 moveId 그대로
+ */
+function useMove(att: Battler, def: Battler, moveId: string, log: string[], last: boolean, override?: MoveData) {
+  const m = override ?? moveData(moveId) ?? STRUGGLE
   const ex = m.extra
   const a = ab(att, def)
   const vol = (att.vol ??= {})
@@ -984,10 +1018,10 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
   vol.streak = vol.lastMove === m.id ? (vol.streak ?? 0) + 1 : 0
   vol.lastMove = m.id
   // 구애 도구: 처음 쓴 기술로 고정
-  if (ai && CHOICE_ITEMS.has(ai) && m.id !== 'struggle' && !vol.choice) vol.choice = m.id
+  if (ai && CHOICE_ITEMS.has(ai) && m.id !== 'struggle' && !vol.choice && !att.dynamax) vol.choice = moveId
 
   // 변환자재·리베로: 기술을 쓰기 전에 그 기술의 타입으로 (전투마다 한 번)
-  if ((a === 'protean' || a === 'libero') && !vol.protean && m.type !== 'typeless') {
+  if ((a === 'protean' || a === 'libero') && !vol.protean && m.type !== 'typeless' && !att.tera) {
     const t = typesOf(att)
     if (t.length !== 1 || t[0] !== m.type) {
       vol.types = [m.type]
@@ -998,7 +1032,17 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
   }
   log.push(`${att.name}의 ${m.ko}!`)
 
+  // 다이월: 이번 턴 상대의 기술을 막음
+  if (m.id === MAX_GUARD.id) {
+    vol.protect = true
+    log.push(`${josa(att.name, '은', '는')} 방어 태세에 들어갔다!`)
+    return
+  }
   const selfOnly = isSelfMove(m)
+  if (!selfOnly && def.vol?.protect) {
+    log.push(`${josa(def.name, '은', '는')} 공격으로부터 몸을 지켰다!`)
+    return
+  }
   // 명중 판정 (자신에게 쓰는 변화기는 생략)
   const hit = selfOnly || Math.random() < accuracyOf(att, def, m, last)
   if (!selfOnly && vol.micle) vol.micle = false
@@ -1280,7 +1324,7 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
       log.push(`${def.name}의 얼음이 녹았다!`)
     }
     // 변색: 맞은 기술의 타입으로
-    if (d === 'color-change' && type !== 'typeless' && !typesOf(def).includes(type)) {
+    if (d === 'color-change' && type !== 'typeless' && !typesOf(def).includes(type) && !def.tera) {
       ;(def.vol ??= {}).types = [type]
       announce(def, log)
       log.push(`${josa(def.name, '은', '는')} ${typeKo(type)} 타입이 되었다!`)
@@ -1338,10 +1382,30 @@ export function onEntry(player: Battler, enemy: Battler): string[] {
   const ps = speedOf(player, enemy)
   const es = speedOf(enemy, player)
   const order: [Battler, Battler][] = ps >= es ? [[player, enemy], [enemy, player]] : [[enemy, player], [player, enemy]]
+  for (const [b, foe] of order) entryEffect(b, foe, log)
+  // 시작 시 발동하지 않았으면 그런 특성은 아님
+  for (const b of [player, enemy]) ruleOut(b, (c) => ENTRY_ABILITIES.has(abilityOf(c) ?? ''))
+  // 도구: 풍선 / 하양허브 (위협 등으로 떨어진 능력)
   for (const [b, foe] of order) {
+    if (itemOf(b, foe) === 'air-balloon') log.push(`${josa(b.name, '은', '는')} ${ro(itemKo('air-balloon'))} 떠 있다!`)
+    checkWhiteHerb(b, foe, log)
+  }
+  return log
+}
+
+/** 메가진화 등으로 특성이 바뀌었을 때: 등장 시 발동하는 특성 (위협 등). 로그 반환 */
+export function onAbilityChange(b: Battler, foe: Battler): string[] {
+  const log: string[] = []
+  entryEffect(b, foe, log)
+  checkWhiteHerb(foe, b, log)
+  return log
+}
+
+/** 등장 시 발동하는 특성 하나 처리 */
+function entryEffect(b: Battler, foe: Battler, log: string[]) {
     b.vol ??= {}
     const a = ab(b, foe)
-    if (!a) continue
+    if (!a) return
     switch (a) {
       case 'intimidate': {
         announce(b, log)
@@ -1431,15 +1495,6 @@ export function onEntry(player: Battler, enemy: Battler): string[] {
         announce(b, log)
         break
     }
-  }
-  // 시작 시 발동하지 않았으면 그런 특성은 아님
-  for (const b of [player, enemy]) ruleOut(b, (c) => ENTRY_ABILITIES.has(abilityOf(c) ?? ''))
-  // 도구: 풍선 / 하양허브 (위협 등으로 떨어진 능력)
-  for (const [b, foe] of order) {
-    if (itemOf(b, foe) === 'air-balloon') log.push(`${josa(b.name, '은', '는')} ${ro(itemKo('air-balloon'))} 떠 있다!`)
-    checkWhiteHerb(b, foe, log)
-  }
-  return log
 }
 
 /** 전투가 끝났을 때 (이긴 쪽). 자연회복·재생력 */
@@ -1467,12 +1522,23 @@ export interface TurnResult {
   ppCost: number
 }
 
-/** 한 턴 진행. player/enemy 는 직접 변경됨. playerMove = null 이면 내 쪽은 행동하지 않음 (아이템 사용 등) */
-export function runTurn(player: Battler, enemy: Battler, playerMove: string | null, enemyMove: string): TurnResult {
+/**
+ * 한 턴 진행. player/enemy 는 직접 변경됨. playerMove = null 이면 내 쪽은 행동하지 않음 (아이템 사용 등).
+ * playerOverride = 내 포켓몬이 실제로 쓰는 기술 (Z기술·다이맥스 기술, PP는 playerMove 에서 소모)
+ */
+export function runTurn(
+  player: Battler,
+  enemy: Battler,
+  playerMove: string | null,
+  enemyMove: string,
+  playerOverride?: MoveData,
+): TurnResult {
   const log: string[] = []
   let playerMoved = false
+  // 다이월은 그 턴에만
+  for (const b of [player, enemy]) if (b.vol) b.vol.protect = false
   const pri = (att: Battler, def: Battler, id: string | null) => {
-    const m = id ? moveData(id) : null
+    const m = att === player && playerOverride && id ? playerOverride : id ? moveData(id) : null
     return m ? priorityOf(att, def, m) : 0
   }
   const pp = pri(player, enemy, playerMove)
@@ -1525,7 +1591,8 @@ export function runTurn(player: Battler, enemy: Battler, playerMove: string | nu
       vol.loaf = true
     }
     if (!canMove(att, def, log)) return
-    // 풀죽음 (왕의징표석 등): 먼저 행동한 상대에게 맞아 이번 턴 행동 불가
+    // 풀죽음 (왕의징표석 등): 먼저 행동한 상대에게 맞아 이번 턴 행동 불가 (다이맥스 중에는 풀죽지 않음)
+    if (vol.flinch && att.dynamax) vol.flinch = false
     if (vol.flinch) {
       vol.flinch = false
       log.push(`${josa(att.name, '은', '는')} 풀이 죽어 기술을 쓸 수 없다!`)
@@ -1537,7 +1604,7 @@ export function runTurn(player: Battler, enemy: Battler, playerMove: string | nu
     }
     if (att === player) playerMoved = true
     // 애널라이즈: 상대가 이미 행동했으면 (나중에 행동)
-    useMove(att, def, move, log, i === 1 && !!order[0]![2])
+    useMove(att, def, move, log, i === 1 && !!order[0]![2], att === player ? playerOverride : undefined)
   })
   // 턴 종료: 화상·독·특성 (둘 다 살아 있을 때만)
   if (player.hp > 0 && enemy.hp > 0) {

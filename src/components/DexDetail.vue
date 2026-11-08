@@ -14,6 +14,7 @@ import { artistNames, loadSprites, resolveVariant, spriteData } from '../data/sp
 import { regionOfGen } from '../data/stages'
 import { useGameStore } from '../stores/game'
 import PokeSprite from './PokeSprite.vue'
+import DexSummon from './DexSummon.vue'
 import SpritePicker from './SpritePicker.vue'
 
 const props = defineProps<{ id: string }>()
@@ -115,6 +116,8 @@ const PHASE_LABEL = { all: '', day: '낮', night: '밤' }
         <dd>{{ entry.height }}m / {{ entry.weight }}kg</dd>
       </dl>
     </section>
+
+    <DexSummon v-if="caught" :id="id" />
 
     <!-- 종족값 -->
     <section class="card">

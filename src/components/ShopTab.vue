@@ -4,7 +4,9 @@ import { computed, onMounted, ref } from 'vue'
 import { dexData, loadDex, loadLearnsets, TYPE_COLORS } from '../data/dex'
 import { evoItemUsage } from '../data/evolutions'
 import {
+  AUTO_CENTER_PERK,
   BOSS_INTRO_PERK,
+  DEX_REVEAL_PERK,
   CHAIN_PERKS,
   AUTO_HEAL_THRESHOLDS,
   CATEGORY_LABELS,
@@ -17,6 +19,8 @@ import {
   EVO_GROUP_LABELS,
   EVO_ITEMS,
   extraSlotPrice,
+  gimmickItemOf,
+  gimmickShopItems,
   PERKS,
   SHOP_ITEMS,
   sellPrice,
@@ -33,9 +37,12 @@ import {
 import { BALL_NOTES, EXP_SHARE_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, tmShopList, type HeldGroup } from '../data/items'
 import ItemIcon from './ItemIcon.vue'
 import ShopRow from './ShopRow.vue'
-import { baseSlotsOf, canLearnMachine, EXTRA_SLOTS, PP_START_STAGE, SLOT_DEFEATS, slotsOf, useGameStore } from '../stores/game'
+import { BASE_SLOTS_MAX, canLearnMachine, EXTRA_SLOTS, PP_START_STAGE, SLOT_DEFEATS, useGameStore } from '../stores/game'
+import { GIMMICK_INFO, TERA_SHARD_COST, teraShardType, Z_CRYSTALS, type Gimmick } from '../core/gimmicks'
+import { regionOfGimmick } from '../data/stages'
+import { josa } from '../core/battle'
 
-type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'growth' | 'perks' | 'slots' | 'sell'
+type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'perks' | 'slots' | 'sell'
 /** 하단 탭: 도구상점(item) / 강화상점(upgrade) */
 const props = defineProps<{ kind: 'item' | 'upgrade' }>()
 const UPGRADE_SUBS: Sub[] = ['growth', 'perks', 'slots']
@@ -47,15 +54,18 @@ const ALL_SUBS: { id: Sub; label: string }[] = [
   { id: 'tm', label: '기술머신' },
   { id: 'evo', label: '진화' },
   { id: 'train', label: '육성' },
+  { id: 'gimmick', label: '특수 기능' },
   { id: 'growth', label: '육성 강화' },
   { id: 'perks', label: '편의성' },
   { id: 'slots', label: '기술칸' },
   { id: 'sell', label: '판매' },
 ]
-const SUBS = ALL_SUBS.filter((t) => UPGRADE_SUBS.includes(t.id) === (props.kind === 'upgrade'))
-
 const game = useGameStore()
-const sub = ref<Sub>(SUBS[0]!.id)
+// 특수 기능 탭은 메가진화·Z기술·다이맥스·테라스탈 중 하나라도 해금한 뒤에 나옴
+const SUBS = computed(() =>
+  ALL_SUBS.filter((t) => UPGRADE_SUBS.includes(t.id) === (props.kind === 'upgrade') && (t.id !== 'gimmick' || game.anyGimmickUnlocked)),
+)
+const sub = ref<Sub>(SUBS.value[0]!.id)
 onMounted(() => {
   loadDex().catch(() => {})
   loadLearnsets().catch(() => {})
@@ -64,7 +74,8 @@ onMounted(() => {
 /** 상단 탭 아래의 작은 탭 (분류) */
 const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
   items: [
-    { id: 'heal', label: '체력·기절' },
+    { id: 'heal', label: '체력' },
+    { id: 'revive', label: '기절' },
     { id: 'pp', label: 'PP' },
     { id: 'status', label: '상태이상' },
   ],
@@ -91,6 +102,11 @@ const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
     { id: 'ability', label: '특성' },
     { id: 'iv', label: '개체값' },
     { id: 'nature', label: '민트' },
+  ],
+  gimmick: [
+    { id: 'mega', label: '메가스톤' },
+    { id: 'z', label: 'Z크리스탈' },
+    { id: 'tera', label: '테라피스' },
   ],
 }
 /** 상단 탭별로 선택한 작은 탭 (탭을 오가도 유지) */
@@ -152,6 +168,25 @@ const trainGroups = computed(() => TRAIN_GROUPS.map((g) => ({ g, items: TRAIN_IT
 
 const won = (n: number) => `${n.toLocaleString()}원`
 
+// 특수 기능 아이템: 메가스톤(쓰는 포켓몬) · Z크리스탈(타입) · 테라피스(타입)
+const gimmickCur = computed(() => cur.value as Gimmick)
+const gimmickRows = computed(() => {
+  const dex = dexData.value
+  const g = gimmickCur.value
+  if (!dex || sub.value !== 'gimmick') return []
+  return gimmickShopItems(g).map((id) => {
+    let users: { name: string; owned: boolean }[] = []
+    let type: string | null = null
+    if (g === 'mega')
+      users = Object.values(dex.forms)
+        .filter((f) => f.item === id)
+        .map((f) => ({ name: f.ko, owned: ownedSpecies.value.has(f.base) }))
+    else if (g === 'z') type = Z_CRYSTALS[id] ?? null
+    else type = teraShardType(id)
+    return { id, price: gimmickItemOf(id)!.price, users, type }
+  })
+})
+
 /** 편의성 탭에 나오는 차례 구매 기능 (노력치 한계 돌파는 육성 탭) */
 const perkList = CHAIN_PERKS.filter((p) => p.id !== EV_BREAK_PERK.id)
 /** 노력치 한계 돌파 2 다음 구매 정보 */
@@ -189,17 +224,17 @@ const slotRows = computed(() =>
   game.party.map((m, i) => {
     const name = dexData.value?.index.find((p) => p.id === m.species)?.ko ?? m.species
     const extra = m.extraSlots ?? 0
-    const baseDone = baseSlotsOf(m) >= 1 + SLOT_DEFEATS.length
+    const baseDone = game.baseSlots >= BASE_SLOTS_MAX
     return {
       i,
       name,
       level: m.level,
-      slots: slotsOf(m),
+      slots: game.slotsOf(m),
       maxed: extra >= EXTRA_SLOTS,
       baseDone,
       price: extraSlotPrice(extra + 1),
       need: SLOT_DEFEATS[SLOT_DEFEATS.length - 1]!,
-      defeats: m.defeats ?? 0,
+      defeats: game.totalDefeats,
     }
   }),
 )
@@ -251,7 +286,7 @@ const slotRows = computed(() =>
       </section>
       <p class="note">
         전투 탭 → 아이템에서 야생 포켓몬에게 던집니다 (한 턴 소모). 보스는 잡을 수 없습니다. HP가 적을수록, 잠듦·얼음(2.5배)이나
-        마비·독·화상(1.5배) 상태일수록 잘 잡힙니다. 잡은 포켓몬은 파티(최대 6마리) 또는 박스로 갑니다.
+        마비·독·화상(1.5배) 상태일수록 잘 잡힙니다. 잡은 포켓몬은 도감에 기록되고, 파티(최대 6마리)에 자리가 있으면 파티에 들어갑니다.
       </p>
     </template>
 
@@ -306,6 +341,35 @@ const slotRows = computed(() =>
         전투 탭 → 아이템 → 기술머신에서 가르칩니다. 기술머신은 한 번 사면 몇 번이든 쓸 수 있고, 기술레코드는 쓰면 사라집니다.
       </p>
     </template>
+    <!-- 특수 기능 (메가스톤·Z크리스탈·테라피스) -->
+    <template v-else-if="sub === 'gimmick'">
+      <section class="card">
+        <p v-if="!game.gimmickUnlocked(gimmickCur)" class="msg">
+          🔒 {{ josa(GIMMICK_INFO[gimmickCur].label, '은', '는') }} {{ regionOfGimmick(gimmickCur)?.name }}에 들어가면 해금됩니다.
+        </p>
+        <ul v-else class="rows">
+          <ShopRow v-for="r in gimmickRows" :key="r.id" :id="r.id" :price="r.price" :multi="gimmickCur === 'tera'">
+            <p v-if="r.users.length" class="desc item">
+              <span class="evo-label">메가진화</span>
+              <template v-for="(u, k) in r.users" :key="k">
+                <span :class="{ owned: u.owned }">{{ u.name }}</span><template v-if="k < r.users.length - 1">, </template>
+              </template>
+            </p>
+            <p v-else-if="r.type" class="desc item">
+              <span class="type" :style="{ background: TYPE_COLORS[r.type] }">{{ dexData.types[r.type] }}</span>
+            </p>
+          </ShopRow>
+        </ul>
+      </section>
+      <p class="note">
+        {{ GIMMICK_INFO[gimmickCur].desc }}
+        <template v-if="gimmickCur === 'mega'">메가스톤은 전투 탭 → 아이템 → 지닌 도구에서 지니게 합니다. 쓰는 포켓몬 이름이 밝게 표시되면 도감에 있는 포켓몬입니다.</template>
+        <template v-else-if="gimmickCur === 'z'">Z크리스탈을 지니게 한 뒤 전투 화면의 Z기술 버튼을 누르고 같은 타입 공격기를 고릅니다. (전용 Z크리스탈은 팔지 않습니다)</template>
+        <template v-else>테라피스 {{ TERA_SHARD_COST }}개로 전투 탭 → 아이템에서 그 타입으로 테라스탈 타입을 바꿉니다.</template>
+        다이맥스는 아이템 없이 쓸 수 있습니다. 특수 기능은 한 전투에 네 가지 중 하나를 한 번만 쓸 수 있습니다.
+      </p>
+    </template>
+
     <!-- 육성 강화 (학습장치·노력치 한계 돌파) -->
     <template v-else-if="sub === 'growth'">
       <section class="card">
@@ -386,7 +450,7 @@ const slotRows = computed(() =>
       <p class="note">
         육성 아이템은 전투 탭 → 아이템에서 파티 포켓몬을 골라 사용하며, 턴을 소모하지 않습니다. 영양제는 1개에 노력치
         {{ VITAMIN_EV }}, 깃털은 1, 열매는 {{ VITAMIN_EV }}씩 내립니다 (능력치 하나 {{ game.evStatCap }}<template v-if="Number.isFinite(game.evTotalCap)">, 합계 {{ EV_TOTAL_MAX }}</template>까지). 병뚜껑은 레벨
-        {{ BOTTLE_CAP_LEVEL }} 이상인 포켓몬에게만 쓸 수 있습니다.
+        {{ BOTTLE_CAP_LEVEL }} 이상인 포켓몬에게만 쓸 수 있습니다. 하트비늘은 전투 탭 → 기술에서 잊은 기술을 되살릴 때 1개씩 씁니다.
       </p>
     </template>
 
@@ -493,6 +557,45 @@ const slotRows = computed(() =>
           </div>
           <p class="desc">{{ BOSS_INTRO_PERK.desc }}</p>
         </li>
+        <li>
+          <div class="main">
+            <span class="grow"><strong>{{ AUTO_CENTER_PERK.label }}</strong></span>
+            <label v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="toggle">
+              <input v-model="game.autoCenter" type="checkbox" />
+              켜기
+            </label>
+            <template v-else>
+              <span class="price">{{ won(AUTO_CENTER_PERK.price) }}</span>
+              <button type="button" class="buy" :disabled="game.money < AUTO_CENTER_PERK.price" @click="game.buyPerk(AUTO_CENTER_PERK.id)">
+                구매
+              </button>
+            </template>
+          </div>
+          <p class="desc">{{ AUTO_CENTER_PERK.desc }}</p>
+          <div v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="opt">
+            PP가 바닥나면
+            <select v-model="game.autoCenterPriority">
+              <option value="item">PP 회복 아이템 우선</option>
+              <option value="center">센터 귀환 우선</option>
+            </select>
+          </div>
+          <p v-if="game.hasPerk(AUTO_CENTER_PERK.id) && game.autoCenterPriority === 'item'" class="desc">
+            PP 회복 아이템 자동 사용이 켜져 있고 쓸 수 있는 PP 회복 아이템이 있으면 아이템을 쓰고, 없을 때만 센터에 다녀옵니다.
+          </p>
+        </li>
+        <li>
+          <div class="main">
+            <span class="grow"><strong>{{ DEX_REVEAL_PERK.label }}</strong></span>
+            <span v-if="game.hasPerk(DEX_REVEAL_PERK.id)" class="owned">구매함</span>
+            <template v-else>
+              <span class="price">{{ won(DEX_REVEAL_PERK.price) }}</span>
+              <button type="button" class="buy" :disabled="game.money < DEX_REVEAL_PERK.price" @click="game.buyPerk(DEX_REVEAL_PERK.id)">
+                구매
+              </button>
+            </template>
+          </div>
+          <p class="desc">{{ DEX_REVEAL_PERK.desc }}</p>
+        </li>
         <li v-for="p in PERKS" :key="p.id">
           <div class="main">
             <span class="grow"><strong>{{ p.label }}</strong></span>
@@ -538,8 +641,8 @@ const slotRows = computed(() =>
     <!-- 기술칸 -->
     <section v-else-if="sub === 'slots'" class="card">
       <p class="desc top">
-        이 포켓몬으로 {{ SLOT_DEFEATS.join('·') }}마리를 쓰러뜨려 기본 4칸을 모두 연 포켓몬은 상점에서 최대
-        {{ EXTRA_SLOTS }}칸을 더 열 수 있습니다.
+        계정 전체에서 {{ SLOT_DEFEATS.join('·') }}마리를 쓰러뜨리면 모든 포켓몬의 기본 기술칸이 늘어납니다.
+        기본 4칸이 모두 열리면 포켓몬별로 상점에서 최대 {{ EXTRA_SLOTS }}칸을 더 열 수 있습니다 (도감으로 보내도 기록에 남음).
       </p>
       <p v-if="!slotRows.length" class="msg">파티에 포켓몬이 없습니다.</p>
       <ul v-else class="rows">
@@ -549,7 +652,7 @@ const slotRows = computed(() =>
               {{ r.name }} <small class="muted">Lv.{{ r.level }} · {{ r.slots }}칸</small>
             </span>
             <span v-if="r.maxed" class="muted">모두 열림</span>
-            <span v-else-if="!r.baseDone" class="muted">격파 {{ r.defeats }}/{{ r.need }}</span>
+            <span v-else-if="!r.baseDone" class="muted">계정 격파 {{ r.defeats }}/{{ r.need }}</span>
             <template v-else>
               <span class="price">{{ won(r.price) }}</span>
               <button type="button" class="buy" :disabled="game.money < r.price" @click="game.buyExtraSlot(r.i)">
@@ -593,10 +696,9 @@ const slotRows = computed(() =>
 
 .mini-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 8px 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
   border-bottom: 1px solid #3a3a44;
 }
 
@@ -629,8 +731,9 @@ const slotRows = computed(() =>
 }
 
 .sub-tabs button {
-  flex: 1 0 auto;
-  padding: 0 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 6px;
   white-space: nowrap;
   height: 42px;
   border: none;

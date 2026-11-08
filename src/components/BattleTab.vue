@@ -8,6 +8,7 @@ import {
   CATEGORY_LABELS,
   EVO_ITEMS,
   PP_UP_MAX,
+  HEART_SCALE,
   SHOP_ITEMS,
   TRAIN_GROUP_LABELS,
   TRAIN_ITEMS,
@@ -25,23 +26,24 @@ import {
   MAX_MOVE_SLOTS,
   memberAbility,
   maxPpOf,
-  PARTY_MAX,
   ppOf,
   SLOT_DEFEATS,
-  slotsOf,
+  teraTypeOf,
   useGameStore,
   type PartyMember,
 } from '../stores/game'
+import { formOf, megaFormFor, TERA_SHARD_COST, teraShardOf, teraShardType } from '../core/gimmicks'
 import { abilityInfo } from '../core/abilities'
-import { maxHpOf } from '../core/battle'
+import { josa, maxHpOf, ro } from '../core/battle'
 import { BALL_NOTES, catchChance, isMachine, isRecord } from '../data/items'
 import BattleControls from './BattleControls.vue'
 import ItemIcon from './ItemIcon.vue'
 import PokeSprite from './PokeSprite.vue'
 
-type SubTab = 'fight' | 'stats' | 'moves' | 'items'
+type SubTab = 'fight' | 'party' | 'stats' | 'moves' | 'items'
 const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'fight', label: '배틀' },
+  { id: 'party', label: '파티' },
   { id: 'stats', label: '능력치' },
   { id: 'moves', label: '기술' },
   { id: 'items', label: '아이템' },
@@ -71,13 +73,19 @@ const stats = computed(() => {
     const ev = m.evs?.[i] ?? 0
     const value = actual[i]!
     const mod = nature?.plus === key ? 'up' : nature?.minus === key ? 'down' : ''
-    const inner = `(2×${base} + ${iv} + ⌊${ev}/4⌋) × ${m.level}/100`
+    // 계산식을 열 단위로 쪼개 표로 그려 숫자 위치가 세로로 맞도록 함
+    const isHp = key === 'hp'
     const formula =
-      key === 'hp'
-        ? m.species === 'shedinja'
-          ? '껍질몬은 항상 1'
-          : `⌊${inner}⌋ + ${m.level} + 10 = ${value}`
-        : `⌊(⌊${inner}⌋ + 5) × ${mod === 'up' ? '1.1' : mod === 'down' ? '0.9' : '1'}⌋ = ${value}`
+      isHp && m.species === 'shedinja'
+        ? null
+        : [
+            isHp ? '⌊(' : '⌊(⌊(',
+            `2×${base}`,
+            `+ ${iv}`,
+            `+ ⌊${ev}/4⌋)`,
+            `× ${m.level}/100⌋`,
+            isHp ? `+ ${m.level} + 10` : `+ 5) × ${mod === 'up' ? '1.1' : mod === 'down' ? '0.9' : '1'}⌋`,
+          ]
     return { label: STAT_LABELS[i], base, iv, ev, value, mod, formula, locked: game.evLockedOf(m, i) }
   })
 })
@@ -102,12 +110,12 @@ const memberIdx = computed(() => (member.value ? game.party.indexOf(member.value
 const moveSlots = computed(() => {
   const m = member.value
   if (!m) return []
-  const open = slotsOf(m)
-  const defeats = m.defeats ?? 0
+  const open = game.slotsOf(m)
+  const defeats = game.totalDefeats
   return Array.from({ length: MAX_MOVE_SLOTS }, (_, i) => {
     if (i >= open) {
       const need = SLOT_DEFEATS[i - 1]
-      const cond = need != null ? `격파 ${Math.min(defeats, need)}/${need}` : '상점에서 해금'
+      const cond = need != null ? `계정 격파 ${Math.min(defeats, need)}/${need}` : '상점에서 해금'
       return { kind: 'locked' as const, cond }
     }
     const id = m.moves[i]
@@ -119,27 +127,29 @@ const moveSlots = computed(() => {
 const pickedSlot = ref<number | null>(null)
 watch([memberIndex, sub], () => (pickedSlot.value = null))
 const picked = computed(() => (pickedSlot.value != null ? moveSlots.value[pickedSlot.value] : null))
-/** 배웠지만 장착하지 않은 기술 */
-const spare = computed(() => {
+/** 잊은 기술 (배웠지만 장착하지 않은 기술. 하트비늘로 되살림) */
+const forgotten = computed(() => {
   const m = member.value
   if (!m) return []
   return (m.learned ?? m.moves).filter((id) => !m.moves.includes(id)).map((id) => ({ id, info: moveInfo(id) }))
 })
+/** 레벨업으로 배우려는 기술 대기열 (맨 앞만 처리 가능) */
+const pendingList = computed(() => (member.value?.pending ?? []).map((id) => ({ id, info: moveInfo(id) })))
+const heartScales = computed(() => game.items[HEART_SCALE] ?? 0)
 function clickSlot(i: number) {
   const s = moveSlots.value[i]
   if (!s || s.kind === 'locked') return
   pickedSlot.value = pickedSlot.value === i ? null : i
 }
-function choose(id: string) {
+function learnPendingHere() {
   const s = picked.value
-  if (!s) return
-  if (s.kind === 'move') game.replaceMove(memberIdx.value, s.id, id)
-  else if (s.kind === 'empty') game.equipMove(memberIdx.value, id)
+  if (s?.kind === 'move') game.learnPending(memberIdx.value, s.id)
   pickedSlot.value = null
 }
-function unequipPicked() {
+function recall(id: string) {
   const s = picked.value
-  if (s?.kind === 'move') game.unequipMove(memberIdx.value, s.id)
+  if (!s || s.kind === 'locked') return
+  game.recallMove(memberIdx.value, id, s.kind === 'move' ? s.id : undefined)
   pickedSlot.value = null
 }
 
@@ -154,11 +164,12 @@ function ppText(id: string) {
 const itemTarget = ref(0)
 const targetMember = computed(() => game.party[itemTarget.value] ?? game.party[0] ?? null)
 const targetIdx = computed(() => (targetMember.value ? game.party.indexOf(targetMember.value) : 0))
-const maxHp = (m: PartyMember) => maxHpOf({ species: m.species, level: m.level, ivs: m.ivs ?? [], evs: m.evs ?? [], nature: m.nature })
+/** 최대 HP (싸우는 포켓몬이 다이맥스 중이면 2배) */
+const maxHp = (m: PartyMember) => game.memberMaxHp(m)
 const hpText = (m: PartyMember) => (m.hp === 0 ? '기절' : `HP ${m.hp ?? maxHp(m)}/${maxHp(m)}`)
 
 // 아이템: 상점 아이템을 분류별로 (가지고 있는 것만)
-const CATS: ItemCategory[] = ['heal', 'pp', 'status', 'ball', 'battle']
+const CATS: ItemCategory[] = ['heal', 'revive', 'pp', 'status', 'ball', 'battle']
 /** 볼: 지금 상대의 예상 포획률 */
 const ballChance = (id: string) => {
   const e = game.enemy
@@ -166,18 +177,46 @@ const ballChance = (id: string) => {
   if (!e || !foe || e.boss) return null
   return catchChance(id, game.catchContext(), foe.hp, maxHpOf(foe))
 }
+/** 분류별 아이템 대상: 기절 회복은 고른 포켓몬이 기절하지 않았으면 기절한 첫 포켓몬에게 */
+const catTarget = (cat: ItemCategory) => {
+  if (cat === 'ball' || cat === 'battle') return 0
+  if (cat === 'revive' && targetMember.value?.hp !== 0) {
+    const i = game.party.findIndex((m) => m.hp === 0)
+    if (i >= 0) return i
+  }
+  return targetIdx.value
+}
 const itemGroups = computed(() =>
-  CATS.map((cat) => ({
-    cat,
-    items: SHOP_ITEMS.filter((i) => i.category === cat && (game.items[i.id] ?? 0) > 0).map((def) => {
-      const chance = cat === 'ball' ? ballChance(def.id) : null
-      const usable = cat === 'ball' ? chance != null : !!game.itemEffect(def, cat === 'battle' ? 0 : targetIdx.value)
-      return { def, count: game.items[def.id]!, info: dexData.value?.items[def.id], usable, chance }
-    }),
-  })).filter((g) => g.items.length),
+  CATS.map((cat) => {
+    const target = catTarget(cat)
+    const who = game.party[target]
+    return {
+      cat,
+      targetName: cat === 'revive' && who ? species(who.species)?.ko ?? who.species : null,
+      items: SHOP_ITEMS.filter((i) => i.category === cat && (game.items[i.id] ?? 0) > 0).map((def) => {
+        const chance = cat === 'ball' ? ballChance(def.id) : null
+        const usable = cat === 'ball' ? chance != null : !!game.itemEffect(def, target)
+        return { def, count: game.items[def.id]!, info: dexData.value?.items[def.id], usable, chance }
+      }),
+    }
+  }).filter((g) => g.items.length),
 )
+// 파티: 다치거나 기절한 포켓몬에게 바로 회복 아이템 사용
+const isHurt = (m: PartyMember) => m.hp != null && m.hp < maxHp(m)
+const quickHealTitle = (i: number) => {
+  const m = game.party[i]
+  const pick = game.quickHealPick(i)
+  if (!m) return ''
+  if (!pick) return m.hp === 0 ? '가방에 기절 회복 아이템이 없습니다' : '가방에 체력 회복 아이템이 없습니다'
+  const note = game.enemy && game.battleTurns > 0 ? ' (전투 중에는 한 턴을 소모합니다)' : ''
+  return `${itemKo(pick.id)} 사용${note}`
+}
+function quickHeal(i: number) {
+  const pick = game.quickHealPick(i)
+  if (pick) game.useItem(pick.id, i)
+}
 function useShopItem(cat: ItemCategory, id: string) {
-  game.useItem(id, cat === 'ball' || cat === 'battle' ? 0 : targetIdx.value)
+  game.useItem(id, catTarget(cat))
 }
 
 // 지닌 도구: 고른 포켓몬이 지닌 도구와 가방의 지닐 수 있는 도구
@@ -208,6 +247,17 @@ const machines = computed(() => {
     })
     .sort((a, b) => Number(b.can && !b.knows) - Number(a.can && !a.knows) || a.name.localeCompare(b.name, 'ko', { numeric: true }))
 })
+/** 기술머신: 기술칸이 가득 찼을 때 대신 잊을 기술 */
+const tmFull = computed(() => !!targetMember.value && targetMember.value.moves.length >= game.slotsOf(targetMember.value))
+const tmReplace = ref('')
+watch(
+  () => targetMember.value?.moves.join(),
+  () => {
+    const moves = targetMember.value?.moves ?? []
+    if (!moves.includes(tmReplace.value)) tmReplace.value = moves[0] ?? ''
+  },
+  { immediate: true },
+)
 // 진화 아이템: 가지고 있는 것만, 파티에서 그 아이템으로 진화할 수 있는 포켓몬과 함께
 const evoItems = computed(() =>
   EVO_ITEMS.filter((def) => (game.items[def.id] ?? 0) > 0).map((def) => {
@@ -246,7 +296,7 @@ const trainGroups = computed(() => {
   const m = trainMember.value
   return TRAIN_GROUPS.map((g) => ({
     g,
-    items: TRAIN_ITEMS.filter((i) => i.group === g && (game.items[i.id] ?? 0) > 0).map((def) => {
+    items: TRAIN_ITEMS.filter((i) => i.group === g && !i.recall && (game.items[i.id] ?? 0) > 0).map((def) => {
       let options: { value: number | string; label: string }[] | null = null
       if (m && def.ppUp)
         options = m.moves.map((id) => {
@@ -286,10 +336,35 @@ const turnNote = computed(() => {
   return '전투 중에 쓰면 한 턴을 소모합니다.'
 })
 
-// 파티·박스
-const boxList = computed(() => game.box.map((m, i) => ({ i, m, name: species(m.species)?.ko ?? m.species })))
-function toBox(i: number) {
-  if (game.toBox(i) && memberIndex.value >= game.party.length) memberIndex.value = 0
+// 테라스탈 타입: 테라피스 TERA_SHARD_COST 개로 바꿈 (테라스탈 해금 후)
+const typeKo = (t: string) => dexData.value?.types[t] ?? t
+const teraNow = computed(() => (targetMember.value ? teraTypeOf(targetMember.value) : null))
+const teraShards = computed(() =>
+  Object.entries(game.items)
+    .filter(([id, n]) => n > 0 && teraShardType(id))
+    .map(([id, n]) => ({ id, n, type: teraShardType(id)! }))
+    .sort((a, b) => b.n - a.n),
+)
+const teraLocked = computed(() => targetIdx.value === 0 && game.gimmickActive?.kind === 'tera')
+// 능력치 탭: 메가진화 (지닌 도구·배운 기술로 메가진화할 수 있는 모습)
+const megaInfo = computed(() => {
+  const m = member.value
+  if (!m || !game.gimmickUnlocked('mega') || !dexData.value) return null
+  const now = megaFormFor(m.species, heldOf(m), m.learned ?? m.moves)
+  if (now) return { text: `${now.ko} (전투 중 메가진화 가능)`, ok: true }
+  const forms = Object.values(dexData.value.forms).filter((f) => f.base === m.species)
+  if (!forms.length) return null
+  const need = forms.map((f) => `${f.ko}: ${f.item ? itemKo(f.item) : (moveInfo(f.move!)?.ko ?? f.move)} 필요`).join(' · ')
+  return { text: need, ok: false }
+})
+
+// 파티 → 도감
+function sendToDex(i: number) {
+  const m = game.party[i]
+  if (!m) return
+  const name = species(m.species)?.ko ?? m.species
+  if (!confirm(`${josa(name, '을', '를')} 도감으로 보낼까요?\n성격·특성·개체값·노력치·레벨·친밀도·기술이 도감 기록에 합쳐지고, 이 포켓몬은 파티에서 사라집니다.`)) return
+  if (game.sendToDex(i) && memberIndex.value >= game.party.length) memberIndex.value = 0
 }
 const itemKo = (id: string) => dexData.value?.items[id]?.ko ?? id
 
@@ -316,6 +391,66 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 
     <BattleControls v-else-if="sub === 'fight'" />
 
+    <!-- 파티: 순서·싸우는 포켓몬·도감으로 보내기 -->
+    <section v-else-if="sub === 'party'" class="card">
+      <p v-if="!game.party.length" class="msg">파티에 포켓몬이 없습니다.</p>
+      <ul v-else class="party-list">
+        <li v-for="(m, i) in game.party" :key="i" :class="{ fainted: m.hp === 0 }">
+          <PokeSprite :species="m.species" :size="48" />
+          <div class="party-info">
+            <div>
+              <span v-if="i === 0" class="lead-mark" title="싸우는 포켓몬">★</span>
+              <strong>{{ species(m.species)?.ko ?? m.species }}</strong>
+              <small class="muted"> Lv.{{ m.level }}</small>
+              <span v-if="m.pending?.length" class="pending-badge" :title="`배우려는 기술 ${m.pending.length}개`">새 기술 {{ m.pending.length }}</span>
+            </div>
+            <div class="muted held-line">
+              {{ hpText(m) }} · 지닌 도구
+              <template v-if="m.heldItem">
+                <ItemIcon :id="m.heldItem" :size="16" />
+                {{ itemKo(m.heldItem) }}<template v-if="m.heldSpent"> (사용함)</template>
+              </template>
+              <template v-else> 없음</template>
+            </div>
+            <div class="party-actions">
+              <button
+                v-if="i > 0"
+                type="button"
+                class="small-btn"
+                :disabled="m.hp === 0 || !!game.faint"
+                :title="game.enemy && game.battleTurns > 0 ? '전투 중에 교체하면 한 턴을 소모합니다' : ''"
+                @click="game.setLead(i)"
+              >
+                싸우는 포켓몬으로
+              </button>
+              <button
+                v-if="isHurt(m)"
+                type="button"
+                class="small-btn heal-quick"
+                :disabled="!game.quickHealPick(i) || !!game.faint"
+                :title="quickHealTitle(i)"
+                @click="quickHeal(i)"
+              >
+                {{ m.hp === 0 ? '살리기' : '회복' }}<template v-if="game.quickHealPick(i)"> · {{ itemKo(game.quickHealPick(i)!.id) }}</template>
+              </button>
+              <button type="button" class="small-btn" @click="memberIndex = i; sub = 'stats'">능력치</button>
+              <button type="button" class="small-btn" @click="memberIndex = i; sub = 'moves'">기술</button>
+              <button
+                v-if="game.party.length > 1"
+                type="button"
+                class="small-btn"
+                :disabled="(i === 0 && !!game.enemy) || !!game.faint"
+                :title="i === 0 && game.enemy ? '싸우는 중에는 보낼 수 없습니다' : '도감 기록에 합쳐지고 파티에서 사라집니다. 지닌 도구는 가방으로 돌아갑니다. 도감에서 기록 범위 안으로 다시 불러올 수 있습니다'"
+                @click="sendToDex(i)"
+              >
+                도감으로
+              </button>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </section>
+
     <template v-else>
       <!-- 능력치 / 기술: 파티 포켓몬별 -->
       <template v-if="sub !== 'items'">
@@ -332,6 +467,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
               <span v-if="i === 0" class="lead-mark" title="싸우는 포켓몬">★</span>
               {{ species(m.species)?.ko ?? m.species }} <small>Lv.{{ m.level }}</small>
               <ItemIcon v-if="heldOf(m)" :id="heldOf(m)!" :size="16" />
+              <span v-if="m.pending?.length" class="pending-badge" :title="`배우려는 기술 ${m.pending.length}개`">새 기술 {{ m.pending.length }}</span>
             </button>
           </div>
 
@@ -341,39 +477,26 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
               <strong>{{ species(member!.species)?.ko }}</strong>
               <span class="muted">Lv.{{ member!.level }} · {{ NATURES[member!.nature]?.ko ?? '-' }} · {{ hpText(member!) }}</span>
             </div>
-            <div class="party-actions">
-              <span class="muted held-line">
-                지닌 도구
-                <template v-if="member!.heldItem">
-                  <ItemIcon :id="member!.heldItem" :size="18" />
-                  {{ itemKo(member!.heldItem) }}<template v-if="member!.heldSpent"> (사용함)</template>
-                </template>
-                <template v-else> 없음</template>
-              </span>
-              <button
-                v-if="memberIdx > 0"
-                type="button"
-                class="small-btn"
-                :disabled="member!.hp === 0 || !!game.faint"
-                :title="game.enemy && game.battleTurns > 0 ? '전투 중에 교체하면 한 턴을 소모합니다' : ''"
-                @click="game.setLead(memberIdx)"
-              >
-                싸우는 포켓몬으로
-              </button>
-              <button
-                v-if="game.party.length > 1"
-                type="button"
-                class="small-btn"
-                :disabled="(memberIdx === 0 && !!game.enemy) || !!game.faint"
-                :title="memberIdx === 0 && game.enemy ? '싸우는 중에는 맡길 수 없습니다' : '박스에 맡기면 HP·PP·상태이상이 회복되고, 지닌 도구는 가방으로 돌아갑니다'"
-                @click="toBox(memberIdx)"
-              >
-                박스로
-              </button>
-            </div>
+            <p class="muted held-line">
+              지닌 도구
+              <template v-if="member!.heldItem">
+                <ItemIcon :id="member!.heldItem" :size="18" />
+                {{ itemKo(member!.heldItem) }}<template v-if="member!.heldSpent"> (사용함)</template>
+              </template>
+              <template v-else> 없음</template>
+            </p>
             <p v-if="ability" class="ability">
               <strong>특성 {{ ability.ko }}</strong><span v-if="member!.hiddenAbility" class="muted"> (숨겨진 특성)</span>
               <span class="muted">{{ ability.text }}</span>
+            </p>
+            <p v-if="game.gimmickUnlocked('tera')" class="muted held-line">
+              테라스탈 타입
+              <span class="type" :style="{ background: TYPE_COLORS[teraTypeOf(member!)] }">{{ dexData.types[teraTypeOf(member!)] }}</span>
+              <small>(아이템 탭에서 테라피스 {{ TERA_SHARD_COST }}개로 변경)</small>
+            </p>
+            <p v-if="megaInfo" class="muted held-line" :class="{ 'mega-ok': megaInfo.ok }">메가진화 · {{ megaInfo.text }}</p>
+            <p v-if="memberIdx === 0 && game.gimmickActive?.kind === 'mega'" class="muted held-line">
+              지금 {{ formOf(game.gimmickActive.form)?.ko }}(으)로 메가진화한 상태입니다. (위 능력치는 원래 모습 기준)
             </p>
             <table class="stats">
               <thead>
@@ -408,9 +531,18 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                 HP = ⌊(2×종족값 + 개체값 + ⌊노력치/4⌋) × 레벨/100⌋ + 레벨 + 10<br />
                 그 외 = ⌊(⌊(2×종족값 + 개체값 + ⌊노력치/4⌋) × 레벨/100⌋ + 5) × 성격보정⌋ (▲ 1.1 · ▼ 0.9)
               </p>
-              <ul>
-                <li v-for="s in stats" :key="s.label"><span class="flabel">{{ s.label }}</span> {{ s.formula }}</li>
-              </ul>
+              <table class="ftable">
+                <tbody>
+                  <tr v-for="s in stats" :key="s.label">
+                    <th>{{ s.label }}</th>
+                    <template v-if="s.formula">
+                      <td v-for="(part, k) in s.formula" :key="k" :class="`f${k}`">{{ part }}</td>
+                    </template>
+                    <td v-else colspan="6" class="fnote">껍질몬은 항상 1</td>
+                    <td class="fres">= {{ s.value }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
             <div class="friend">
@@ -431,21 +563,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             <p v-if="evoList.length && game.everstone" class="msg evo-none">변함없는돌이 켜져 있어 레벨업으로 진화하지 않습니다.</p>
           </section>
 
-          <section v-if="sub === 'stats'" class="card">
-            <h4 class="sec">박스 <small>{{ game.box.length }}마리 · 파티 {{ game.party.length }}/{{ PARTY_MAX }}</small></h4>
-            <p v-if="!boxList.length" class="msg">박스가 비어 있습니다. 파티가 가득 찼을 때 잡은 포켓몬이 여기로 옵니다.</p>
-            <ul v-else class="rows">
-              <li v-for="b in boxList" :key="b.i">
-                <PokeSprite :species="b.m.species" :size="32" lazy />
-                <span class="grow">{{ b.name }} <small class="muted">Lv.{{ b.m.level }}</small></span>
-                <button type="button" class="small-btn" :disabled="game.party.length >= PARTY_MAX" @click="game.toParty(b.i)">
-                  파티로
-                </button>
-              </li>
-            </ul>
-          </section>
-
-          <template v-else-if="sub === 'moves'">
+          <template v-if="sub === 'moves'">
             <div class="move-grid">
               <template v-for="(s, i) in moveSlots" :key="i">
                 <button
@@ -475,34 +593,66 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
               </template>
             </div>
 
+            <!-- 레벨업으로 배우려는 기술 대기열: 맨 앞부터 하나씩 처리 -->
+            <section v-if="pendingList.length" class="card pending">
+              <h4 class="sec">
+                배우려는 기술 <small>{{ pendingList.length }}개 대기 중 · 배운 순서대로 하나씩 처리합니다</small>
+              </h4>
+              <div class="pending-head mrow">
+                <span class="grow"><strong>{{ pendingList[0]!.info?.ko ?? pendingList[0]!.id }}</strong></span>
+                <template v-if="pendingList[0]!.info">
+                  <span class="type" :style="{ background: TYPE_COLORS[pendingList[0]!.info.type] }">{{ dexData.types[pendingList[0]!.info.type] }}</span>
+                  <span class="muted">{{ CLS_LABEL[pendingList[0]!.info.cls] }}</span>
+                  <span class="muted num"><small>위력</small> {{ pendingList[0]!.info.power ?? '-' }}</span>
+                  <span class="muted num"><small>명중</small> {{ pendingList[0]!.info.acc ?? '-' }}</span>
+                </template>
+              </div>
+              <p class="item-text">위 기술칸에서 잊을 기술을 눌러 교체하거나, 배우지 않을 수 있습니다. 배우지 않은 기술은 잊은 기술이 되어 하트비늘로 되살릴 수 있습니다.</p>
+              <p v-if="pendingList.length > 1" class="item-text">
+                다음: {{ pendingList.slice(1).map((p) => p.info?.ko ?? p.id).join(' → ') }}
+              </p>
+              <div class="picker-actions">
+                <button type="button" class="small-btn" @click="game.skipPending(memberIdx)">배우지 않기</button>
+              </div>
+            </section>
+
             <section class="card picker">
-              <p v-if="!picked" class="msg">바꿀 기술칸을 눌러 주세요.</p>
+              <p v-if="!picked" class="msg">
+                {{ pendingList.length ? '잊을 기술칸을 눌러 주세요.' : '바꿀 기술칸을 눌러 주세요. 잊은 기술은 하트비늘로 되살릴 수 있습니다.' }}
+              </p>
               <template v-else>
                 <h4 class="sec">
                   {{ pickedSlot! + 1 }}번 칸
-                  <small>{{ picked.kind === 'move' ? `${picked.info?.ko ?? picked.id} 대신 장착할 기술` : '장착할 기술' }}</small>
+                  <small>{{ picked.kind === 'move' ? `${picked.info?.ko ?? picked.id} 대신` : '빈 칸' }}</small>
                 </h4>
-                <p v-if="!spare.length" class="msg">장착하지 않은 기술이 없습니다. 레벨이 오르면 새 기술을 배웁니다.</p>
-                <ul v-else class="rows">
-                  <li v-for="m in spare" :key="m.id" class="clickable" @click="choose(m.id)">
+                <div v-if="picked.kind === 'move' && pendingList.length" class="picker-actions pending-swap">
+                  <button type="button" class="small-btn" @click="learnPendingHere">
+                    {{ picked.info?.ko ?? picked.id }} 잊고 {{ pendingList[0]!.info?.ko ?? pendingList[0]!.id }} 배우기
+                  </button>
+                </div>
+                <h5 class="train-sec">
+                  잊은 기술 되살리기
+                  <span class="muted">하트비늘 ×{{ heartScales }} (1개 소모<template v-if="!heartScales"> · 상점 → 육성 → 기술 떠올리기</template>)</span>
+                </h5>
+                <p v-if="!forgotten.length" class="msg">잊은 기술이 없습니다.</p>
+                <ul v-else class="rows mrows">
+                  <li
+                    v-for="m in forgotten"
+                    :key="m.id"
+                    :class="{ clickable: heartScales > 0, disabled: !heartScales }"
+                    :title="heartScales ? '하트비늘 1개를 써서 이 기술을 장착합니다' : '하트비늘이 없습니다'"
+                    @click="heartScales && recall(m.id)"
+                  >
                     <span class="grow">{{ m.info?.ko ?? m.id }}</span>
                     <template v-if="m.info">
                       <span class="type" :style="{ background: TYPE_COLORS[m.info.type] }">{{ dexData.types[m.info.type] }}</span>
                       <span class="muted">{{ CLS_LABEL[m.info.cls] }}</span>
-                      <span class="muted num">위력 {{ m.info.power ?? '-' }}</span>
-                      <span class="muted num">명중 {{ m.info.acc ?? '-' }}</span>
+                      <span class="muted num"><small>위력</small> {{ m.info.power ?? '-' }}</span>
+                      <span class="muted num"><small>명중</small> {{ m.info.acc ?? '-' }}</span>
                     </template>
                   </li>
                 </ul>
                 <div class="picker-actions">
-                  <button
-                    v-if="picked.kind === 'move' && member!.moves.length > 1"
-                    type="button"
-                    class="small-btn"
-                    @click="unequipPicked"
-                  >
-                    이 칸 비우기
-                  </button>
                   <button type="button" class="small-btn" @click="pickedSlot = null">취소</button>
                 </div>
               </template>
@@ -534,6 +684,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             {{ CATEGORY_LABELS[g.cat] }}
             <small v-if="g.cat === 'ball'">야생 포켓몬에게</small>
             <small v-else-if="g.cat === 'battle'">싸우는 포켓몬에게 · 전투 중에만</small>
+            <small v-else-if="g.cat === 'revive'">{{ game.party.some((m) => m.hp === 0) ? `${g.targetName}에게` : '기절한 포켓몬이 없음' }}</small>
             <label v-if="g.cat !== 'battle' && game.hasPerk(`autoUse:${g.cat}`)" class="auto">
               <input
                 type="checkbox"
@@ -567,6 +718,33 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
           </ul>
         </template>
 
+        <!-- 테라스탈 타입 -->
+        <template v-if="targetMember && game.gimmickUnlocked('tera')">
+          <h4 class="sec">테라스탈 타입 <small>{{ species(targetMember.species)?.ko }} · 테라피스 {{ TERA_SHARD_COST }}개로 변경 · 턴을 소모하지 않습니다</small></h4>
+          <div class="held-box">
+            <span class="grow">
+              지금
+              <span v-if="teraNow" class="type" :style="{ background: TYPE_COLORS[teraNow] }">{{ typeKo(teraNow) }}</span>
+              <span v-if="teraLocked" class="muted"> (테라스탈 중에는 바꿀 수 없습니다)</span>
+            </span>
+          </div>
+          <p v-if="!teraShards.length" class="item-text">가방에 테라피스가 없습니다. 상점 → 특수 기능에서 살 수 있습니다.</p>
+          <div v-else class="evo-targets">
+            <button
+              v-for="s in teraShards"
+              :key="s.id"
+              type="button"
+              class="small-btn"
+              :disabled="s.n < TERA_SHARD_COST || s.type === teraNow || teraLocked || !!game.faint"
+              :title="s.n < TERA_SHARD_COST ? `테라피스가 ${TERA_SHARD_COST - s.n}개 더 필요합니다` : ''"
+              @click="game.setTeraType(targetIdx, s.type)"
+            >
+              <ItemIcon :id="teraShardOf(s.type)" :size="16" />
+              {{ ro(typeKo(s.type)) }} ({{ s.n }}/{{ TERA_SHARD_COST }})
+            </button>
+          </div>
+        </template>
+
         <!-- 지닌 도구 -->
         <template v-if="targetMember">
           <h4 class="sec">지닌 도구 <small>{{ species(targetMember.species)?.ko }}</small></h4>
@@ -596,6 +774,12 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
         <!-- 기술머신 -->
         <template v-if="machines.length && targetMember">
           <h4 class="sec">기술머신 <small>턴을 소모하지 않습니다</small></h4>
+          <div v-if="tmFull" class="held-box">
+            <span class="muted">기술칸이 가득 찼습니다. 대신 잊을 기술</span>
+            <select v-model="tmReplace" class="train-select grow">
+              <option v-for="id in targetMember.moves" :key="id" :value="id">{{ moveInfo(id)?.ko ?? id }}</option>
+            </select>
+          </div>
           <ul class="rows">
             <li v-for="t in machines" :key="t.id" class="item-row">
               <div class="item-main">
@@ -609,7 +793,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                   class="small-btn"
                   :disabled="!t.can || t.knows || !!game.faint"
                   :title="t.knows ? '이미 배운 기술입니다' : t.can ? '' : '이 포켓몬은 배울 수 없습니다'"
-                  @click="game.useMachine(targetIdx, t.id)"
+                  @click="game.useMachine(targetIdx, t.id, tmFull ? tmReplace : undefined)"
                 >
                   {{ t.knows ? '배움' : t.can ? '가르치기' : '못 배움' }}
                 </button>
@@ -799,6 +983,37 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
   margin-top: 10px;
 }
 
+.picker-actions.pending-swap {
+  justify-content: flex-start;
+  margin: 0 0 6px;
+}
+
+.rows li.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.card.pending {
+  border-color: #ffcb05;
+}
+
+.pending-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.pending-badge {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #ffcb05;
+  color: #1e1e24;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .small-btn:disabled {
   opacity: 0.4;
   cursor: default;
@@ -840,11 +1055,48 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
   margin: 6px 0;
 }
 
+.mega-ok {
+  color: #c58cff;
+}
+
 .held-line {
-  display: inline-flex;
-  flex: 1;
+  display: flex;
   align-items: center;
   gap: 4px;
+  margin: 6px 0;
+}
+
+.party-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.party-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #3a3a44;
+}
+
+.party-list li:last-child {
+  border-bottom: none;
+}
+
+.party-list li.fainted {
+  opacity: 0.55;
+}
+
+.party-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.party-info .held-line,
+.party-info .party-actions {
+  margin: 2px 0;
+  font-size: 12px;
 }
 
 .chance {
@@ -861,6 +1113,10 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+}
+.small-btn.heal-quick:not(:disabled) {
+  border-color: #b8476e;
+  color: #ff9ec0;
 }
 
 .sub-tabs {
@@ -948,24 +1204,45 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 .formula {
   margin: 8px 0 0;
   font-size: 12px;
+  overflow-x: auto;
 }
 .formula p {
   margin: 0 0 4px;
   line-height: 1.5;
 }
-.formula ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.ftable {
+  border-collapse: collapse;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.formula li {
-  padding: 2px 0;
+.ftable th,
+.ftable td {
+  padding: 2px 3px;
+  text-align: right;
 }
-.formula .flabel {
-  display: inline-block;
-  min-width: 4em;
+.ftable th {
+  padding-right: 10px;
+  text-align: left;
   font-weight: bold;
+}
+.ftable td.f0 {
+  padding-right: 0;
+  color: #8a8a96;
+}
+.ftable td.f1 {
+  padding-left: 0;
+}
+.ftable td.f5 {
+  text-align: left;
+}
+.ftable td.fnote {
+  text-align: left;
+  color: #8a8a96;
+}
+.ftable td.fres {
+  padding-left: 8px;
+  font-weight: bold;
+  color: #fff;
 }
 .stats {
   width: 100%;
@@ -1034,6 +1311,26 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 
 .num {
   font-variant-numeric: tabular-nums;
+}
+
+/* 기술 행: 타입·분류·위력·명중이 세로로 맞도록 고정 열 */
+.mrows li,
+.pending-head.mrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.2em 2.4em 4.4em 4.4em;
+  gap: 8px;
+}
+.mrows li > *,
+.mrow > * {
+  min-width: 0;
+}
+.mrows .type,
+.mrow .type {
+  justify-self: center;
+}
+.mrows .num,
+.mrow .num {
+  text-align: right;
 }
 
 .type {

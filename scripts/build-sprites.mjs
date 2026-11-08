@@ -105,6 +105,8 @@ function idleAnim(anims) {
 
 const artists = []
 const artistIndex = new Map()
+/** 폼 id → 기본 폼 번호 (크레딧 정렬용) */
+const formNum = new Map()
 
 /** credit_names.txt: Name \t Discord \t Contact */
 async function loadCreditNames() {
@@ -230,6 +232,59 @@ async function main() {
 
   }
 
+  // 메가진화·원시회귀 폼 (public/data/dex/forms.json, scripts/build-forms.mjs 로 생성)
+  // PMD: 같은 번호의 Mega / Mega_X / Primal 하위 폴더, Showdown: '기본이름-megax' 등
+  const formsFile = path.join(ROOT, 'public', 'data', 'dex', 'forms.json')
+  const forms = existsSync(formsFile) ? JSON.parse(await readFile(formsFile, 'utf8')).forms : {}
+  const dexById = new Map(dex.map((p) => [p.id, p]))
+  for (const [id, f] of Object.entries(forms)) {
+    const p = dexById.get(f.base)
+    if (!p) continue
+    const list = (variants[id] = [])
+    formNum.set(id, p.num)
+    const suffix = id.match(/-(mega(?:-[xyz])?|primal)$/)[1].replace(/-/g, '_') // mega, mega_x, primal
+    const pmdName = suffix.split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join('_') // Mega, Mega_X, Primal
+    const n4 = String(p.num).padStart(4, '0')
+    const sub = Object.entries(tracker[n4]?.subgroups ?? {}).find(([, g]) => g.name === pmdName)
+    if (sub && sub[1].sprite_complete >= 1) {
+      const [subId, g] = sub
+      const credit = g.sprite_credit ?? {}
+      const keys = [credit.primary, ...(credit.secondary ?? [])].filter(Boolean)
+      const v = { k: 'pmd', src: 'pmd', label: 'PMD', official: credit.primary === 'CHUNSOFT', by: keys.map((k) => pmdArtist(k, names)) }
+      list.push(v)
+      const dir = `${n4}/${subId}`
+      jobs.push(async () => {
+        const xml = await cached(path.join(CACHE, 'pmd', dir, 'AnimData.xml'), `${PMD_RAW}sprite/${dir}/AnimData.xml`)
+        const anim = xml && idleAnim(parseAnims(xml.toString('utf8')))
+        const png = anim && (await cached(path.join(CACHE, 'pmd', dir, anim.file), `${PMD_RAW}sprite/${dir}/${anim.file}`))
+        if (!png) return void (v.missing = true)
+        const rel = `pmd/${dir.replace('/', '-')}.png`
+        await save(rel, png)
+        v.file = rel
+        const rows = Math.max(1, Math.round(png.readUInt32BE(20) / anim.h))
+        v.anim = [anim.w, anim.h, anim.frames, anim.ms, rows]
+      })
+    }
+    const sdBase = sdIdByNum.get(p.num)
+    if (sdBase) {
+      const sdId = `${sdBase}-${suffix.replace(/_/g, '')}` // charizard-megax, kyogre-primal
+      const v = { k: 'bw', src: 'bw', label: 'BW 스타일', official: false, by: [SMOGON] }
+      list.push(v)
+      jobs.push(async () => {
+        const png = await cached(path.join(CACHE, 'bw', `${sdId}.png`), `${SHOWDOWN}sprites/gen5/${sdId}.png`)
+        if (!png) return void (v.missing = true)
+        const rel = `bw/${p.num}-${suffix}.png`
+        await save(rel, png)
+        v.file = rel
+        const back = await cached(path.join(CACHE, 'bw-back', `${sdId}.png`), `${SHOWDOWN}sprites/gen5-back/${sdId}.png`)
+        if (back) {
+          await save(`bw-back/${p.num}-${suffix}.png`, back)
+          v.back = `bw-back/${p.num}-${suffix}.png`
+        }
+      })
+    }
+  }
+
   console.log(`이미지 ${jobs.length}개 처리 중…`)
   await pool(jobs, 12, (job) => job())
 
@@ -238,6 +293,8 @@ async function main() {
   for (const id of Object.keys(variants)) {
     variants[id] = variants[id].filter((v) => !v.missing)
     total += variants[id].length
+    // 도트가 없는 폼은 목록에서 빼서 기본 폼 도트를 쓰게 함
+    if (!variants[id].length && formNum.has(id)) delete variants[id]
   }
 
   // 사용되지 않은 작가 제거 후 번호 재배치
@@ -270,7 +327,8 @@ async function writeCredits(dex, artistList, variants) {
   const enName = new Map()
   const tracker = JSON.parse(await readFile(path.join(CACHE, 'tracker.json'), 'utf8'))
   for (const p of dex) enName.set(p.id, tracker[String(p.num).padStart(4, '0')]?.name?.replace(/_/g, ' ').trim() ?? p.id)
-  const numOf = new Map(dex.map((p) => [p.id, p.num]))
+  const numOf = new Map([...dex.map((p) => [p.id, p.num]), ...formNum])
+  for (const [id] of formNum) enName.set(id, id.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
 
   const works = artistList.map(() => [])
   for (const [id, list] of Object.entries(variants)) {

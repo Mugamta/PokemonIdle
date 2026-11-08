@@ -1,11 +1,23 @@
 <script setup lang="ts">
-// 전투 탭 > 배틀: 기술 버튼(수동 전투)과 전투 로그
+// 전투 탭 > 배틀: 특수 기능 버튼, 기술 버튼(수동 전투)과 전투 로그
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { moveData, typeEffect } from '../core/battle'
+import { moveData, typeEffect, type MoveData } from '../core/battle'
+import { GIMMICK_INFO, GIMMICKS, maxMove, maxMoveFx, zEligible, zMove, type Gimmick } from '../core/gimmicks'
 import { dexData, TYPE_COLORS } from '../data/dex'
-import { findStage } from '../data/stages'
+import { findStage, regionOfGimmick } from '../data/stages'
 import { useBattleLogStore } from '../stores/battleLog'
-import { AUTO_UNLOCK_STAGE, MAX_MOVE_SLOTS, maxPpOf, ppOf, SLOT_DEFEATS, slotsOf, useGameStore } from '../stores/game'
+import {
+  AUTO_GIMMICK_LABELS,
+  AUTO_UNLOCK_STAGE,
+  heldOf,
+  MAX_MOVE_SLOTS,
+  maxPpOf,
+  ppOf,
+  SLOT_DEFEATS,
+  teraTypeOf,
+  useGameStore,
+  type AutoGimmick,
+} from '../stores/game'
 
 const game = useGameStore()
 const log = useBattleLogStore()
@@ -28,28 +40,87 @@ const foe = computed(() => {
   return game.enemyBattler()
 })
 
+// ---------- 특수 기능 (메가진화·Z기술·다이맥스·테라스탈) ----------
+/** 다음 기술과 함께 쓰려고 고른 특수 기능 */
+const armed = ref<Gimmick | null>(null)
+const options = computed(() => {
+  void game.party[0]?.heldItem
+  void game.party[0]?.moves.length
+  void game.enemy
+  return game.gimmickOptions()
+})
+watch(options, (list) => {
+  if (armed.value && !list.includes(armed.value)) armed.value = null
+})
+const gimmickButtons = computed(() =>
+  GIMMICKS.filter((g) => game.gimmickUnlocked(g)).map((g) => {
+    const on = options.value.includes(g)
+    let why = ''
+    if (!on) {
+      if (!game.enemy) why = '전투 중에만 쓸 수 있습니다'
+      else if (game.gimmickUsed) why = '특수 기능은 한 전투에 한 번만 쓸 수 있습니다'
+      else if (g === 'mega') why = '맞는 메가스톤을 지니고 있어야 합니다'
+      else if (g === 'z') why = 'Z크리스탈을 지니고, 같은 타입 공격기를 쓸 수 있어야 합니다'
+    }
+    const label = g === 'tera' && game.party[0] ? `${GIMMICK_INFO[g].label} · ${dexData.value?.types[teraTypeOf(game.party[0])] ?? ''}` : GIMMICK_INFO[g].label
+    return { g, on, label, title: why || GIMMICK_INFO[g].desc }
+  }),
+)
+/** 아직 해금하지 않은 특수 기능 안내 (다음 하나만) */
+const nextGimmick = computed(() => {
+  const g = GIMMICKS.find((x) => !game.gimmickUnlocked(x))
+  return g && game.anyGimmickUnlocked ? `${GIMMICK_INFO[g].label}: ${regionOfGimmick(g)?.name ?? '?'} 입장 시 해금` : ''
+})
+/** 지금 이어지고 있는 특수 기능 효과 */
+const activeText = computed(() => {
+  const g = game.gimmickActive
+  if (!g) return game.gimmickUsed && game.enemy ? '이번 전투에서 특수 기능을 썼습니다' : ''
+  if (g.kind === 'mega') return `메가진화 중 (${me.value?.name ?? ''})`
+  if (g.kind === 'dynamax') return `다이맥스 중 · 남은 ${g.turns}턴`
+  return `테라스탈 중 · ${dexData.value?.types[g.type] ?? g.type} 타입`
+})
+function toggleArm(g: Gimmick) {
+  armed.value = armed.value === g ? null : g
+}
+/** 기술 버튼에 보여 줄 실제 기술 (다이맥스 기술·Z기술) */
+function viewOf(m: MoveData): { v: MoveData; tag: string } {
+  if (m.id === 'struggle') return { v: m, tag: '' }
+  if (game.gimmickActive?.kind === 'dynamax' || armed.value === 'dynamax') {
+    const v = maxMove(m)
+    return { v, tag: v.cls === 'status' ? '상대 공격을 막음' : maxMoveFx(v.type) }
+  }
+  const held = game.party[0] ? heldOf(game.party[0]) : null
+  if (armed.value === 'z' && zEligible(m, held)) return { v: zMove(m), tag: 'Z기술' }
+  return { v: m, tag: '' }
+}
+function useMove(id: string) {
+  game.takeTurn(id, armed.value)
+  armed.value = null
+}
+
 /** 기술칸 8칸: 장착 기술 / 빈 칸 / 잠긴 칸(해금 조건 표시) */
 const slots = computed(() => {
   const member = game.party[0]
-  const open = member ? slotsOf(member) : 1
-  const defeats = member?.defeats ?? 0
+  const open = member ? game.slotsOf(member) : 1
+  const defeats = game.totalDefeats
   return Array.from({ length: MAX_MOVE_SLOTS }, (_, i) => {
     if (i >= open) {
       const need = SLOT_DEFEATS[i - 1]
-      const cond = need != null ? `격파 ${Math.min(defeats, need)}/${need}` : '상점에서 해금'
+      const cond = need != null ? `계정 격파 ${Math.min(defeats, need)}/${need}` : '상점에서 해금'
       return { kind: 'locked' as const, cond }
     }
     const id = game.party[0]?.moves[i]
     const m = id ? moveData(id) : null
     if (!m) return { kind: 'empty' as const }
+    const { v, tag } = viewOf(m)
     let hint = ''
-    if (foe.value && me.value && m.cls !== 'status') {
-      const eff = m.type === 'typeless' ? 1 : typeEffect(m.type, foe.value)
+    if (foe.value && me.value && v.cls !== 'status') {
+      const eff = v.type === 'typeless' ? 1 : typeEffect(v.type, foe.value)
       hint = eff === 0 ? '효과 없음' : eff > 1 ? '효과 굉장함' : eff < 1 ? '효과 별로' : ''
     }
     const max = maxPpOf(m.id, member)
     const pp = member ? ppOf(member, m.id) : max
-    return { kind: 'move' as const, m, hint, pp, max, out: game.ppActive && pp === 0 }
+    return { kind: 'move' as const, m, v, tag, special: v !== m, hint, pp, max, out: game.ppActive && pp === 0 }
   })
 })
 /** 모든 기술의 PP가 0이면 발버둥 */
@@ -72,11 +143,14 @@ const autoHint = computed(() => {
 
 const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 
-// 로그 자동 스크롤 (탭을 바꾸거나 보고 있는 전투에 줄이 추가될 때)
+// 자동 전투 중에는 로그를 그리지 않음 (기록은 계속 쌓이고, 끄면 확인 가능)
+const hideLog = computed(() => game.auto)
+
+// 로그 자동 스크롤 (탭을 바꾸거나 보고 있는 전투에 줄이 추가될 때, 로그가 다시 보일 때)
 const logEl = ref<HTMLElement>()
 const latestId = computed(() => log.battles[log.battles.length - 1]?.id)
 watch(
-  () => [log.current?.id, log.current?.lines.length],
+  () => [log.current?.id, hideLog.value || log.current?.lines.length],
   async () => {
     await nextTick()
     if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
@@ -89,22 +163,49 @@ watch(
   <div class="controls">
     <p v-if="autoHint" class="tutorial">{{ autoHint }}</p>
 
+    <!-- 특수 기능: 버튼을 누른 뒤 기술을 고르면 그 턴에 발동 -->
+    <div v-if="gimmickButtons.length" class="gimmicks">
+      <button
+        v-for="b in gimmickButtons"
+        :key="b.g"
+        type="button"
+        class="gimmick"
+        :class="[b.g, { armed: armed === b.g }]"
+        :disabled="!b.on || !canAct"
+        :title="b.title"
+        @click="toggleArm(b.g)"
+      >
+        {{ b.label }}
+      </button>
+      <label class="auto-gimmick" title="자동 전투에서 특수 기능을 쓸지 (메가진화 > Z기술 > 다이맥스 > 테라스탈 순으로 쓸 수 있는 것)">
+        자동
+        <select :value="game.autoGimmick" @change="game.setAutoGimmick(($event.target as HTMLSelectElement).value as AutoGimmick)">
+          <option v-for="(label, k) in AUTO_GIMMICK_LABELS" :key="k" :value="k">{{ label }}</option>
+        </select>
+      </label>
+      <span v-if="armed" class="gimmick-note">{{ GIMMICK_INFO[armed].label }}: 기술을 고르면 발동합니다</span>
+      <span v-else-if="activeText" class="gimmick-note">{{ activeText }}</span>
+      <span v-else-if="nextGimmick" class="gimmick-note muted">{{ nextGimmick }}</span>
+    </div>
+
     <div class="moves">
       <template v-for="(s, i) in slots" :key="i">
         <button
           v-if="s.kind === 'move'"
           type="button"
           class="move"
-          :style="{ '--c': TYPE_COLORS[s.m.type] ?? '#666' }"
-          :class="{ out: s.out }"
+          :style="{ '--c': TYPE_COLORS[s.v.type] ?? '#666' }"
+          :class="{ out: s.out, special: s.special }"
           :disabled="!canAct || s.out"
-          @click="game.takeTurn(s.m.id)"
+          :title="s.special ? `원래 기술: ${s.m.ko}` : ''"
+          @click="useMove(s.m.id)"
         >
-          <span class="name">{{ s.m.ko }} <small v-if="s.hint" class="hint">{{ s.hint }}</small></span>
+          <span class="name">{{ s.v.ko }} <small v-if="s.hint" class="hint">{{ s.hint }}</small></span>
           <span v-if="s.max != null" class="pp" :class="{ low: s.pp != null && s.pp <= s.max / 4 }">PP {{ s.pp }}/{{ s.max }}</span>
           <span class="meta">
-            <span class="type">{{ dexData?.types[s.m.type] ?? s.m.type }}</span>
-            {{ CLS_LABEL[s.m.cls] }} · 위력 {{ s.m.power ?? '-' }} · 명중 {{ s.m.acc ?? '-' }}
+            <span class="type">{{ dexData?.types[s.v.type] ?? s.v.type }}</span>
+            {{ CLS_LABEL[s.v.cls] }} · 위력 {{ s.v.power ?? '-' }} · 명중 {{ s.v.acc ?? '-' }}
+            <template v-if="s.tag"> · {{ s.tag }}</template>
           </span>
         </button>
         <div v-else-if="s.kind === 'empty'" class="move slot">빈 칸 (기술 탭에서 장착)</div>
@@ -124,9 +225,9 @@ watch(
     <p class="status">{{ status }}</p>
 
     <div class="log-wrap">
-      <div v-if="log.battles.length" class="log-tabs">
+      <div class="log-tabs">
         <button
-          v-for="b in log.battles"
+          v-for="b in hideLog ? [] : log.battles"
           :key="b.id"
           type="button"
           class="log-tab"
@@ -138,8 +239,9 @@ watch(
         </button>
       </div>
       <div ref="logEl" class="log">
-        <p v-if="!log.current?.lines.length" class="empty">전투 기록이 여기에 표시됩니다.</p>
-        <template v-for="l in log.current?.lines ?? []" :key="l.id">
+        <p v-if="hideLog" class="empty">자동 전투 중에는 로그를 표시하지 않습니다. 자동 전투를 끄면 최근 전투 기록을 확인할 수 있습니다.</p>
+        <p v-else-if="!log.current?.lines.length" class="empty">전투 기록이 여기에 표시됩니다.</p>
+        <template v-for="l in hideLog ? [] : (log.current?.lines ?? [])" :key="l.id">
           <hr v-if="l.kind === 'divider'" class="divider" />
           <p v-else :class="l.kind">{{ l.text }}</p>
         </template>
@@ -246,6 +348,85 @@ watch(
   width: 100%;
 }
 
+.move.special {
+  border-color: var(--c);
+  background: linear-gradient(135deg, #2a2a33 60%, color-mix(in srgb, var(--c) 30%, #2a2a33));
+}
+
+.gimmicks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.gimmick {
+  padding: 5px 10px;
+  border: 1px solid var(--g);
+  border-radius: 999px;
+  background: #24242b;
+  color: var(--g);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.gimmick:disabled {
+  border-color: #3a3a44;
+  color: #6a6a76;
+  cursor: default;
+}
+
+.gimmick.armed {
+  background: var(--g);
+  color: #18181d;
+  box-shadow: 0 0 8px var(--g);
+}
+
+.gimmick.mega {
+  --g: #c58cff;
+}
+
+.gimmick.z {
+  --g: #ffcb05;
+}
+
+.gimmick.dynamax {
+  --g: #ff4a6e;
+}
+
+.gimmick.tera {
+  --g: #5fe3e8;
+}
+
+.auto-gimmick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #9a9aa6;
+  font-size: 11px;
+}
+
+.auto-gimmick select {
+  padding: 2px 4px;
+  border: 1px solid #3a3a44;
+  border-radius: 4px;
+  background: #24242b;
+  color: #ddd;
+  font: inherit;
+  font-size: 11px;
+}
+
+.gimmick-note {
+  color: #c8c8d0;
+  font-size: 11px;
+}
+
+.gimmick-note.muted {
+  color: #6a6a76;
+}
+
 .slot {
   min-height: 34px;
   justify-content: center;
@@ -255,11 +436,18 @@ watch(
   cursor: default;
 }
 
+/* 문구 길이와 상관없이 항상 한 줄 높이 (줄바꿈으로 아래 로그가 출렁이지 않게) */
 .status {
+  flex: none;
+  height: 18px;
   margin: 0;
+  overflow: hidden;
   color: #9a9aa6;
   font-size: 12px;
+  line-height: 18px;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .log-wrap {
@@ -269,8 +457,11 @@ watch(
   min-height: 0;
 }
 
+/* 전투 기록이 없어도 탭 줄 높이를 유지 */
 .log-tabs {
+  flex: none;
   display: flex;
+  height: 20px;
   gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
@@ -322,15 +513,13 @@ watch(
   flex: 1;
   min-height: 72px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 8px 10px;
   border-radius: 6px;
+  border-top-left-radius: 0;
   background: #18181d;
   font-size: 13px;
   line-height: 1.6;
-}
-
-.log-tabs + .log {
-  border-top-left-radius: 0;
 }
 
 .log p {

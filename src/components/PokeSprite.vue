@@ -2,6 +2,7 @@
 // 포켓몬 도트 표시. 설정(기본 도트 / 포켓몬별 선택)에 따라 출처를 고르고,
 // PMD 도트는 Idle 애니메이션(아래 방향 줄)을 재생한다.
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { formOf } from '../core/gimmicks'
 import { loadSprites, resolveVariant, spriteData, spriteUrl, type SpriteVariant } from '../data/sprites'
 import { useGameStore } from '../stores/game'
 
@@ -29,11 +30,14 @@ const mirrored = computed(() => props.pose === 'back' && !shown.value?.anim && !
 const game = useGameStore()
 onMounted(() => loadSprites().catch(() => {}))
 
-const shown = computed(
-  () =>
-    props.variant ??
-    resolveVariant(spriteData.value?.variants[props.species], game.spriteDefault, game.spriteChoice[props.species]),
-)
+const shown = computed(() => {
+  if (props.variant) return props.variant
+  const variants = spriteData.value?.variants
+  // 메가진화 폼: 폼 도트가 없으면 기본 폼 도트, 도트 선택은 기본 폼의 선택을 따름
+  const base = formOf(props.species)?.base
+  const list = variants?.[props.species] ?? (base ? variants?.[base] : undefined)
+  return resolveVariant(list, game.spriteDefault, game.spriteChoice[props.species] ?? (base && game.spriteChoice[base]) ?? undefined)
+})
 
 // 지연 로딩
 const el = ref<HTMLElement>()

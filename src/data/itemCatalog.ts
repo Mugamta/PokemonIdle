@@ -1,4 +1,5 @@
 // 도구 도감: 모든 도구를 분류하고, 이 게임에서 어떻게 쓰이는지 표시
+import { isMegaItem, Z_CRYSTALS } from '../core/gimmicks'
 import { BATTLE_HELD, POWER_ITEMS } from '../core/items'
 import { dexData, type ItemInfo } from './dex'
 import { BALL_NOTES, EXP_SHARE_ITEM, heldItem, isMachine, LUCKY_EGG, MACHO_BRACE, MONEY_ITEMS, SOOTHE_BELL, tmPrice } from './items'
@@ -54,7 +55,14 @@ export function dexItemGroup(id: string, info: ItemInfo): DexItemGroup {
 
 /** 이 게임에서 효과가 있는 지닌 도구 */
 export const isHeldEffective = (id: string) =>
-  BATTLE_HELD.has(id) || id === LUCKY_EGG || id === SOOTHE_BELL || id === MACHO_BRACE || MONEY_ITEMS.has(id) || id in POWER_ITEMS
+  BATTLE_HELD.has(id) ||
+  id === LUCKY_EGG ||
+  id === SOOTHE_BELL ||
+  id === MACHO_BRACE ||
+  MONEY_ITEMS.has(id) ||
+  id in POWER_ITEMS ||
+  id in Z_CRYSTALS ||
+  isMegaItem(id)
 
 /** 이 게임에서의 쓰임 (도감 배지) */
 export interface ItemUse {
@@ -71,7 +79,7 @@ export function itemUse(id: string): ItemUse {
   if (s) {
     if (s.category === 'ball') roles.push(`포획${BALL_NOTES[id] ? ` (${BALL_NOTES[id]})` : ''}`)
     else if (s.category === 'battle') roles.push(s.escape ? '야생 배틀에서 도망' : '전투 중 사용')
-    else if (s.revive != null) roles.push('기절 회복')
+    else if (s.category === 'revive') roles.push('기절 회복')
     else roles.push('회복')
   }
   if (evoItem(id) || id === 'linking-cord') roles.push('진화')
@@ -79,6 +87,9 @@ export function itemUse(id: string): ItemUse {
   if (trainItem(id)) roles.push('육성')
   if (isHeldEffective(id)) roles.push('지닌 도구')
   if (tmPrice(id) != null) roles.push('기술 가르치기')
+  if (isMegaItem(id)) roles.push(id.endsWith('-orb') ? '원시회귀 (메가진화 해금 후)' : '메가진화 (메가진화 해금 후)')
+  if (id in Z_CRYSTALS) roles.push('Z기술 (Z기술 해금 후)')
+  if (id.endsWith('-tera-shard')) roles.push('테라스탈 타입 바꾸기 (테라스탈 해금 후)')
   if (id === EXP_SHARE_ITEM.id) roles.push('경험치 나누기 (공용 기능)')
   const buy = priceOf(id) ?? (id === EXP_SHARE_ITEM.id ? EXP_SHARE_ITEM.price : undefined)
   const sell = sellPrice(id)

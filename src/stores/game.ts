@@ -6,7 +6,9 @@ import {
   onBattleEnd,
   onEntry,
   expAtLevel,
+  expectedDamage,
   expGain,
+  moveData,
   maxHpOf,
   movesLearnedAt,
   movesUpToLevel,
@@ -24,7 +26,25 @@ import {
   type AbilityIntel,
   type AiMode,
   type Volatile,
+  type MoveData,
+  onAbilityChange,
 } from '../core/battle'
+import {
+  DYNAMAX_TURNS,
+  formOf,
+  GIMMICK_INFO,
+  GIMMICKS,
+  isMegaItem,
+  maxMove,
+  megaFormFor,
+  TERA_SHARD_COST,
+  teraShardOf,
+  Z_CRYSTALS,
+  zEligible,
+  zMove,
+  type ActiveGimmick,
+  type Gimmick,
+} from '../core/gimmicks'
 import { abilityName, hiddenAbility, normalAbilities, speciesAbilities } from '../core/abilities'
 import { phaseAt } from '../core/dayNight'
 import { battleData, STATUS_LABELS, type StageKey, type Status } from '../data/battle'
@@ -42,10 +62,15 @@ import { HOME_TOWNS, nearestTown } from '../data/mapGraph'
 import { NATURES } from '../data/natures'
 import type { SpriteDefault } from '../data/sprites'
 import {
+  AUTO_CENTER_PERK,
+  AUTO_CENTER_PP_RATIO,
+  type AutoCenterPriority,
   BOSS_INTRO_PERK,
+  DEX_REVEAL_PERK,
   BOTTLE_CAP_LEVEL,
   CHAIN_PERKS,
   EV_TOTAL_MAX,
+  HEART_SCALE,
   evBreak2Price,
   evStatCap,
   PP_UP_MAX,
@@ -57,6 +82,7 @@ import {
   DEFAULT_AUTO_BUY,
   EVERSTONE_ITEM,
   extraSlotPrice,
+  gimmickItemOf,
   PERKS,
   priceOf,
   prizeMoney,
@@ -100,18 +126,19 @@ export const BOSS_DEFEATS = 10
 export const AUTO_UNLOCK_STAGE = '1-1'
 /** 기술칸 최대 수 */
 export const MAX_MOVE_SLOTS = 8
-/** 2·3·4번째 기술칸 해금에 필요한, 그 포켓몬이 직접 쓰러뜨린 수 */
+/** 2·3·4번째 기술칸 해금에 필요한, 계정 전체에서 쓰러뜨린 수 */
 export const SLOT_DEFEATS = [10, 30, 50]
-/** 상점에서 추가로 열 수 있는 기술칸 수 (기본 4칸을 모두 연 포켓몬만) */
+/** 상점에서 추가로 열 수 있는 기술칸 수 (기본 4칸이 모두 열린 뒤) */
 export const EXTRA_SLOTS = MAX_MOVE_SLOTS - 1 - SLOT_DEFEATS.length
+/** 기본 기술칸이 모두 열렸을 때의 칸 수 */
+export const BASE_SLOTS_MAX = 1 + SLOT_DEFEATS.length
 
-/** 격파 수로 열린 기본 기술칸 수 (1~4) */
-export const baseSlotsOf = (m: Pick<PartyMember, 'defeats'>) =>
-  1 + SLOT_DEFEATS.filter((n) => (m.defeats ?? 0) >= n).length
+/** 계정 전체 격파 수로 열린 기본 기술칸 수 (1~4) */
+export const baseSlotsAt = (totalDefeats: number) => 1 + SLOT_DEFEATS.filter((n) => totalDefeats >= n).length
 /** 사용 가능한 기술칸 수 (1~8) */
-export function slotsOf(m: Pick<PartyMember, 'defeats' | 'extraSlots'>): number {
-  const base = baseSlotsOf(m)
-  return base === 1 + SLOT_DEFEATS.length ? Math.min(MAX_MOVE_SLOTS, base + (m.extraSlots ?? 0)) : base
+export function slotsAt(totalDefeats: number, m: Pick<PartyMember, 'extraSlots'>): number {
+  const base = baseSlotsAt(totalDefeats)
+  return base === BASE_SLOTS_MAX ? Math.min(MAX_MOVE_SLOTS, base + (m.extraSlots ?? 0)) : base
 }
 
 /** 이 스테이지를 클리어한 뒤부터 PP가 소모됨 */
@@ -132,6 +159,10 @@ export function ppOf(m: Pick<PartyMember, 'pp' | 'ppUps'>, moveId: string): numb
 /** 보스 클리어 후 동작 */
 export type StageMode = 'advance' | 'repeat'
 
+/** 자동 전투의 특수 기능 사용: off = 안 씀, boss = 보스전에서만, always = 매 전투 */
+export type AutoGimmick = 'off' | 'boss' | 'always'
+export const AUTO_GIMMICK_LABELS: Record<AutoGimmick, string> = { off: '안 씀', boss: '보스전만', always: '매 전투' }
+
 /** 스테이지 순서 버전. 2 = 수상 스테이지를 레벨에 맞게 뒤로 옮김 */
 const STAGE_ORDER = 2
 
@@ -147,8 +178,10 @@ export interface PartyMember {
   level: number
   /** 장착한 기술 identifier (기술 슬롯 수까지) */
   moves: string[]
-  /** 배운 기술 전체 (장착하지 않은 기술 포함) */
+  /** 배운 기술 전체 (장착 기술 + 잊은 기술. 잊은 기술은 하트비늘로 되살림) */
   learned?: string[]
+  /** 레벨업·진화로 배우려 했지만 기술칸이 가득 차서 처리를 기다리는 기술 (배운 순서, 맨 앞부터 처리) */
+  pending?: string[]
   /** 누적 경험치. 없으면 현재 레벨의 시작값 */
   exp?: number
   /** 성격 id (예: 'adamant') */
@@ -161,8 +194,6 @@ export interface PartyMember {
   evLocked?: boolean[]
   /** 현재 HP. null/없음 = 최대 HP */
   hp?: number | null
-  /** 이 포켓몬이 직접 쓰러뜨린 수 (기술칸 해금 조건) */
-  defeats?: number
   /** 상점에서 연 추가 기술칸 수 (0~EXTRA_SLOTS) */
   extraSlots?: number
   /** 기술별 남은 PP. 없으면 최대 PP */
@@ -187,6 +218,8 @@ export interface PartyMember {
   heldSpent?: boolean
   /** 잡은 볼 (스타팅·진화 포켓몬은 없음) */
   ball?: string
+  /** 테라스탈 타입. 없으면 포켓몬의 첫 번째 타입 */
+  teraType?: string
 }
 
 const STAGE_LABEL: Record<StageKey, string> = {
@@ -199,15 +232,69 @@ const STAGE_LABEL: Record<StageKey, string> = {
   eva: '회피율',
 }
 
-/** 파티 최대 수 (넘으면 박스로) */
+/** 파티 최대 수 (넘으면 도감에 기록만 됨) */
 export const PARTY_MAX = 6
+
+/** 숨겨진 특성의 특성 번호 (DexRecord.abilities) */
+export const HIDDEN_ABILITY_SLOT = -1
+
+/**
+ * 도감 수집 기록 (포켓몬 종별). 포획하거나 파티에서 도감으로 보낸 개체의 정보를 합침.
+ * 도감에서 파티로 불러올 때 이 범위 안에서 골라서 가져옴
+ */
+export interface DexRecord {
+  /** 얻은 성격 id */
+  natures: string[]
+  /** 얻은 특성: 일반 특성 번호, 숨겨진 특성은 HIDDEN_ABILITY_SLOT */
+  abilities: number[]
+  /** 능력치별 개체값 최소·최대 */
+  ivMin: number[]
+  ivMax: number[]
+  /** 능력치별 노력치 최소·최대 */
+  evMin: number[]
+  evMax: number[]
+  levelMin: number
+  levelMax: number
+  friendshipMin: number
+  friendshipMax: number
+  /** 배운 적 있는 기술 */
+  moves: string[]
+  /** 기술별 포인트업 사용 횟수 최대 */
+  ppUps: Record<string, number>
+  /** 상점에서 연 추가 기술칸 최대 */
+  extraSlots: number
+}
+
+/** 도감에서 파티로 불러올 때 고르는 값 */
+export interface SummonChoice {
+  nature: string
+  /** 특성 번호 (HIDDEN_ABILITY_SLOT = 숨겨진 특성) */
+  ability: number
+  level: number
+  friendship: number
+  ivs: number[]
+  evs: number[]
+  /** 장착할 기술 (나머지 기록된 기술은 잊은 기술로 배운 상태) */
+  moves: string[]
+}
+
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
 
 /** 지금 효과가 있는 지닌 도구 (써서 사라졌으면 null) */
 export const heldOf = (m: Pick<PartyMember, 'heldItem' | 'heldSpent'>): string | null => (m.heldSpent ? null : (m.heldItem ?? null))
 
 /** 지닐 수 있는(효과가 있는) 도구인지: 전투 효과 또는 경험치·돈·친밀도·노력치 도구 */
 export function isHoldable(id: string): boolean {
-  return BATTLE_HELD.has(id) || id === LUCKY_EGG || id === SOOTHE_BELL || id === MACHO_BRACE || MONEY_ITEMS.has(id) || id in POWER_ITEMS
+  return (
+    BATTLE_HELD.has(id) ||
+    id === LUCKY_EGG ||
+    id === SOOTHE_BELL ||
+    id === MACHO_BRACE ||
+    MONEY_ITEMS.has(id) ||
+    id in POWER_ITEMS ||
+    id in Z_CRYSTALS ||
+    isMegaItem(id)
+  )
 }
 
 /** 기술머신으로 배울 수 있는지 (그 포켓몬의 기술표에 있는 기술) */
@@ -228,6 +315,11 @@ export function memberAbility(m: Pick<PartyMember, 'species' | 'abilitySlot' | '
   const normal = normalAbilities(m.species)
   if (m.hiddenAbility) return hiddenAbility(m.species) ?? normal[0] ?? null
   return normal.length ? normal[(m.abilitySlot ?? 0) % normal.length]! : null
+}
+
+/** 테라스탈 타입 (정하지 않았으면 포켓몬의 첫 번째 타입) */
+export function teraTypeOf(m: Pick<PartyMember, 'species' | 'teraType'>): string {
+  return m.teraType ?? speciesOf(m.species)?.types[0] ?? 'normal'
 }
 
 /** 친밀도 (저장값이 없으면 포켓몬의 기본 친밀도) */
@@ -402,8 +494,10 @@ export const useGameStore = defineStore('game', {
     /** 이동 중일 때 목적지와 도착 시각 */
     travel: null as { to: string; arriveAt: number } | null,
     party: [] as PartyMember[],
-    /** 박스 (파티가 가득 찼을 때 잡은 포켓몬) */
-    box: [] as PartyMember[],
+    /** 도감 수집 기록 {포켓몬 id: 기록} */
+    dexRecords: {} as Record<string, DexRecord>,
+    /** 계정 전체에서 쓰러뜨린 포켓몬 수 (기본 기술칸 해금 조건) */
+    totalDefeats: 0,
     /** 학습장치 구매 여부 / 켜짐 (공용 기능) */
     expShareOwned: false,
     expShare: false,
@@ -415,6 +509,10 @@ export const useGameStore = defineStore('game', {
     playerVol: {} as Volatile,
     /** 상대가 아는 내 포켓몬의 특성 정보 (어려움 난이도 AI) */
     playerIntel: null as AbilityIntel | null,
+    /** 이번 전투에서 특수 기능(메가진화·Z기술·다이맥스·테라스탈)을 썼는지. 한 전투에 하나를 한 번만 */
+    gimmickUsed: false,
+    /** 싸우는 포켓몬에게 이어지는 특수 기능 효과 (교체하거나 전투가 끝나면 사라짐) */
+    gimmickActive: null as ActiveGimmick | null,
     /** 다음 야생 포켓몬이 나오는 시각 */
     nextEncounterAt: 0,
     /** 패배 후 회복 중 */
@@ -427,6 +525,8 @@ export const useGameStore = defineStore('game', {
     unlockedRegions: [1] as number[],
     /** 포획한 적 있는 포켓몬 id */
     caught: [] as string[],
+    /** 조우한 적 있는 포켓몬 id (보스 포함. 포획·진화로 얻은 포켓몬은 caught 로 판단) */
+    seen: [] as string[],
     /** 돈 */
     money: 0,
     /** 보유 아이템 {identifier: 개수} */
@@ -450,8 +550,14 @@ export const useGameStore = defineStore('game', {
     auto: false,
     /** 보스 클리어 후 동작: advance = 다음 스테이지로 이동, repeat = 현재 스테이지에서 일반 10마리 + 보스 반복 */
     stageMode: 'advance' as StageMode,
+    /** 자동 전투에서 특수 기능 사용 */
+    autoGimmick: 'always' as AutoGimmick,
     /** 보스 등장 연출 생략 켜짐 (상점 기능 'bossIntro:skip' 구매 필요) */
     skipBossIntro: false,
+    /** PP 자동 센터 귀환 켜짐 (상점 기능 'autoCenter:pp' 구매 필요) */
+    autoCenter: false,
+    /** PP가 바닥났을 때 우선할 것: item = PP 회복 아이템(자동 사용이 켜져 있고 아이템이 있으면), center = 센터 귀환 */
+    autoCenterPriority: 'item' as AutoCenterPriority,
     /** 변함없는돌 구매 여부 (공용 기능) */
     everstoneOwned: false,
     /** 변함없는돌 켜짐: 레벨업 진화를 막음 */
@@ -468,6 +574,18 @@ export const useGameStore = defineStore('game', {
     /** PP 소모 여부 (PP_START_STAGE 클리어 후) */
     ppActive: (s) => s.clearedStages.includes(PP_START_STAGE),
     hasPerk: (s) => (id: PerkId) => s.perks.includes(id),
+    /** 계정 전체 격파 수로 열린 기본 기술칸 수 (1~4) */
+    baseSlots: (s) => baseSlotsAt(s.totalDefeats),
+    /** 이 포켓몬이 사용할 수 있는 기술칸 수 (1~8) */
+    slotsOf: (s) => (m: Pick<PartyMember, 'extraSlots'>) => slotsAt(s.totalDefeats, m),
+    /** 도감 공개 단계: 'full' = 모든 정보, 'sprite' = 도트만 (조우), 'hidden' = ??? (미조우) */
+    dexLevel: (s) => {
+      const caught = new Set(s.caught)
+      const seen = new Set(s.seen)
+      const reveal = s.perks.includes('dex:reveal')
+      return (id: string): 'full' | 'sprite' | 'hidden' =>
+        caught.has(id) || reveal ? 'full' : seen.has(id) ? 'sprite' : 'hidden'
+    },
     /** 능력치 하나의 노력치 한계 */
     evStatCap: (s) => evStatCap(s.perks.includes('evBreak:1') ? s.evBreaks : 0),
     /** 노력치 합계 한계 (한계 돌파 1이면 없음) */
@@ -494,6 +612,12 @@ export const useGameStore = defineStore('game', {
       return SPEED_DELAY_MS[this.speedLevel('search')]
     },
     autoAiMode: (s): AiMode => (s.perks.includes('ai:smart') ? 'smart' : s.perks.includes('ai:strong') ? 'strong' : 'random'),
+    /** 특수 기능 해금 여부 (해금하는 지방에 들어간 적 있음) */
+    gimmickUnlocked: (s) => (g: Gimmick) => REGIONS.some((r) => r.unlocks === g && s.unlockedRegions.includes(r.id)),
+    /** 해금한 특수 기능이 하나라도 있음 */
+    anyGimmickUnlocked(): boolean {
+      return GIMMICKS.some((g) => this.gimmickUnlocked(g))
+    },
     /** 해금된 지방이 무대인 세대 목록 */
     unlockedGens: (s) => REGIONS.filter((r) => s.unlockedRegions.includes(r.id)).flatMap((r) => r.gens),
     /** 이동 가능한 지방인지 (히든 지방은 조건 포켓몬 포획 필요) */
@@ -537,8 +661,10 @@ export const useGameStore = defineStore('game', {
         return
       }
       if (!this.enemy) {
-        // 전투 사이: 턴 소모 없이 아이템 자동 사용
+        // 전투 사이: PP가 바닥났으면 센터로 (센터 우선이면 아이템보다 먼저), 턴 소모 없이 아이템 자동 사용
+        if (this.autoCenterPriority === 'center' && this.autoCenterForPp()) return
         if (this.auto && this.autoUseItem()) return
+        if (this.autoCenterForPp()) return
         if (now < this.nextEncounterAt) return
         // 일반 포켓몬을 BOSS_DEFEATS 마리 쓰러뜨리면 다음 조우는 반드시 보스
         if (this.bossReady(this.currentStageId)) this.challengeBoss()
@@ -547,12 +673,22 @@ export const useGameStore = defineStore('game', {
       }
       // 자동 전투: 연출이 끝나면 다음 턴
       if (this.auto && !log.isBusy()) {
+        if (this.autoSwitchLead()) return
         if (this.autoUseItem()) return
         const me = this.playerBattler()
         const foe = this.enemyBattler()
         if (!me || !foe) return
         me.moves = this.usableMoves()
-        this.takeTurn(chooseMove(me, foe, this.autoAiMode))
+        // 특수 기능을 쓸 차례면 실제로 나갈 기술(다이맥스 기술·Z기술)로 비교해 고름
+        const g = this.autoGimmickPick()
+        const held = heldOf(this.party[0]!)
+        const transform =
+          g === 'dynamax' || this.gimmickActive?.kind === 'dynamax'
+            ? maxMove
+            : g === 'z'
+              ? (m: MoveData) => (zEligible(m, held) ? zMove(m) : m)
+              : undefined
+        this.takeTurn(chooseMove(me, foe, this.autoAiMode, transform), g)
       }
     },
 
@@ -580,24 +716,62 @@ export const useGameStore = defineStore('game', {
       for (const k of ['autoBoss', 'autoBossSuspended', 'bossFailStreak', 'bossFailLimit']) delete st[k]
       for (const k of Object.keys(this.autoUse)) if (!(k in DEFAULT_AUTO_BUY)) delete (this.autoUse as Record<string, unknown>)[k]
       if (!Array.isArray(this.perks)) this.perks = []
+      // 이전 저장 데이터 호환: 전체 조우 기록이 없으면 스테이지별 조우 기록으로 채움
+      if (!Array.isArray(this.seen)) this.seen = []
+      const seen = new Set(this.seen)
+      for (const p of Object.values(this.stageProgress)) for (const id of p.seen ?? []) seen.add(id)
+      if (seen.size !== this.seen.length) this.seen = [...seen]
       if (!Number.isInteger(this.evBreaks) || this.evBreaks < 0) this.evBreaks = 0
+      // 이전 저장 데이터 호환: 회복·기절 회복이 한 분류였던 시절 → 기절 회복 자동 사용·자동 구매를 따로 나눔
+      if (this.perks.includes('autoUse:heal') && !this.perks.includes('autoUse:revive')) {
+        this.perks.push('autoUse:revive')
+        this.autoUse.revive = !!this.autoUse.heal
+      }
+      const oldHealBuy = shopItem(this.autoBuyItem?.heal ?? '')
+      if (oldHealBuy?.category === 'revive') {
+        this.autoBuyItem.revive = oldHealBuy.id
+        if (this.perks.includes('autoBuy:heal') && !this.perks.includes('autoBuy:revive')) {
+          this.perks.push('autoBuy:revive')
+          this.autoBuy.revive = !!this.autoBuy.heal
+        }
+      }
       this.autoBuyItem = { ...DEFAULT_AUTO_BUY, ...this.autoBuyItem }
       if (!Number.isFinite(this.money)) this.money = 0
       if (this.enemy && !this.enemy.species) this.enemy = null
       if (!this.autoUnlocked) this.auto = false
       if (this.stageMode !== 'repeat') this.stageMode = 'advance'
+      if (!['off', 'boss', 'always'].includes(this.autoGimmick)) this.autoGimmick = 'always'
+      // 전투 밖에 특수 기능 효과가 남아 있으면 정리 (다이맥스 HP 복구)
+      if (!this.enemy) this.endBattleGimmick()
       if (!this.everstoneOwned) this.everstone = false
       if (!this.perks.includes('bossIntro:skip')) this.skipBossIntro = false
-      if (!Array.isArray(this.box)) this.box = []
+      if (!this.perks.includes('autoCenter:pp')) this.autoCenter = false
+      if (this.autoCenterPriority !== 'center') this.autoCenterPriority = 'item'
       if (!this.expShareOwned) this.expShare = false
       for (const k of Object.keys(this.autoBuyItem) as AutoCategory[])
         if (shopItem(this.autoBuyItem[k])?.category !== k) this.autoBuyItem[k] = DEFAULT_AUTO_BUY[k]
-      // 파티가 넘치면 박스로
-      while (this.party.length > PARTY_MAX) this.box.push(this.party.pop()!)
-      for (const m of [...this.party, ...this.box]) if (!m.heldItem) m.heldSpent = false
+      // 이전 저장 데이터 호환: 박스 시절 → 박스 포켓몬은 도감 기록으로, 포켓몬별 격파 수 → 계정 격파 수
+      const oldBox = Array.isArray(st.box) ? (st.box as PartyMember[]) : []
+      delete st.box
+      const firstRecords = !this.dexRecords || typeof this.dexRecords !== 'object' || !Object.keys(this.dexRecords).length
+      if (!this.dexRecords || typeof this.dexRecords !== 'object') this.dexRecords = {}
+      if (!Number.isInteger(this.totalDefeats) || this.totalDefeats < 0) this.totalDefeats = 0
+      const legacy = (m: PartyMember) => m as PartyMember & { defeats?: number }
+      if (!this.totalDefeats)
+        this.totalDefeats = [...this.party, ...oldBox].reduce((a, m) => a + (legacy(m).defeats ?? 0), 0)
+      for (const m of [...this.party, ...oldBox]) delete legacy(m).defeats
+      if (firstRecords) for (const m of this.party) this.recordToDex(m)
+      for (const m of oldBox) this.sendToDexMember(m)
+      // 파티가 넘치면 도감으로
+      while (this.party.length > PARTY_MAX) this.sendToDexMember(this.party.pop()!)
+      for (const m of this.party) if (!m.heldItem) m.heldSpent = false
+      // 장착하지 않은 기술은 잊은 기술(learned 에만 있음)로 취급. 대기열은 배운 기술과 겹치지 않게
       for (const m of this.party) {
-        m.learned ??= [...m.moves]
-        if (m.moves.length > slotsOf(m)) m.moves = m.moves.slice(0, slotsOf(m))
+        const learned = (m.learned ??= [...m.moves])
+        if (m.moves.length > this.slotsOf(m)) m.moves = m.moves.slice(0, this.slotsOf(m))
+        for (const id of m.moves) if (!learned.includes(id)) learned.push(id)
+        if (m.pending) m.pending = [...new Set(m.pending)].filter((id) => !learned.includes(id))
+        this.fillFromPending(m, false)
       }
     },
 
@@ -610,7 +784,9 @@ export const useGameStore = defineStore('game', {
       for (const m of this.party) {
         m.abilitySlot ??= randInt(0, Math.max(0, normalAbilities(m.species).length - 1))
         const learned = (m.learned ??= [...m.moves])
-        for (const id of movesUpToLevel(m.species, m.level, this.unlockedGens)) if (!learned.includes(id)) learned.push(id)
+        const pending = m.pending ?? []
+        for (const id of movesUpToLevel(m.species, m.level, this.unlockedGens))
+          if (!learned.includes(id) && !pending.includes(id)) learned.push(id)
       }
     },
 
@@ -620,6 +796,7 @@ export const useGameStore = defineStore('game', {
       this.party.push({ ...member, learned: [...member.moves] })
       this.backfillLearned()
       if (!this.caught.includes(member.species)) this.caught.push(member.species)
+      this.recordToDex(this.party[0]!)
     },
 
     moveTo(stageId: string) {
@@ -629,6 +806,7 @@ export const useGameStore = defineStore('game', {
         this.travel = null
         return
       }
+      this.endBattleGimmick()
       this.enemy = null
       if (this.canFly) {
         this.arrive(stageId)
@@ -639,12 +817,17 @@ export const useGameStore = defineStore('game', {
     arrive(stageId: string) {
       this.currentStageId = stageId
       this.travel = null
+      this.endBattleGimmick()
       this.enemy = null
       this.nextEncounterAt = 0
       const region = findStage(stageId)?.region
       if (region && !this.unlockedRegions.includes(region.id)) {
         this.unlockedRegions.push(region.id)
         this.backfillLearned()
+        if (region.unlocks) {
+          const info = GIMMICK_INFO[region.unlocks]
+          useBattleLogStore().push(`${ro(region.name)} 들어와 ${josa(info.label, '이', '가')} 해금되었다! ${info.desc}`, 'good')
+        }
       }
     },
     cancelTravel() {
@@ -652,9 +835,31 @@ export const useGameStore = defineStore('game', {
     },
 
     // ---------- 전투 ----------
-    playerBattler(): Battler | null {
-      const m = this.party[0]
+    /** index = 파티 번호 (맨 앞이 아니면 랭크·전투 중 상태 없이 막 나온 상태로 계산) */
+    playerBattler(index = 0): Battler | null {
+      const m = this.party[index]
       if (!m) return null
+      if (index !== 0) {
+        const b: Battler = {
+          name: speciesOf(m.species)?.ko ?? m.species,
+          species: m.species,
+          level: m.level,
+          nature: m.nature,
+          ivs: m.ivs ?? [],
+          evs: m.evs ?? [],
+          hp: 0,
+          moves: m.moves,
+          stages: {},
+          status: m.status ?? null,
+          sleep: m.sleep,
+          toxic: 0,
+          ability: memberAbility(m),
+          item: heldOf(m),
+          vol: {},
+        }
+        b.hp = m.hp ?? maxHpOf(b)
+        return b
+      }
       const b: Battler = {
         name: speciesOf(m.species)?.ko ?? m.species,
         species: m.species,
@@ -673,8 +878,114 @@ export const useGameStore = defineStore('game', {
         vol: { ...this.playerVol },
         intel: this.playerIntel ? { cands: [...this.playerIntel.cands], known: this.playerIntel.known } : undefined,
       }
+      this.applyGimmick(b)
       b.hp = m.hp ?? maxHpOf(b)
       return b
+    },
+    /** 싸우는 포켓몬의 전투 계산에 특수 기능 효과 반영 (메가진화 폼·다이맥스·테라스탈) */
+    applyGimmick(b: Battler) {
+      const g = this.gimmickActive
+      if (!g) return
+      if (g.kind === 'mega') {
+        const f = formOf(g.form)
+        if (!f) return
+        b.species = f.id
+        b.name = f.ko
+        b.ability = battleData.value?.abilities[f.ability] ?? b.ability
+      } else if (g.kind === 'dynamax') b.dynamax = true
+      else b.tera = g.type
+    },
+    /** 파티 포켓몬의 최대 HP (싸우는 포켓몬이 다이맥스 중이면 2배) */
+    memberMaxHp(m: PartyMember): number {
+      const dynamax = m === this.party[0] && this.gimmickActive?.kind === 'dynamax'
+      return maxHpOf({ species: m.species, level: m.level, ivs: m.ivs ?? [], evs: m.evs ?? [], nature: m.nature, dynamax })
+    },
+
+    // ---------- 특수 기능 ----------
+    /** 지금 싸우는 포켓몬이 쓸 수 있는 특수 기능 (전투 중이고 이번 전투에서 아직 쓰지 않았을 때) */
+    gimmickOptions(): Gimmick[] {
+      const m = this.party[0]
+      if (!m || !this.enemy || this.gimmickUsed || this.faint || m.hp === 0 || !battleReady()) return []
+      const held = heldOf(m)
+      return GIMMICKS.filter((g) => {
+        if (!this.gimmickUnlocked(g)) return false
+        if (g === 'mega') return !!megaFormFor(m.species, held, m.learned ?? m.moves)
+        if (g === 'z') return !!held && held in Z_CRYSTALS && this.usableMoves().some((id) => zEligible(moveData(id), held))
+        return true
+      })
+    },
+    /** 자동 전투에서 이번 턴에 쓸 특수 기능 (우선순위: 메가진화 > Z기술 > 다이맥스 > 테라스탈) */
+    autoGimmickPick(): Gimmick | null {
+      if (this.autoGimmick === 'off' || (this.autoGimmick === 'boss' && !this.enemy?.boss)) return null
+      const opts = this.gimmickOptions()
+      return GIMMICKS.find((g) => opts.includes(g)) ?? null
+    },
+    setAutoGimmick(v: AutoGimmick) {
+      this.autoGimmick = v
+    },
+    /** 특수 기능 발동 (턴 계산 직전) */
+    activateGimmick(g: Gimmick) {
+      const log = useBattleLogStore()
+      const m = this.party[0]!
+      const name = speciesOf(m.species)?.ko ?? m.species
+      this.gimmickUsed = true
+      if (g === 'mega') {
+        const f = megaFormFor(m.species, heldOf(m), m.learned ?? m.moves)!
+        this.gimmickActive = { kind: 'mega', form: f.id }
+        if (f.kind === 'primal') {
+          log.push(`${name}의 원시회귀! ${josa(name, '은', '는')} 원시의 모습을 되찾았다!`, 'good')
+        } else {
+          if (f.item) log.push(`${name}의 ${josa(dexData.value?.items[f.item]?.ko ?? f.item, '과', '와')} 키스톤이 반응했다!`, 'info')
+          else log.push(`간절한 소원이 ${name}에게 닿았다!`, 'info')
+          log.push(`${josa(name, '은', '는')} ${ro(f.ko)} 메가진화했다!`, 'good')
+        }
+        // 메가진화한 모습의 특성은 상대에게 드러남
+        const a = battleData.value?.abilities[f.ability]
+        if (a) this.playerIntel = { cands: [a], known: true }
+      } else if (g === 'dynamax') {
+        if (m.hp != null) m.hp *= 2
+        this.gimmickActive = { kind: 'dynamax', turns: DYNAMAX_TURNS }
+        log.push(`${josa(name, '은', '는')} 다이맥스했다!`, 'good')
+      } else if (g === 'tera') {
+        const t = teraTypeOf(m)
+        this.gimmickActive = { kind: 'tera', type: t }
+        log.push(`${josa(name, '은', '는')} ${dexData.value?.types[t] ?? t} 타입으로 테라스탈했다!`, 'good')
+      } else {
+        log.push(`${josa(name, '은', '는')} Z파워를 몸에 둘렀다!`, 'good')
+      }
+    },
+    /** 싸우는 포켓몬의 특수 기능 효과를 끝냄 (교체·전투 종료·다이맥스 턴 종료). 다이맥스면 HP를 원래대로 */
+    endGimmick(announce = false) {
+      const g = this.gimmickActive
+      if (!g) return
+      this.gimmickActive = null
+      const m = this.party[0]
+      if (!m || g.kind !== 'dynamax') return
+      if (m.hp != null && m.hp > 0) {
+        const half = Math.max(1, Math.ceil(m.hp / 2))
+        m.hp = half >= this.memberMaxHp(m) ? null : half
+      }
+      if (announce) useBattleLogStore().push(`${speciesOf(m.species)?.ko ?? m.species}의 다이맥스가 끝났다!`, 'info')
+    },
+    /** 전투가 끝났을 때: 특수 기능 효과를 끝내고 다음 전투에서 다시 쓸 수 있게 */
+    endBattleGimmick() {
+      this.endGimmick()
+      this.gimmickUsed = false
+    },
+    /** 테라피스 TERA_SHARD_COST 개로 테라스탈 타입 변경 (테라스탈 해금 후) */
+    setTeraType(memberIndex: number, type: string): boolean {
+      const m = this.party[memberIndex]
+      const shard = teraShardOf(type)
+      if (!m || this.faint || !this.gimmickUnlocked('tera') || teraTypeOf(m) === type) return false
+      if ((this.items[shard] ?? 0) < TERA_SHARD_COST || !dexData.value?.types[type]) return false
+      // 테라스탈 중에는 바꿀 수 없음
+      if (memberIndex === 0 && this.gimmickActive?.kind === 'tera') return false
+      this.items[shard]! -= TERA_SHARD_COST
+      if (!this.items[shard]) delete this.items[shard]
+      m.teraType = type
+      const name = speciesOf(m.species)?.ko ?? m.species
+      useBattleLogStore().push(`${name}의 테라스탈 타입이 ${ro(dexData.value.types[type]!)} 바뀌었다!`, 'good')
+      return true
     },
     enemyBattler(): Battler | null {
       const e = this.enemy
@@ -706,6 +1017,7 @@ export const useGameStore = defineStore('game', {
     startBattle(enemy: WildPokemon) {
       const log = useBattleLogStore()
       this.refillHeld()
+      this.endBattleGimmick()
       this.enemy = enemy
       this.playerStages = {}
       this.playerVol = {}
@@ -714,6 +1026,7 @@ export const useGameStore = defineStore('game', {
       if (this.party[0]?.toxic) this.party[0].toxic = 0
       const p = (this.stageProgress[this.currentStageId] ??= { seen: [], defeats: 0 })
       if (!enemy.boss && !p.seen.includes(enemy.species)) p.seen.push(enemy.species)
+      if (!this.seen.includes(enemy.species)) this.seen.push(enemy.species)
       const name = speciesOf(enemy.species)?.ko ?? enemy.species
       log.beginBattle(name, !!enemy.boss)
       log.push(enemy.boss ? `보스 ${josa(name, '이', '가')} 승부를 걸어왔다!` : `앗! 야생 ${josa(name, '이', '가')} 튀어나왔다!`, 'info')
@@ -792,8 +1105,44 @@ export const useGameStore = defineStore('game', {
       return me ? selectableMoves(me, list) : list
     },
 
-    /** 한 턴 진행 (수동: 기술 버튼 / 자동: tick) */
-    takeTurn(moveId: string) {
+    /**
+     * 파티 포켓몬이 지금 상대에게 줄 수 있는 가장 큰 기대 데미지 (0 이하 = 타격할 기술이 없음).
+     * withPp = true 면 PP가 남은 기술만, false 면 PP와 관계없이 장착한 기술 전부
+     */
+    bestDamageVsFoe(index: number, withPp: boolean): number {
+      const m = this.party[index]
+      const me = this.playerBattler(index)
+      const foe = this.enemyBattler()
+      if (!m || !me || !foe || m.hp === 0) return 0
+      const list = withPp && this.ppActive ? m.moves.filter((id) => (ppOf(m, id) ?? 1) > 0) : m.moves
+      let best = 0
+      for (const id of selectableMoves(me, list)) {
+        const md = moveData(id)
+        if (md) best = Math.max(best, expectedDamage(me, foe, md))
+      }
+      return best
+    },
+
+    /**
+     * 자동 교체: 싸우는 포켓몬이 상대를 타격할 기술이 없으면 (PP와 무관하게)
+     * 유효한 타격을 줄 수 있는 파티 포켓몬 중 기대 데미지가 가장 큰 포켓몬으로 교체. 교체했으면 true
+     */
+    autoSwitchLead(): boolean {
+      if (!this.enemy || this.faint || this.bestDamageVsFoe(0, false) > 0) return false
+      let pick = -1
+      let bestDmg = 0
+      for (let i = 1; i < this.party.length; i++) {
+        const d = this.bestDamageVsFoe(i, true)
+        if (d > bestDmg) {
+          bestDmg = d
+          pick = i
+        }
+      }
+      return pick > 0 && this.setLead(pick)
+    },
+
+    /** 한 턴 진행 (수동: 기술 버튼 / 자동: tick). gimmick = 이번 턴에 쓰는 특수 기능 */
+    takeTurn(moveId: string, gimmick: Gimmick | null = null) {
       const log = useBattleLogStore()
       if (log.isBusy() || this.faint || !battleReady()) return
       const member = this.party[0]
@@ -801,13 +1150,13 @@ export const useGameStore = defineStore('game', {
       const usable = this.usableMoves()
       // 발버둥은 쓸 수 있는 기술이 없을 때만
       if (moveId === 'struggle' ? usable.length > 0 : !usable.includes(moveId)) return
-      this.queueTurn(moveId)
+      this.queueTurn(moveId, gimmick && this.gimmickOptions().includes(gimmick) ? gimmick : null)
     },
 
     /** 내 행동을 정하고 상대가 기술을 고를 때까지 대기 (battlePickMs 뒤 tick 에서 턴 계산) */
-    queueTurn(playerMove: string | null) {
+    queueTurn(playerMove: string | null, gimmick: Gimmick | null = null) {
       const log = useBattleLogStore()
-      log.pending = { move: playerMove }
+      log.pending = { move: playerMove, gimmick }
       log.wait(this.battlePickMs)
     },
     /** 대기 중인 턴 계산. 그 사이 상대가 사라졌거나 기술을 못 쓰게 됐으면 취소 */
@@ -818,19 +1167,34 @@ export const useGameStore = defineStore('game', {
       if (!pending || !this.enemy || this.faint || this.travel) return
       const move = pending.move
       if (move && move !== 'struggle' && !this.usableMoves().includes(move)) return
-      this.resolveTurn(move)
+      this.resolveTurn(move, pending.gimmick ?? null)
     },
 
-    /** 턴 계산 후 상태 반영. playerMove = null 이면 내 쪽은 행동하지 않음 (아이템 사용) */
-    resolveTurn(playerMove: string | null) {
+    /** 턴 계산 후 상태 반영. playerMove = null 이면 내 쪽은 행동하지 않음 (아이템 사용). gimmick = 이번 턴에 쓰는 특수 기능 */
+    resolveTurn(playerMove: string | null, gimmick: Gimmick | null = null) {
       const log = useBattleLogStore()
       const member = this.party[0]
+      if (!member || !this.enemy || member.hp === 0) return
+
+      // 특수 기능은 턴이 시작될 때 발동 (Z기술은 고른 기술이 Z크리스탈과 같은 타입일 때만)
+      let activated: Gimmick | null = null
+      if (gimmick && playerMove && this.gimmickOptions().includes(gimmick)) {
+        if (gimmick !== 'z' || zEligible(moveData(playerMove), heldOf(member))) {
+          this.activateGimmick(gimmick)
+          activated = gimmick
+        }
+      }
       const me = this.playerBattler()
       const foe = this.enemyBattler()
-      if (!member || !me || !foe || me.hp <= 0) return
+      if (!me || !foe || me.hp <= 0) return
+      // 메가진화로 바뀐 특성의 등장 효과 (위협 등)
+      if (activated === 'mega') for (const line of onAbilityChange(me, foe)) log.push(line)
 
+      // 실제로 나가는 기술: Z기술 / 다이맥스 중이면 다이맥스 기술 (PP는 원래 기술에서 소모)
+      const md = playerMove && playerMove !== 'struggle' ? moveData(playerMove) : null
+      const override = md ? (activated === 'z' ? zMove(md) : this.gimmickActive?.kind === 'dynamax' ? maxMove(md) : undefined) : undefined
       const enemyMove = chooseMove(foe, me, DIFFICULTY_AI[this.difficulty])
-      const result: TurnResult = runTurn(me, foe, playerMove, enemyMove)
+      const result: TurnResult = runTurn(me, foe, playerMove, enemyMove, override)
       for (const line of result.lines) log.push(line)
       this.battleTurns++
 
@@ -858,6 +1222,9 @@ export const useGameStore = defineStore('game', {
       e.status = foe.status ?? null
       e.sleep = foe.sleep
       e.toxic = foe.toxic
+      // 다이맥스: DYNAMAX_TURNS 턴이 지나면 끝남
+      const g = this.gimmickActive
+      if (g?.kind === 'dynamax' && member.hp !== 0 && --g.turns <= 0) this.endGimmick(true)
       // 다음 턴: 내 기술 선택
       log.wait(this.battlePickMs)
 
@@ -898,7 +1265,7 @@ export const useGameStore = defineStore('game', {
       const m = this.party[target]
       if (!m) return null
       const name = speciesOf(m.species)?.ko ?? m.species
-      const max = maxHpOf({ species: m.species, level: m.level, ivs: m.ivs ?? [], evs: m.evs ?? [], nature: m.nature })
+      const max = this.memberMaxHp(m)
       const hp = m.hp ?? max
       const friend = () => {
         if (def.friendship) this.addFriendship(m, def.friendship)
@@ -1038,11 +1405,33 @@ export const useGameStore = defineStore('game', {
     /** 야생 포켓몬과의 배틀에서 도망 (보상 없음) */
     escapeBattle() {
       if (!this.enemy || this.enemy.boss) return
+      this.endBattleGimmick()
       this.enemy = null
       this.playerVol = {}
       this.playerIntel = null
       useBattleLogStore().pending = null
       this.nextEncounterAt = Date.now() + this.searchMs
+    },
+
+    /**
+     * 파티 화면 회복 버튼용: 다친 포켓몬엔 부족한 만큼을 채우는 가장 싼 체력 회복 아이템,
+     * 기절한 포켓몬엔 가장 싼 기절 회복 아이템 (성스러운분은 다른 게 없을 때만). 쓸 게 없으면 null
+     */
+    quickHealPick(target: number): ShopItem | null {
+      const m = this.party[target]
+      if (!m) return null
+      const owned = (cat: ItemCategory) =>
+        SHOP_ITEMS.filter((i) => i.category === cat && (this.items[i.id] ?? 0) > 0 && this.itemEffect(i, target))
+      if (m.hp === 0) {
+        return [...owned('revive')].sort((a, b) => Number(!!a.party) - Number(!!b.party) || a.price - b.price)[0] ?? null
+      }
+      const max = this.memberMaxHp(m)
+      const hp = m.hp ?? max
+      if (hp >= max) return null
+      const list = owned('heal').filter((i) => i.hp != null || i.hpFrac != null)
+      const amount = (i: ShopItem) => (i.hp === 'full' ? max : i.hpFrac != null ? Math.floor(max * i.hpFrac) : (i.hp ?? 0))
+      const enough = [...list].sort((a, b) => a.price - b.price).find((i) => amount(i) >= max - hp)
+      return enough ?? [...list].sort((a, b) => amount(b) - amount(a))[0] ?? null
     },
 
     /** 아이템 자동 사용 (편의성 기능). 사용했으면 true */
@@ -1053,11 +1442,13 @@ export const useGameStore = defineStore('game', {
       const owned = (cat: ItemCategory) =>
         SHOP_ITEMS.filter((i) => i.category === cat && (this.items[i.id] ?? 0) > 0 && this.itemEffect(i))
       const on = (cat: AutoCategory) => this.perks.includes(`autoUse:${cat}`) && !!this.autoUse[cat]
+      // 전투 중 상대를 타격할 기술이 하나도 없으면 (PP와 무관하게) 회복약·PP 회복은 쓰지 않음
+      const useless = !!this.enemy && this.bestDamageVsFoe(0, false) <= 0
 
       // 1. 체력: 기준 아래면, 부족한 만큼을 채우는 가장 싼 아이템 (없으면 가장 많이 회복하는 아이템)
       const max = maxHpOf(me)
-      if (on('heal') && (me.hp / max) * 100 < this.autoHealAt) {
-        const list = owned('heal').filter((i) => i.revive == null)
+      if (!useless && on('heal') && (me.hp / max) * 100 < this.autoHealAt) {
+        const list = owned('heal')
         const need = max - me.hp
         const amount = (i: ShopItem) => (i.hp === 'full' ? max : i.hpFrac != null ? Math.floor(max * i.hpFrac) : (i.hp ?? 0))
         const sorted = [...list].sort((a, b) => a.price - b.price)
@@ -1071,7 +1462,7 @@ export const useGameStore = defineStore('game', {
         if (pick && this.useItem(pick.id)) return true
       }
       // 3. PP: PP가 0인 기술이 있으면. 2개 이상이면 전체 회복 아이템 우선
-      if (on('pp') && this.ppActive) {
+      if (!useless && on('pp') && this.ppActive) {
         const empty = m.moves.filter((id) => ppOf(m, id) === 0).length
         if (empty) {
           const list = owned('pp')
@@ -1093,6 +1484,29 @@ export const useGameStore = defineStore('game', {
         if (pick && this.useItem(pick.id)) return true
       }
       return false
+    },
+
+    /**
+     * PP 자동 센터 귀환 (편의성 기능, 자동 전투 중 전투 사이에만):
+     * 싸우는 포켓몬의 모든 기술 PP가 AUTO_CENTER_PP_RATIO 미만이면 회복하러 감.
+     * 아이템 우선이면, PP 회복 아이템 자동 사용이 켜져 있고 쓸 수 있는 아이템이 있을 때는 가지 않음. 갔으면 true
+     */
+    autoCenterForPp(): boolean {
+      if (!this.auto || !this.autoCenter || !this.perks.includes('autoCenter:pp') || !this.ppActive) return false
+      if (this.faint || this.travel || this.enemy) return false
+      const m = this.party[0]
+      if (!m || m.hp === 0) return false
+      const moves = m.moves
+        .map((id) => ({ left: ppOf(m, id), max: maxPpOf(id, m) }))
+        .filter((x): x is { left: number; max: number } => x.left != null && x.max != null && x.max > 0)
+      if (!moves.length || moves.some((x) => x.left >= x.max * AUTO_CENTER_PP_RATIO)) return false
+      if (this.autoCenterPriority === 'item' && this.perks.includes('autoUse:pp') && this.autoUse.pp) {
+        const hasItem = SHOP_ITEMS.some((i) => i.category === 'pp' && (this.items[i.id] ?? 0) > 0 && this.itemEffect(i))
+        if (hasItem) return false
+      }
+      useBattleLogStore().push('PP가 얼마 남지 않아 회복하러 돌아갔다.', 'info')
+      this.goRecover(RETREAT_MS, true)
+      return true
     },
 
     /** 아이템 자동 구매 (편의성 기능): 고른 아이템이 떨어지면 1개 */
@@ -1126,21 +1540,27 @@ export const useGameStore = defineStore('game', {
     },
 
     // ---------- 기술머신 ----------
-    /** 기술머신으로 기술 가르치기 (기술레코드는 사라짐) */
-    useMachine(memberIndex: number, itemId: string): boolean {
+    /**
+     * 기술머신으로 기술 가르치기 (기술레코드는 사라짐). 대기열을 거치지 않음:
+     * 빈 칸이 있으면 장착, 칸이 가득 차면 replaceId 기술을 잊고 그 자리에 장착
+     */
+    useMachine(memberIndex: number, itemId: string, replaceId?: string): boolean {
       const m = this.party[memberIndex]
       const move = dexData.value?.items[itemId]?.move
       if (!m || !move || !isMachine(itemId) || (this.items[itemId] ?? 0) <= 0 || this.faint) return false
       if ((m.learned ?? m.moves).includes(move) || !canLearnMachine(m, move)) return false
+      const full = m.moves.length >= this.slotsOf(m)
+      if (full && (!replaceId || !m.moves.includes(replaceId))) return false
       const itemName = dexData.value?.items[itemId]?.ko ?? itemId
       const name = speciesOf(m.species)?.ko ?? m.species
       useBattleLogStore().push(`${name}에게 ${josa(itemName, '을', '를')} 사용했다!`, 'info')
       if (isRecord(itemId)) this.takeFromBag(itemId)
-      this.learnMove(m, move)
+      if (m.pending) m.pending = m.pending.filter((id) => id !== move)
+      this.putMove(m, move, full ? replaceId : undefined)
       return true
     },
 
-    // ---------- 파티·박스 ----------
+    // ---------- 파티·도감 ----------
     /** 파티 포켓몬을 싸우는 포켓몬(맨 앞)으로. 전투 중 첫 기술을 쓴 뒤에는 한 턴을 소모 */
     setLead(index: number): boolean {
       const log = useBattleLogStore()
@@ -1160,6 +1580,8 @@ export const useGameStore = defineStore('game', {
     },
     /** 맨 앞 포켓몬 교체 (전투 중 상태 초기화) */
     switchLead(index: number) {
+      // 특수 기능 효과는 교체하면 끝남 (이번 전투에서 다시 쓸 수는 없음)
+      this.endGimmick()
       const party = this.party
       ;[party[0], party[index]] = [party[index]!, party[0]!]
       this.playerStages = {}
@@ -1168,39 +1590,117 @@ export const useGameStore = defineStore('game', {
       if (lead.toxic) lead.toxic = 0
       this.playerIntel = this.enemy ? { cands: speciesAbilities(lead.species, true), known: false } : null
     },
-    /** 박스로 보내기 (박스에 맡기면 HP·PP·상태이상 회복). 싸우는 포켓몬은 전투 중이 아닐 때만 */
-    toBox(index: number): boolean {
+    /**
+     * 파티에서 도감으로 보내기: 성격·특성·개체값·노력치·레벨·친밀도·기술이 도감 기록에 합쳐지고 개체는 사라짐.
+     * 싸우는 포켓몬은 전투 중이 아닐 때만
+     */
+    sendToDex(index: number): boolean {
       const m = this.party[index]
       if (!m || this.party.length <= 1 || this.faint || (index === 0 && this.enemy)) return false
       this.party.splice(index, 1)
-      m.hp = null
-      m.pp = {}
-      cureStatus(m)
-      this.takeHeldFrom(m)
-      this.box.push(m)
+      this.sendToDexMember(m)
       if (index === 0) this.switchLead(0)
       return true
     },
-    /** 박스에서 파티로 */
-    toParty(boxIndex: number): boolean {
-      const m = this.box[boxIndex]
-      if (!m || this.party.length >= PARTY_MAX) return false
-      this.box.splice(boxIndex, 1)
-      this.party.push(m)
+    /** 파티에서 빠진 포켓몬을 도감 기록에 합침 (지닌 도구는 가방으로) */
+    sendToDexMember(m: PartyMember) {
+      this.takeHeldFrom(m)
+      this.recordToDex(m)
+    },
+    /** 포켓몬의 정보를 도감 기록에 합침 */
+    recordToDex(m: PartyMember) {
+      const normal = normalAbilities(m.species)
+      const ability = m.hiddenAbility ? HIDDEN_ABILITY_SLOT : normal.length ? (m.abilitySlot ?? 0) % normal.length : (m.abilitySlot ?? 0)
+      const ivs = Array.from({ length: 6 }, (_, i) => m.ivs?.[i] ?? 0)
+      const evs = Array.from({ length: 6 }, (_, i) => m.evs?.[i] ?? 0)
+      const friendship = friendshipOf(m)
+      const moves = [...new Set([...(m.learned ?? []), ...m.moves, ...(m.pending ?? [])])]
+      const r = this.dexRecords[m.species]
+      if (!r) {
+        this.dexRecords[m.species] = {
+          natures: [m.nature],
+          abilities: [ability],
+          ivMin: [...ivs],
+          ivMax: [...ivs],
+          evMin: [...evs],
+          evMax: [...evs],
+          levelMin: m.level,
+          levelMax: m.level,
+          friendshipMin: friendship,
+          friendshipMax: friendship,
+          moves,
+          ppUps: { ...(m.ppUps ?? {}) },
+          extraSlots: m.extraSlots ?? 0,
+        }
+        return
+      }
+      if (!r.natures.includes(m.nature)) r.natures.push(m.nature)
+      if (!r.abilities.includes(ability)) r.abilities.push(ability)
+      for (let i = 0; i < 6; i++) {
+        r.ivMin[i] = Math.min(r.ivMin[i] ?? ivs[i]!, ivs[i]!)
+        r.ivMax[i] = Math.max(r.ivMax[i] ?? ivs[i]!, ivs[i]!)
+        r.evMin[i] = Math.min(r.evMin[i] ?? evs[i]!, evs[i]!)
+        r.evMax[i] = Math.max(r.evMax[i] ?? evs[i]!, evs[i]!)
+      }
+      r.levelMin = Math.min(r.levelMin, m.level)
+      r.levelMax = Math.max(r.levelMax, m.level)
+      r.friendshipMin = Math.min(r.friendshipMin, friendship)
+      r.friendshipMax = Math.max(r.friendshipMax, friendship)
+      for (const id of moves) if (!r.moves.includes(id)) r.moves.push(id)
+      for (const [id, n] of Object.entries(m.ppUps ?? {})) r.ppUps[id] = Math.max(r.ppUps[id] ?? 0, n)
+      r.extraSlots = Math.max(r.extraSlots, m.extraSlots ?? 0)
+    },
+    /** 도감에서 파티로 불러오기: 기록된 범위 밖의 값은 범위 안으로 맞춤. 성공 여부 반환 */
+    summonFromDex(species: string, c: SummonChoice): boolean {
+      const r = this.dexRecords[species]
+      if (!r || this.party.length >= PARTY_MAX || this.faint) return false
+      if (!r.natures.includes(c.nature) || !r.abilities.includes(c.ability)) return false
+      const level = clamp(Math.round(c.level), r.levelMin, r.levelMax)
+      const ivs = r.ivMin.map((min, i) => clamp(Math.round(c.ivs[i] ?? min), min, r.ivMax[i]!))
+      // 노력치: 기록 범위 안 + 현재 노력치 한계(능력치별·합계)
+      const evs = [0, 0, 0, 0, 0, 0]
+      r.evMin.forEach((min, i) => {
+        const want = clamp(Math.round(c.evs[i] ?? min), min, r.evMax[i]!)
+        evs[i] = Math.min(want, this.evRoom(evs, i))
+      })
+      const extraSlots = r.extraSlots
+      const moves = [...new Set(c.moves)].filter((id) => r.moves.includes(id)).slice(0, slotsAt(this.totalDefeats, { extraSlots }))
+      this.party.push({
+        species,
+        level,
+        moves,
+        learned: [...r.moves],
+        pending: [],
+        exp: expAtLevel(species, level),
+        nature: c.nature,
+        ivs,
+        evs,
+        hp: null,
+        pp: {},
+        ppUps: Object.fromEntries(Object.entries(r.ppUps).filter(([id]) => r.moves.includes(id))),
+        extraSlots,
+        status: null,
+        friendship: clamp(Math.round(c.friendship), r.friendshipMin, r.friendshipMax),
+        abilitySlot: c.ability === HIDDEN_ABILITY_SLOT ? 0 : c.ability,
+        hiddenAbility: c.ability === HIDDEN_ABILITY_SLOT,
+        heldItem: null,
+      })
+      this.backfillLearned()
       return true
     },
-    /** 박스에 맡기는 포켓몬의 지닌 도구는 가방으로 */
+    /** 파티에서 빠지는 포켓몬의 지닌 도구는 가방으로 */
     takeHeldFrom(m: PartyMember) {
       if (m.heldItem && !m.heldSpent) this.addToBag(m.heldItem)
       m.heldItem = null
       m.heldSpent = false
     },
 
-    /** 잡은 포켓몬: 파티(6마리까지) 또는 박스로 */
+    /** 잡은 포켓몬: 도감에 기록 + 파티에 자리가 있으면 파티로 */
     onEnemyCaught(ballId: string) {
       const log = useBattleLogStore()
       const e = this.enemy!
       const name = speciesOf(e.species)?.ko ?? e.species
+      this.endBattleGimmick()
       log.push(`신난다! 야생 ${josa(name, '을', '를')} 잡았다!`, 'good')
       const isNew = !this.caught.includes(e.species)
       if (isNew) {
@@ -1208,7 +1708,7 @@ export const useGameStore = defineStore('game', {
         log.push(`${name}의 데이터가 새로 도감에 등록되었다!`, 'good')
       }
       // 6세대 이후: 잡아도 경험치를 얻음
-      this.rewardExp(e)
+      log.recordReward(this.rewardExp(e), 0)
       const p = (this.stageProgress[this.currentStageId] ??= { seen: [], defeats: 0 })
       p.defeats++
 
@@ -1232,6 +1732,11 @@ export const useGameStore = defineStore('game', {
         hiddenAbility: hidden,
         heldItem: e.item ?? null,
         ball: ballId,
+        // 테라스탈 타입: 그 포켓몬의 타입 중 하나
+        teraType: (() => {
+          const types = speciesOf(e.species)?.types ?? []
+          return types[randInt(0, Math.max(0, types.length - 1))]
+        })(),
       }
       if (ballId === 'heal-ball') {
         caught.hp = null
@@ -1239,15 +1744,17 @@ export const useGameStore = defineStore('game', {
       }
       if (ballId === 'friend-ball') caught.friendship = FRIEND_BALL_FRIENDSHIP
       if (caught.hp != null && caught.hp >= maxHpOf({ ...caught, ivs: caught.ivs, evs: caught.evs })) caught.hp = null
+      this.recordToDex(caught)
       if (this.party.length < PARTY_MAX) {
         this.party.push(caught)
         log.push(`${josa(name, '은', '는')} 파티에 들어갔다!`, 'info')
       } else {
-        caught.hp = null
-        caught.pp = {}
-        cureStatus(caught)
-        this.box.push(caught)
-        log.push(`파티가 가득 차서 ${josa(name, '은', '는')} 박스로 보내졌다.`, 'info')
+        log.push(`파티가 가득 차서 ${name}의 정보는 도감에 기록되었다.`, 'info')
+        if (caught.heldItem) {
+          const itemName = dexData.value?.items[caught.heldItem]?.ko ?? caught.heldItem
+          log.push(`${josa(name, '이', '가')} 지니고 있던 ${josa(itemName, '은', '는')} 가방에 넣었다.`, 'info')
+        }
+        this.takeHeldFrom(caught)
       }
       this.enemy = null
       this.playerVol = {}
@@ -1255,12 +1762,13 @@ export const useGameStore = defineStore('game', {
       this.nextEncounterAt = Date.now() + this.searchMs
     },
 
-    /** 경험치·노력치 (싸운 포켓몬 + 학습장치가 켜져 있으면 나머지 파티 절반) */
-    rewardExp(enemy: WildPokemon) {
+    /** 경험치·노력치 (싸운 포켓몬 + 학습장치가 켜져 있으면 나머지 파티 절반). 싸운 포켓몬이 얻은 경험치 반환 */
+    rewardExp(enemy: WildPokemon): number {
       const lead = this.party[0]!
       const base = expGain(enemy.species, enemy.level, lead.level, !!enemy.boss, DIFFICULTY_EXP[this.difficulty])
       const egg = (m: PartyMember) => (heldOf(m) === LUCKY_EGG ? LUCKY_EGG_MULT : 1)
-      this.gainExp(lead, Math.floor(base * egg(lead)))
+      const leadExp = Math.floor(base * egg(lead))
+      this.gainExp(lead, leadExp)
       this.gainEvs(lead, enemy.species)
       if (this.expShare && this.expShareOwned) {
         for (const m of this.party.slice(1)) {
@@ -1270,6 +1778,7 @@ export const useGameStore = defineStore('game', {
           this.gainEvs(m, enemy.species)
         }
       }
+      return leadExp
     },
     /** 노력치 (교정깁스 2배, 파워 계열 도구 +8) */
     gainEvs(member: PartyMember, foe: string) {
@@ -1300,6 +1809,9 @@ export const useGameStore = defineStore('game', {
 
     // ---------- 상점 ----------
     buyItem(itemId: string, count = 1): boolean {
+      // 메가스톤·Z크리스탈·테라피스는 그 특수 기능을 해금한 뒤에만
+      const gimmickItem = gimmickItemOf(itemId)
+      if (gimmickItem && !this.gimmickUnlocked(gimmickItem.gimmick)) return false
       const price = priceOf(itemId)
       if (price == null || count < 1 || this.money < price * count) return false
       this.money -= price * count
@@ -1317,7 +1829,7 @@ export const useGameStore = defineStore('game', {
     },
     buyPerk(id: PerkId): boolean {
       const chain = CHAIN_PERKS.find((p) => p.id === id)
-      const perk = chain ?? [...PERKS, BOSS_INTRO_PERK].find((p) => p.id === id)
+      const perk = chain ?? [...PERKS, BOSS_INTRO_PERK, AUTO_CENTER_PERK, DEX_REVEAL_PERK].find((p) => p.id === id)
       if (!perk || this.perks.includes(id) || this.money < perk.price) return false
       if (chain?.requires && !this.perks.includes(chain.requires)) return false
       this.money -= perk.price
@@ -1327,6 +1839,11 @@ export const useGameStore = defineStore('game', {
         this.skipBossIntro = true
         return true
       }
+      if (id === 'autoCenter:pp') {
+        this.autoCenter = true
+        return true
+      }
+      if (id === 'dex:reveal') return true
       // 사면 바로 켬
       const [kind, cat] = id.split(':') as ['autoUse' | 'autoBuy', AutoCategory]
       this[kind][cat] = true
@@ -1379,15 +1896,17 @@ export const useGameStore = defineStore('game', {
       const stageId = this.currentStageId
       const name = speciesOf(enemy.species)?.ko ?? enemy.species
       log.push(`${enemy.boss ? '보스 ' : '야생 '}${josa(name, '은', '는')} 쓰러졌다!`, 'good')
+      this.endBattleGimmick()
 
       // 경험치 · 노력치 (행운의알·학습장치·교정깁스·파워 계열 도구)
-      this.rewardExp(enemy)
+      const expGot = this.rewardExp(enemy)
 
       // 상금 (부적금화·행운의향로를 지니고 싸우면 2배)
       const held = heldOf(member)
       const prize = prizeMoney(enemy.level, !!enemy.boss) * (held && MONEY_ITEMS.has(held) ? 2 : 1)
       this.money += prize
       log.push(`상금으로 ${prize.toLocaleString()}원을 받았다!`)
+      log.recordReward(expGot, prize)
 
       // 지니고 있던 도구 획득
       if (enemy.item) {
@@ -1399,7 +1918,7 @@ export const useGameStore = defineStore('game', {
       const p = (this.stageProgress[stageId] ??= { seen: [], defeats: 0 })
       if (enemy.boss) p.defeats = 0
       else p.defeats++
-      this.countDefeat(member)
+      this.countDefeat()
       this.addFriendship(member, enemy.boss ? 3 : 1)
 
       // 전투 종료 시 특성 (자연회복·재생력)
@@ -1422,31 +1941,43 @@ export const useGameStore = defineStore('game', {
       if (enemy.boss) this.onBossCleared(stageId)
     },
 
-    /** 포켓몬별 격파 수 증가 → 기술칸 해금 */
-    countDefeat(member: PartyMember) {
-      const before = slotsOf(member)
-      member.defeats = (member.defeats ?? 0) + 1
-      if (slotsOf(member) > before) this.onSlotOpened(member)
+    /** 계정 격파 수 증가 → 기본 기술칸 해금 (파티 전체) */
+    countDefeat() {
+      const before = this.baseSlots
+      this.totalDefeats++
+      if (this.baseSlots <= before) return
+      useBattleLogStore().push(`모든 포켓몬의 기본 기술칸이 ${this.baseSlots}칸으로 늘었다!`, 'good')
+      for (const m of this.party) this.fillFromPending(m)
     },
 
-    /** 기술칸이 늘었을 때: 알림 + 장착하지 않은 기술 중 가장 최근에 배운 기술을 자동 장착 */
+    /** 기술칸이 늘었을 때: 알림 + 대기열 맨 앞 기술부터 자동 장착 */
     onSlotOpened(member: PartyMember) {
       const log = useBattleLogStore()
       const name = speciesOf(member.species)?.ko ?? member.species
-      log.push(`${name}의 기술칸이 ${slotsOf(member)}칸으로 늘었다!`, 'good')
-      const spare = (member.learned ?? []).filter((id) => !member.moves.includes(id))
-      const pick = spare[spare.length - 1]
-      if (pick && member.moves.length < slotsOf(member)) {
-        member.moves.push(pick)
-        const move = dexData.value?.movesById[pick]?.ko ?? pick
-        log.push(`${josa(move, '을', '를')} 새 칸에 장착했다.`, 'info')
+      log.push(`${name}의 기술칸이 ${this.slotsOf(member)}칸으로 늘었다!`, 'good')
+      this.fillFromPending(member)
+    },
+
+    /** 빈 기술칸을 대기열 맨 앞 기술부터 채움 */
+    fillFromPending(member: PartyMember, announce = true) {
+      const pending = member.pending
+      if (!pending?.length) return
+      const learned = (member.learned ??= [...member.moves])
+      const name = speciesOf(member.species)?.ko ?? member.species
+      while (pending.length && member.moves.length < this.slotsOf(member)) {
+        const id = pending.shift()!
+        if (!learned.includes(id)) learned.push(id)
+        if (member.moves.includes(id)) continue
+        member.moves.push(id)
+        const move = dexData.value?.movesById[id]?.ko ?? id
+        if (announce) useBattleLogStore().push(`${josa(name, '은', '는')} ${josa(move, '을', '를')} 배웠다!`, 'good')
       }
     },
 
     /** 상점용: 기본 4칸을 모두 연 포켓몬의 기술칸 추가 열림. 성공 여부 반환 */
     unlockExtraSlot(memberIndex: number): boolean {
       const m = this.party[memberIndex]
-      if (!m || baseSlotsOf(m) < 1 + SLOT_DEFEATS.length || (m.extraSlots ?? 0) >= EXTRA_SLOTS) return false
+      if (!m || this.baseSlots < BASE_SLOTS_MAX || (m.extraSlots ?? 0) >= EXTRA_SLOTS) return false
       m.extraSlots = (m.extraSlots ?? 0) + 1
       this.onSlotOpened(m)
       return true
@@ -1676,8 +2207,7 @@ export const useGameStore = defineStore('game', {
 
     /** 최대 HP가 바뀌는 변화(노력치·개체값·성격): 최대 HP 증감분만큼 현재 HP도 증감 */
     keepHpRatio(member: PartyMember, change: () => void) {
-      const maxHp = () =>
-        maxHpOf({ species: member.species, level: member.level, ivs: member.ivs ?? [], evs: member.evs ?? [], nature: member.nature })
+      const maxHp = () => this.memberMaxHp(member)
       const before = maxHp()
       change()
       if (member.hp != null && member.hp > 0) member.hp = Math.max(1, Math.min(maxHp(), member.hp + (maxHp() - before)))
@@ -1686,6 +2216,8 @@ export const useGameStore = defineStore('game', {
     /** 진화: 포켓몬 변경, 최대 HP 증가분만큼 HP 증가, 진화 시 배우는 기술 습득, 도감 등록 */
     evolve(member: PartyMember, to: string) {
       const log = useBattleLogStore()
+      // 메가진화 등 특수 기능 효과 중에 진화하면 효과가 끝남
+      if (member === this.party[0]) this.endGimmick()
       const before = speciesOf(member.species)?.ko ?? member.species
       const after = speciesOf(to)?.ko ?? to
       const maxHp = (species: string) =>
@@ -1701,39 +2233,76 @@ export const useGameStore = defineStore('game', {
       this.backfillLearned()
     },
 
+    /**
+     * 레벨업·진화로 새 기술을 배움: 빈 칸이 있으면 바로 장착,
+     * 칸이 가득 찼으면 대기열 맨 뒤에 넣음 (기술 탭에서 맨 앞부터 잊기/교체)
+     */
     learnMove(member: PartyMember, moveId: string) {
-      const log = useBattleLogStore()
       const learned = (member.learned ??= [...member.moves])
-      if (learned.includes(moveId)) return
-      learned.push(moveId)
+      const pending = (member.pending ??= [])
+      if (learned.includes(moveId) || pending.includes(moveId)) return
+      pending.push(moveId)
+      this.fillFromPending(member)
+      if (!pending.includes(moveId)) return
       const name = speciesOf(member.species)?.ko ?? member.species
       const move = dexData.value?.movesById[moveId]?.ko ?? moveId
-      if (member.moves.length < slotsOf(member)) {
+      useBattleLogStore().push(
+        `${josa(name, '은', '는')} ${josa(move, '을', '를')} 배우고 싶다… 하지만 기술칸이 가득 찼다! (기술 탭에서 처리)`,
+        'info',
+      )
+    },
+
+    /** 기술을 장착 (replaceId 를 주면 그 기술을 잊고 그 자리에). 잊은 기술은 learned 에 남음 */
+    putMove(member: PartyMember, moveId: string, replaceId?: string) {
+      const learned = (member.learned ??= [...member.moves])
+      if (!learned.includes(moveId)) learned.push(moveId)
+      const name = speciesOf(member.species)?.ko ?? member.species
+      const move = dexData.value?.movesById[moveId]?.ko ?? moveId
+      const log = useBattleLogStore()
+      const i = replaceId ? member.moves.indexOf(replaceId) : -1
+      if (i >= 0) {
+        member.moves[i] = moveId
+        const old = dexData.value?.movesById[replaceId!]?.ko ?? replaceId!
+        log.push(`${josa(name, '은', '는')} ${josa(old, '을', '를')} 깨끗이 잊고 ${josa(move, '을', '를')} 배웠다!`, 'good')
+      } else {
         member.moves.push(moveId)
         log.push(`${josa(name, '은', '는')} ${josa(move, '을', '를')} 배웠다!`, 'good')
-      } else {
-        log.push(`${josa(name, '은', '는')} ${josa(move, '을', '를')} 배웠다! (기술 탭에서 장착 가능)`, 'good')
       }
     },
 
-    /** 기술 장착/해제 (기술 탭) */
-    equipMove(memberIndex: number, moveId: string) {
+    /** 대기열 맨 앞 기술을 배우지 않음 (잊은 기술이 되어 하트비늘로 되살릴 수 있음) */
+    skipPending(memberIndex: number) {
       const m = this.party[memberIndex]
-      if (!m || !(m.learned ?? m.moves).includes(moveId) || m.moves.includes(moveId)) return
-      if (m.moves.length < slotsOf(m)) {
-        m.moves.push(moveId)
-      }
+      const id = m?.pending?.[0]
+      if (!m || !id) return
+      m.pending!.shift()
+      const learned = (m.learned ??= [...m.moves])
+      if (!learned.includes(id)) learned.push(id)
+      const name = speciesOf(m.species)?.ko ?? m.species
+      const move = dexData.value?.movesById[id]?.ko ?? id
+      useBattleLogStore().push(`${josa(name, '은', '는')} ${josa(move, '을', '를')} 배우지 않았다.`, 'info')
+      this.fillFromPending(m)
     },
-    unequipMove(memberIndex: number, moveId: string) {
+
+    /** 대기열 맨 앞 기술을 장착 기술 oldId 대신 배움 (oldId 는 잊은 기술이 됨) */
+    learnPending(memberIndex: number, oldId: string) {
       const m = this.party[memberIndex]
-      if (!m || m.moves.length <= 1) return
-      m.moves = m.moves.filter((x) => x !== moveId)
+      const id = m?.pending?.[0]
+      if (!m || !id || !m.moves.includes(oldId)) return
+      m.pending!.shift()
+      this.putMove(m, id, oldId)
     },
-    replaceMove(memberIndex: number, oldId: string, newId: string) {
+
+    /** 하트비늘 1개로 잊은 기술을 되살림: 빈 칸이 있으면 장착, 없으면 oldId 대신 */
+    recallMove(memberIndex: number, moveId: string, oldId?: string): boolean {
       const m = this.party[memberIndex]
-      if (!m || !(m.learned ?? []).includes(newId) || m.moves.includes(newId)) return
-      const i = m.moves.indexOf(oldId)
-      if (i >= 0) m.moves[i] = newId
+      if (!m || (this.items[HEART_SCALE] ?? 0) <= 0 || this.faint) return false
+      if (!(m.learned ?? []).includes(moveId) || m.moves.includes(moveId)) return false
+      const full = m.moves.length >= this.slotsOf(m)
+      if (full && (!oldId || !m.moves.includes(oldId))) return false
+      this.takeFromBag(HEART_SCALE)
+      this.putMove(m, moveId, full ? oldId : undefined)
+      return true
     },
 
     onBossCleared(stageId: string) {
@@ -1760,13 +2329,14 @@ export const useGameStore = defineStore('game', {
       const log = useBattleLogStore()
       const member = this.party[0]!
       const name = speciesOf(member.species)?.ko ?? member.species
+      this.endGimmick()
       log.push(`${josa(name, '은', '는')} 쓰러졌다!`, 'bad')
       this.addFriendship(member, -1)
       member.status = null
       member.sleep = undefined
       member.toxic = undefined
-      // 자동 사용(회복): 기절 회복 아이템이 있으면 바로 사용
-      if (this.auto && this.perks.includes('autoUse:heal') && this.autoUse.heal) {
+      // 자동 사용(기절 회복): 기절 회복 아이템이 있으면 바로 사용
+      if (this.auto && this.perks.includes('autoUse:revive') && this.autoUse.revive) {
         const revive = SHOP_ITEMS.filter((i) => i.revive != null && !i.party && (this.items[i.id] ?? 0) > 0).sort(
           (a, b) => a.price - b.price,
         )[0]
@@ -1820,6 +2390,7 @@ export const useGameStore = defineStore('game', {
           }
         }
       }
+      this.endBattleGimmick()
       this.enemy = null
       this.travel = null
       useBattleLogStore().pending = null

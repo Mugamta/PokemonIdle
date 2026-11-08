@@ -8,6 +8,8 @@ import { dexData, loadDex, STAT_LABELS } from '../data/dex'
 import { calcStats } from '../data/natures'
 import { findStage } from '../data/stages'
 import { expAtLevel, ro } from '../core/battle'
+import { formOf } from '../core/gimmicks'
+import { useBattleLogStore } from '../stores/battleLog'
 import { BOSS_DEFEATS, BOSS_INTRO_MS, useGameStore } from '../stores/game'
 import HpBar from './HpBar.vue'
 import ItemIcon from './ItemIcon.vue'
@@ -15,6 +17,7 @@ import PokemonCenter from './PokemonCenter.vue'
 import PokeSprite from './PokeSprite.vue'
 
 const game = useGameStore()
+const log = useBattleLogStore()
 const now = useNow()
 onMounted(() => loadDex().catch(() => {}))
 
@@ -37,7 +40,23 @@ function hpInfo(id: string, level: number, ivs: number[], evs: number[], nature:
 const mine = computed(() => {
   const m = game.party[0]
   if (!m) return null
-  return { member: m, info: hpInfo(m.species, m.level, m.ivs ?? [], m.evs ?? [], m.nature, m.hp) }
+  const g = game.gimmickActive
+  const info = hpInfo(m.species, m.level, m.ivs ?? [], m.evs ?? [], m.nature, null)
+  // 다이맥스: 최대 HP 2배 / 메가진화: 메가진화한 모습의 이름·도트
+  if (info) {
+    if (g?.kind === 'dynamax') info.max *= 2
+    info.hp = Math.max(0, Math.min(info.max, m.hp ?? info.max))
+  }
+  const form = g?.kind === 'mega' ? formOf(g.form) : undefined
+  if (info && form) info.name = form.ko
+  return {
+    member: m,
+    info,
+    sprite: form?.id ?? m.species,
+    dynamax: g?.kind === 'dynamax',
+    tera: g?.kind === 'tera' ? g.type : null,
+    mega: !!form,
+  }
 })
 
 /** 다음 레벨까지 경험치: 이번 레벨에서 얻은 양 / 필요한 양 */
@@ -91,11 +110,25 @@ const evYield = computed(() => {
     .join(' · ')
 })
 
+// 쓰러뜨린 상대: 다음 포켓몬이 나올 때까지 회색 스프라이트 + HP 0으로 남겨 둠
+const fallen = ref<NonNullable<typeof game.enemy> | null>(null)
+watch(
+  () => game.enemy,
+  (e, old) => {
+    fallen.value = !e && old && (old.hp ?? 1) <= 0 ? old : null
+  },
+)
+watch(
+  () => !!game.faint || !!game.travel || game.currentStageId,
+  () => (fallen.value = null),
+)
+
 const foe = computed(() => {
-  const e = game.enemy
+  const e = game.enemy ?? fallen.value
   if (!e) return null
   return { enemy: e, info: hpInfo(e.species, e.level, e.ivs, [0, 0, 0, 0, 0, 0], e.nature, e.hp) }
 })
+const foeFallen = computed(() => !game.enemy && !!fallen.value)
 </script>
 
 <template>
@@ -154,20 +187,22 @@ const foe = computed(() => {
         </div>
         <HpBar v-if="foe.info" :hp="foe.info.hp" :max="foe.info.max" :display="game.displayLevel('foeHp')" />
       </div>
-      <div class="platform foe-pos" :class="{ 'boss-enter': !!bossIntro }">
+      <div class="platform foe-pos" :class="{ 'boss-enter': !!bossIntro, fallen: foeFallen }">
         <PokeSprite :key="foe.enemy.species" :species="foe.enemy.species" :size="96" pose="foe" class="mon" />
-        <span v-if="evYield" class="ev-yield">노력치 {{ evYield }}</span>
+        <span v-if="evYield && !foeFallen" class="ev-yield">노력치 {{ evYield }}</span>
       </div>
     </template>
 
     <!-- 내 포켓몬 -->
     <template v-if="mine">
-      <div class="platform mine-pos">
-        <PokeSprite :key="mine.member.species" :species="mine.member.species" :size="120" pose="back" class="mon" />
+      <div class="platform mine-pos" :class="{ dynamax: mine.dynamax, tera: !!mine.tera, mega: mine.mega }">
+        <PokeSprite :key="mine.sprite" :species="mine.sprite" :size="120" pose="back" class="mon" />
       </div>
       <div class="box mine-box">
         <div class="line">
           <strong>{{ mine.info?.name ?? mine.member.species }}</strong>
+          <span v-if="mine.dynamax" class="gimmick-tag dynamax">다이맥스</span>
+          <span v-if="mine.tera" class="gimmick-tag tera">테라 {{ dexData?.types[mine.tera] ?? mine.tera }}</span>
           <span v-if="mine.member.status" class="status" :style="{ background: STATUS_COLORS[mine.member.status] }">{{ STATUS_LABELS[mine.member.status] }}</span>
           <span class="lv">Lv.{{ mine.member.level }}</span>
         </div>
@@ -216,10 +251,16 @@ const foe = computed(() => {
 
     <!-- 상태 안내 -->
     <div v-if="travelTarget" class="notice">→ {{ travelTarget.id }} {{ ro(travelTarget.name) }} 이동 중… {{ travelLeft }}초</div>
-    <div v-else-if="mine && !foe && !game.faint" class="notice">
+    <div v-else-if="mine && (!foe || foeFallen) && !game.faint" class="notice">
       {{ stage?.encounters ? '야생 포켓몬을 찾는 중…' : '이 스테이지는 출현 정보가 준비 중입니다' }}
     </div>
-    <div v-if="stage && !travelTarget" class="where">{{ stage.id }} {{ stage.name }}</div>
+    <!-- 좌하단: 최근 전투 평균 보상 · 현재 스테이지 -->
+    <div class="bl">
+      <div v-if="log.avgReward" class="avg" :title="`최근 ${log.avgReward.n}번 전투(쓰러뜨림·포획)에서 싸운 포켓몬이 얻은 경험치와 상금의 평균`">
+        최근 {{ log.avgReward.n }}전 평균 · EXP {{ log.avgReward.exp.toLocaleString() }} · {{ log.avgReward.money.toLocaleString() }}원
+      </div>
+      <div v-if="stage && !travelTarget" class="where">{{ stage.id }} {{ stage.name }}</div>
+    </div>
   </div>
 </template>
 
@@ -298,6 +339,91 @@ const foe = computed(() => {
 
 .mon {
   position: relative;
+}
+
+/* 특수 기능 연출: 다이맥스 = 크고 붉은 빛, 테라스탈 = 결정 빛, 메가진화 = 무지개 빛 */
+.mine-pos .mon {
+  transition: transform 0.6s, filter 0.6s;
+  transform-origin: 50% 100%;
+}
+
+.mine-pos.dynamax .mon {
+  transform: scale(1.45);
+  filter: drop-shadow(0 0 6px #ff3a5e) drop-shadow(0 0 14px rgba(255, 40, 90, 0.7));
+}
+
+.mine-pos.tera .mon {
+  filter: drop-shadow(0 0 3px #e8ffff) drop-shadow(0 0 10px #5fe3e8) saturate(1.3) brightness(1.08);
+}
+
+.mine-pos.tera::after {
+  content: '';
+  position: absolute;
+  bottom: 50px;
+  left: 50%;
+  width: 46px;
+  height: 46px;
+  translate: -50% 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(95, 227, 232, 0.6));
+  clip-path: polygon(50% 0, 100% 35%, 80% 100%, 20% 100%, 0 35%);
+  opacity: 0.35;
+  pointer-events: none;
+  animation: tera-shine 2.4s ease-in-out infinite;
+}
+
+@keyframes tera-shine {
+  50% {
+    opacity: 0.6;
+    translate: -50% -6px;
+  }
+}
+
+.mine-pos.mega .mon {
+  animation: mega-glow 3s linear infinite;
+}
+
+@keyframes mega-glow {
+  0% {
+    filter: drop-shadow(0 0 6px #c58cff);
+  }
+  33% {
+    filter: drop-shadow(0 0 6px #ff8ad8);
+  }
+  66% {
+    filter: drop-shadow(0 0 6px #7ad7ff);
+  }
+  100% {
+    filter: drop-shadow(0 0 6px #c58cff);
+  }
+}
+
+.gimmick-tag {
+  padding: 0 5px;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.gimmick-tag.dynamax {
+  background: #e0244c;
+}
+
+.gimmick-tag.tera {
+  background: #2aa8b0;
+}
+
+/* 쓰러진 상대: 회색 + 살짝 가라앉은 상태로 정지 */
+.foe-pos.fallen .mon {
+  filter: grayscale(1) brightness(0.8);
+  opacity: 0.7;
+  transform: translateY(8px);
+  transition: filter 0.3s, opacity 0.3s, transform 0.3s;
+}
+
+.foe-pos.fallen .mon :deep(.anim) {
+  animation-play-state: paused;
 }
 
 /* 도트 이미지 아래쪽 여백만큼 내려서 발판 위에 서 있게 함 */
@@ -713,10 +839,29 @@ const foe = computed(() => {
   white-space: nowrap;
 }
 
-.where {
+.bl {
   position: absolute;
   left: 12px;
   bottom: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.avg {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(30, 30, 36, 0.6);
+  color: #ffd76a;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: auto;
+}
+
+.where {
   padding: 2px 8px;
   border-radius: 4px;
   background: rgba(30, 30, 36, 0.6);
