@@ -4,6 +4,7 @@ import BattleScene from './components/BattleScene.vue'
 import BattleTab from './components/BattleTab.vue'
 import DexTab from './components/DexTab.vue'
 import SettingsTab from './components/SettingsTab.vue'
+import ScrollPanel from './components/ScrollPanel.vue'
 import ShopTab from './components/ShopTab.vue'
 import StageMap from './components/StageMap.vue'
 import StarterPicker from './components/StarterPicker.vue'
@@ -14,6 +15,7 @@ import { startGameLoop } from './core/gameLoop'
 import { load, save } from './core/save'
 import { loadBattle } from './data/battle'
 import { loadDex, loadLearnsets } from './data/dex'
+import { loadEvolutions } from './data/evolutions'
 import { useGameStore } from './stores/game'
 
 const game = useGameStore()
@@ -28,11 +30,15 @@ const activeLabel = computed(() => TABS.find((t) => t.id === activeTab.value)?.l
 onMounted(() => {
   const data = load<typeof game.$state>()
   if (data) game.$patch(data.state)
-  game.validate()
+  // stageOrder 가 없는 저장 데이터는 수상 스테이지 재배치 전 순서(1)
+  game.validate(data ? (data.state.stageOrder ?? 1) : undefined)
   loaded.value = true
   // 전투에 필요한 데이터 (불러오기 전에는 전투가 진행되지 않음)
-  Promise.all([loadDex(), loadLearnsets(), loadBattle()])
-    .then(() => game.backfillLearned())
+  Promise.all([loadDex(), loadLearnsets(), loadBattle(), loadEvolutions()])
+    .then(() => {
+      game.backfillLearned()
+      game.checkEvolutions()
+    })
     .catch((e) => console.error(e))
 
   stopLoop = startGameLoop((dt) => game.tick(dt))
@@ -55,14 +61,15 @@ onUnmounted(() => {
     </section>
 
     <!-- 하단: 선택된 탭의 내용 -->
-    <section class="panel">
+    <ScrollPanel class="panel-area">
       <StageTab v-if="activeTab === 'stage'" />
       <DexTab v-else-if="activeTab === 'dex'" />
       <BattleTab v-else-if="activeTab === 'battle'" />
       <SettingsTab v-else-if="activeTab === 'settings'" />
-      <ShopTab v-else-if="activeTab === 'shop'" />
+      <ShopTab v-else-if="activeTab === 'shop'" key="shop" kind="item" />
+      <ShopTab v-else-if="activeTab === 'upgrade'" key="upgrade" kind="upgrade" />
       <p v-else class="placeholder">{{ activeLabel }}</p>
-    </section>
+    </ScrollPanel>
 
     <TabBar v-model="activeTab" />
 
@@ -89,12 +96,9 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-.panel {
+.panel-area {
   flex: 1 1 50%;
-  min-height: 0;
-  overflow-y: auto;
   border-top: 1px solid #3a3a44;
-  padding: 12px;
 }
 
 .placeholder {

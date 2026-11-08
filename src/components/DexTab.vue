@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { dexData, loadDex, TYPE_COLORS } from '../data/dex'
 import { useGameStore } from '../stores/game'
 import DexDetail from './DexDetail.vue'
+import DexItems from './DexItems.vue'
 import PokeSprite from './PokeSprite.vue'
 
 const game = useGameStore()
@@ -11,6 +12,8 @@ const query = ref('')
 const selectedId = ref<string | null>(null)
 const scrollTop = ref(0)
 const listEl = ref<HTMLElement>()
+/** 포켓몬 도감 / 도구 도감 */
+const mode = ref<'pokemon' | 'items'>('pokemon')
 
 onMounted(() => loadDex().catch((e) => (error.value = String(e))))
 
@@ -46,6 +49,12 @@ async function back() {
   <DexDetail v-else-if="selectedId" :id="selectedId" @back="back" />
 
   <div v-else ref="listEl">
+    <nav class="modes">
+      <button type="button" :class="{ active: mode === 'pokemon' }" @click="mode = 'pokemon'">포켓몬</button>
+      <button type="button" :class="{ active: mode === 'items' }" @click="mode = 'items'">도구</button>
+    </nav>
+    <DexItems v-if="mode === 'items'" />
+    <template v-else>
     <header class="header">
       <input v-model="query" class="search" type="search" placeholder="이름 또는 번호 검색" />
       <span class="count">포획 {{ game.caught.length }} / {{ dexData.index.length }}</span>
@@ -66,6 +75,7 @@ async function back() {
       </li>
     </ul>
     <p v-if="!filtered.length" class="msg">검색 결과가 없습니다.</p>
+    </template>
   </div>
 </template>
 
@@ -73,6 +83,38 @@ async function back() {
 .msg {
   margin: 8px 0;
   color: #6a6a76;
+}
+
+.modes {
+  display: flex;
+  margin: -12px -12px 0;
+  background: #1e1e24;
+  border-bottom: 1px solid #3a3a44;
+}
+
+.modes button {
+  flex: 1;
+  height: 40px;
+  border: none;
+  background: transparent;
+  color: #9a9aa6;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.modes button.active {
+  color: #fff;
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 #ffcb05;
+}
+
+.modes + .header {
+  margin-top: 0;
+}
+
+.modes + div {
+  margin-top: 12px;
 }
 
 .header {

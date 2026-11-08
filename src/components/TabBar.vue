@@ -29,12 +29,14 @@ const active = defineModel<TabId>({ required: true })
 
 .tab {
   flex: 1;
+  min-width: 0;
   height: 56px;
+  padding: 0 2px;
   border: none;
   background: transparent;
   color: #9a9aa6;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   white-space: nowrap;
   cursor: pointer;
 }

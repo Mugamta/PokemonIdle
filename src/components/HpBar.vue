@@ -1,11 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = defineProps<{ hp: number; max: number; showNumbers?: boolean }>()
+/** showNumbers: 현재/최대, display: 1 = 비율만, 2 = 현재/최대와 비율 */
+const props = defineProps<{ hp: number; max: number; showNumbers?: boolean; display?: 0 | 1 | 2 }>()
 
 const ratio = computed(() => (props.max > 0 ? Math.max(0, Math.min(1, props.hp / props.max)) : 0))
 /** 원작처럼 50% 초과 초록, 20% 초과 노랑, 그 이하 빨강 */
 const color = computed(() => (ratio.value > 0.5 ? 'green' : ratio.value > 0.2 ? 'yellow' : 'red'))
+/** 비율(%) 표시: 남은 HP가 있으면 0%로 보이지 않게 */
+const pct = computed(() => {
+  const p = Math.floor(ratio.value * 100)
+  return props.hp > 0 ? Math.max(1, p) : 0
+})
+const text = computed(() => {
+  if (props.display === 2) return `${props.hp} / ${props.max} (${pct.value}%)`
+  if (props.display === 1) return `${pct.value}%`
+  if (props.showNumbers) return `${props.hp} / ${props.max}`
+  return ''
+})
 </script>
 
 <template>
@@ -15,7 +27,7 @@ const color = computed(() => (ratio.value > 0.5 ? 'green' : ratio.value > 0.2 ? 
       <span class="fill" :class="color" :style="{ width: `${ratio * 100}%` }" />
     </span>
   </div>
-  <div v-if="showNumbers" class="numbers">{{ hp }} / {{ max }}</div>
+  <div v-if="text" class="numbers">{{ text }}</div>
 </template>
 
 <style scoped>

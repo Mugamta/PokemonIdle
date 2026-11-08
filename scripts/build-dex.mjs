@@ -183,14 +183,47 @@ for (const f of itemFlavor) {
   const o = vgOrder[f.version_group_id]
   if (!itemText[f.item_id] || o > itemText[f.item_id].o) itemText[f.item_id] = { o, t: f.flavor_text.replace(/\s+/g, ' ').trim() }
 }
+const catName = Object.fromEntries(itemCats.map((c) => [c.id, c.identifier]))
+// 기술머신: 아이템마다 설명 문구가 나온 작품 이전 중 가장 최근 작품에서 가르치는 기술 (없으면 가장 최근 작품)
+const machines = await csv('machines')
+const machineMove = {}
+const score = (o, textO) => (textO == null || o <= textO ? 1000 + o : o)
+for (const m of machines) {
+  const o = vgOrder[m.version_group_id] ?? Number(m.version_group_id)
+  const s = score(o, itemText[m.item_id]?.o)
+  if (!machineMove[m.item_id] || s > machineMove[m.item_id].s) machineMove[m.item_id] = { s, move: m.move_id }
+}
+const moveIdent = Object.fromEntries(moves.map((m) => [m.id, m.identifier]))
 const itemInfo = {}
+const itemIdent = {}
 for (const it of items) {
+  itemIdent[it.id] = it.identifier
   if (!itemKo[it.id]) continue
-  itemInfo[it.identifier] = { ko: itemKo[it.id], pocket: pocketName[pocketOf[it.category_id]] ?? 'misc', text: itemText[it.id]?.t ?? '' }
+  const info = { ko: itemKo[it.id], pocket: pocketName[pocketOf[it.category_id]] ?? 'misc', text: itemText[it.id]?.t ?? '' }
+  info.cat = catName[it.category_id] ?? 'other'
+  if (Number(it.cost) > 0) info.cost = Number(it.cost)
+  const mv = machineMove[it.id] && moveIdent[machineMove[it.id].move]
+  if (mv) info.move = mv
+  itemInfo[it.identifier] = info
+}
+
+// 야생 포켓몬이 지니고 있는 도구 (가장 최근 버전 기준): {포켓몬 id: [[아이템 id, 확률 %]]}
+const pokemonItems = await csv('pokemon_items')
+const pokeIdent = Object.fromEntries(pokemon.map((p) => [p.id, p.identifier]))
+const latestVer = {}
+for (const r of pokemonItems) latestVer[r.pokemon_id] = Math.max(latestVer[r.pokemon_id] ?? 0, Number(r.version_id))
+const wildItems = {}
+for (const r of pokemonItems) {
+  if (Number(r.version_id) !== latestVer[r.pokemon_id]) continue
+  const p = pokeIdent[r.pokemon_id]
+  const item = itemIdent[r.item_id]
+  if (!p || !item || !itemInfo[item]) continue
+  ;(wildItems[p] ??= []).push([item, Number(r.rarity)])
 }
 
 await mkdir(OUT, { recursive: true })
 await writeFile(path.join(OUT, 'items.json'), JSON.stringify(itemInfo))
+await writeFile(path.join(OUT, 'wild-items.json'), JSON.stringify(wildItems))
 await writeFile(path.join(OUT, 'index.json'), JSON.stringify(index))
 await writeFile(path.join(OUT, 'learnsets.json'), JSON.stringify(learnsets))
 await writeFile(path.join(OUT, 'moves.json'), JSON.stringify(moveInfo))

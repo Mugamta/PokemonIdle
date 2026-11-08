@@ -96,15 +96,6 @@ const credits = computed(() => {
         </span>
       </label>
       <p class="hint">언제든 바꿀 수 있으며 다음 턴부터 적용됩니다.</p>
-
-      <h3 class="gap">연출</h3>
-      <label class="radio">
-        <input v-model="game.skipBossIntro" type="checkbox" />
-        <span>
-          <strong>보스 등장 연출 생략</strong>
-          <small>보스에 도전할 때 경고 화면 없이 바로 전투를 시작합니다.</small>
-        </span>
-      </label>
     </section>
 
     <!-- 도트 설정 -->

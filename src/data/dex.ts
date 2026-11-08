@@ -44,6 +44,12 @@ export interface ItemInfo {
   /** 가방 주머니: medicine, pokeballs, battle, berries, misc ... */
   pocket: string
   text: string
+  /** PokeAPI 아이템 분류 (held-items, healing, standard-balls ...) */
+  cat?: string
+  /** 원작 가격 (없으면 원작에서 팔지 않음) */
+  cost?: number
+  /** 기술머신: 가르치는 기술 identifier */
+  move?: string
 }
 
 export interface DexData {
@@ -56,6 +62,8 @@ export interface DexData {
   types: Record<string, string>
   /** 키 = 아이템 identifier */
   items: Record<string, ItemInfo>
+  /** 야생 포켓몬이 지니고 있는 도구 {포켓몬 id: [[아이템 id, 확률 %]]} */
+  wildItems: Record<string, [string, number][]>
 }
 
 const load = <T>(file: string): Promise<T> =>
@@ -76,9 +84,10 @@ export function loadDex(): Promise<void> {
     load<DexData['abilities']>('abilities.json'),
     load<DexData['types']>('types.json'),
     load<DexData['items']>('items.json'),
-  ]).then(([index, moves, abilities, types, items]) => {
+    load<DexData['wildItems']>('wild-items.json'),
+  ]).then(([index, moves, abilities, types, items, wildItems]) => {
     const movesById = Object.fromEntries(Object.values(moves).map((m) => [m.id, m]))
-    dexData.value = { index, moves, movesById, abilities, types, items }
+    dexData.value = { index, moves, movesById, abilities, types, items, wildItems }
   })
   return dexPromise
 }

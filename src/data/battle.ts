@@ -45,18 +45,24 @@ export interface MoveExtra {
   ailChance?: number
   /** 고정 데미지 */
   fixed?: number | 'level' | 'half'
+  /** 특성 판정용 플래그 */
+  fl?: MoveFlag[]
 }
+
+export type MoveFlag = 'contact' | 'punch' | 'sound' | 'bite' | 'pulse' | 'ballistics' | 'powder' | 'slicing' | 'wind'
 
 export interface BattleData {
   /** 타입 상성 {공격: {방어: 배율}}, 1배는 생략 */
   types: Record<string, Record<string, number>>
   /** 키 = 숫자 기술 id */
   moves: Record<string, MoveExtra>
-  species: Record<string, { exp: number; growth: number; ev: number[] }>
+  species: Record<string, { exp: number; growth: number; ev: number[]; happy: number }>
   /** 성장 그룹별 레벨 → 누적 경험치 */
   growth: Record<string, number[]>
   /** 버전 그룹 → 포켓몬 → [기술 id, 레벨][] */
   wild: Record<string, Record<string, [number, number][]>>
+  /** 특성 숫자 id → identifier */
+  abilities: Record<string, string>
 }
 
 export const battleData = shallowRef<BattleData | null>(null)

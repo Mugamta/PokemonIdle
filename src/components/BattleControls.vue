@@ -47,7 +47,7 @@ const slots = computed(() => {
       const eff = m.type === 'typeless' ? 1 : typeEffect(m.type, foe.value)
       hint = eff === 0 ? '효과 없음' : eff > 1 ? '효과 굉장함' : eff < 1 ? '효과 별로' : ''
     }
-    const max = maxPpOf(m.id)
+    const max = maxPpOf(m.id, member)
     const pp = member ? ppOf(member, m.id) : max
     return { kind: 'move' as const, m, hint, pp, max, out: game.ppActive && pp === 0 }
   })
@@ -59,8 +59,9 @@ const canAct = computed(() => !!foe.value && !game.auto && !game.faint && !game.
 const status = computed(() => {
   if (game.faint) return '포켓몬센터에서 회복 중입니다.'
   if (game.travel) return '이동 중입니다.'
-  if (game.auto) return '자동 전투 중입니다. 상단 왼쪽 스위치로 끌 수 있습니다.'
   if (!game.enemy) return '야생 포켓몬을 찾는 중…'
+  if (log.pending) return '상대가 기술을 고르는 중…'
+  if (game.auto) return busy.value ? '기술을 고르는 중…' : '자동 전투 중입니다. 상단 왼쪽 스위치로 끌 수 있습니다.'
   return busy.value ? '…' : '기술을 골라 주세요.'
 })
 const autoHint = computed(() => {
@@ -71,10 +72,11 @@ const autoHint = computed(() => {
 
 const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 
-// 로그 자동 스크롤
+// 로그 자동 스크롤 (탭을 바꾸거나 보고 있는 전투에 줄이 추가될 때)
 const logEl = ref<HTMLElement>()
+const latestId = computed(() => log.battles[log.battles.length - 1]?.id)
 watch(
-  () => log.lines.length,
+  () => [log.current?.id, log.current?.lines.length],
   async () => {
     await nextTick()
     if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
@@ -121,12 +123,27 @@ watch(
     </button>
     <p class="status">{{ status }}</p>
 
-    <div ref="logEl" class="log">
-      <p v-if="!log.lines.length" class="empty">전투 기록이 여기에 표시됩니다.</p>
-      <template v-for="l in log.lines" :key="l.id">
-        <hr v-if="l.kind === 'divider'" class="divider" />
-        <p v-else :class="l.kind">{{ l.text }}</p>
-      </template>
+    <div class="log-wrap">
+      <div v-if="log.battles.length" class="log-tabs">
+        <button
+          v-for="b in log.battles"
+          :key="b.id"
+          type="button"
+          class="log-tab"
+          :class="{ active: b.id === log.current?.id, boss: b.boss, live: b.id === latestId }"
+          :title="b.id === latestId ? '현재 전투' : ''"
+          @click="log.select(b.id)"
+        >
+          {{ b.label }}
+        </button>
+      </div>
+      <div ref="logEl" class="log">
+        <p v-if="!log.current?.lines.length" class="empty">전투 기록이 여기에 표시됩니다.</p>
+        <template v-for="l in log.current?.lines ?? []" :key="l.id">
+          <hr v-if="l.kind === 'divider'" class="divider" />
+          <p v-else :class="l.kind">{{ l.text }}</p>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -245,6 +262,62 @@ watch(
   text-align: center;
 }
 
+.log-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.log-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.log-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.log-tab {
+  flex: none;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 5px 5px 0 0;
+  background: #24242b;
+  color: #7a7a86;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.log-tab.boss {
+  color: #d9a441;
+}
+
+.log-tab.live::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: #7fe0a0;
+  vertical-align: middle;
+}
+
+.log-tab.active {
+  background: #18181d;
+  color: #eee;
+  font-weight: 700;
+}
+
+.log-tab.boss.active {
+  color: #ffcb05;
+}
+
 .log {
   flex: 1;
   min-height: 72px;
@@ -254,6 +327,10 @@ watch(
   background: #18181d;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.log-tabs + .log {
+  border-top-left-radius: 0;
 }
 
 .log p {

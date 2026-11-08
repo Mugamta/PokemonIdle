@@ -10,6 +10,7 @@ import { findStage } from '../data/stages'
 import { expAtLevel, ro } from '../core/battle'
 import { BOSS_DEFEATS, BOSS_INTRO_MS, useGameStore } from '../stores/game'
 import HpBar from './HpBar.vue'
+import ItemIcon from './ItemIcon.vue'
 import PokemonCenter from './PokemonCenter.vue'
 import PokeSprite from './PokeSprite.vue'
 
@@ -39,14 +40,26 @@ const mine = computed(() => {
   return { member: m, info: hpInfo(m.species, m.level, m.ivs ?? [], m.evs ?? [], m.nature, m.hp) }
 })
 
-/** 다음 레벨까지 경험치 진행률 */
-const expRatio = computed(() => {
+/** 다음 레벨까지 경험치: 이번 레벨에서 얻은 양 / 필요한 양 */
+const expProgress = computed(() => {
   const m = game.party[0]
-  if (!m || m.level >= 100) return 0
+  if (!m || m.level >= 100) return null
   const cur = expAtLevel(m.species, m.level)
   const next = expAtLevel(m.species, m.level + 1)
-  const exp = m.exp ?? cur
-  return next > cur ? Math.max(0, Math.min(1, (exp - cur) / (next - cur))) : 0
+  if (next <= cur) return null
+  const need = next - cur
+  const have = Math.max(0, Math.min(need, (m.exp ?? cur) - cur))
+  return { have, need, ratio: have / need }
+})
+const expRatio = computed(() => expProgress.value?.ratio ?? 0)
+/** 상점 표시 개선에 따른 EXP 문구 */
+const expText = computed(() => {
+  const lv = game.displayLevel('exp')
+  if (!lv || !mine.value) return ''
+  const e = expProgress.value
+  if (!e) return 'EXP MAX'
+  const pct = `${Math.floor(e.ratio * 100)}%`
+  return lv === 2 ? `EXP ${e.have.toLocaleString()} / ${e.need.toLocaleString()} (${pct})` : `EXP ${pct}`
 })
 
 // 스테이지 진행도 / 보스
@@ -60,7 +73,7 @@ let introTimer: ReturnType<typeof setTimeout> | undefined
 watch(
   () => game.enemy,
   (e, old) => {
-    if (!e?.boss || e === old || game.skipBossIntro) return
+    if (!e?.boss || e === old || game.bossIntroSkipped) return
     bossIntro.value = { key: Date.now(), name: species(e.species)?.ko ?? e.species, level: e.level }
     clearTimeout(introTimer)
     introTimer = setTimeout(() => (bossIntro.value = null), BOSS_INTRO_MS)
@@ -129,11 +142,17 @@ const foe = computed(() => {
       <div class="box foe-box">
         <div class="line">
           <span v-if="foe.enemy.boss" class="boss-tag">BOSS</span>
+          <span
+            v-else
+            class="caught-mark"
+            :class="{ on: game.caught.includes(foe.enemy.species) }"
+            :title="game.caught.includes(foe.enemy.species) ? '도감에 등록된 포켓몬' : '아직 잡지 않은 포켓몬'"
+          />
           <strong>{{ foe.info?.name ?? foe.enemy.species }}</strong>
           <span v-if="foe.enemy.status" class="status" :style="{ background: STATUS_COLORS[foe.enemy.status] }">{{ STATUS_LABELS[foe.enemy.status] }}</span>
           <span class="lv">Lv.{{ foe.enemy.level }}</span>
         </div>
-        <HpBar v-if="foe.info" :hp="foe.info.hp" :max="foe.info.max" />
+        <HpBar v-if="foe.info" :hp="foe.info.hp" :max="foe.info.max" :display="game.displayLevel('foeHp')" />
       </div>
       <div class="platform foe-pos" :class="{ 'boss-enter': !!bossIntro }">
         <PokeSprite :key="foe.enemy.species" :species="foe.enemy.species" :size="96" pose="foe" class="mon" />
@@ -154,19 +173,32 @@ const foe = computed(() => {
         </div>
         <HpBar v-if="mine.info" :hp="mine.info.hp" :max="mine.info.max" show-numbers />
         <div class="exp"><span :style="{ width: `${expRatio * 100}%` }" /></div>
+        <div v-if="expText" class="exp-text">{{ expText }}</div>
       </div>
     </template>
 
-    <!-- 우하단: 회복 (배틀 포기 후 짧게 회복) -->
-    <button
-      v-if="mine && !game.faint && !game.travel"
-      type="button"
-      class="heal-btn"
-      title="현재 배틀을 포기하고 5초 동안 회복한 뒤 돌아옵니다"
-      @click="game.retreat()"
-    >
-      ✚ 회복
-    </button>
+    <!-- 우하단: 변함없는돌 (공용, 레벨업 진화 막기) · 회복 (배틀 포기 후 짧게 회복) -->
+    <div v-if="mine" class="br">
+      <label
+        v-if="game.everstoneOwned"
+        class="everstone"
+        :class="{ on: game.everstone }"
+        title="켜 두면 모든 포켓몬이 레벨업으로 진화하지 않습니다 (아이템 진화는 가능)"
+      >
+        <input type="checkbox" :checked="game.everstone" @change="game.setEverstone(($event.target as HTMLInputElement).checked)" />
+        <ItemIcon id="everstone" :size="20" />
+        변함없는돌
+      </label>
+      <button
+        v-if="!game.faint && !game.travel"
+        type="button"
+        class="heal-btn"
+        title="현재 배틀을 포기하고 5초 동안 회복한 뒤 돌아옵니다"
+        @click="game.retreat()"
+      >
+        ✚ 회복
+      </button>
+    </div>
 
     <PokemonCenter v-if="game.faint" :faint="game.faint" />
 
@@ -403,11 +435,39 @@ const foe = computed(() => {
 }
 
 /* 회복 버튼 */
-.heal-btn {
+.br {
   position: absolute;
   right: 12px;
   bottom: 8px;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.everstone {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 6px;
+  background: rgba(30, 30, 36, 0.75);
+  color: #9a9aa6;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.everstone.on {
+  color: #fff;
+  box-shadow: inset 0 0 0 1px #ffcb05;
+}
+
+.everstone input {
+  margin: 0;
+}
+
+.heal-btn {
   padding: 5px 12px;
   border: 2px solid #5a1f36;
   border-radius: 6px;
@@ -454,6 +514,19 @@ const foe = computed(() => {
   left: 12px;
 }
 
+.caught-mark {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #8a8a96;
+  border-radius: 50%;
+}
+
+.caught-mark.on {
+  border-color: #fff;
+  background: linear-gradient(#e33 50%, #fff 50%);
+}
+
 .boss-tag {
   padding: 0 4px;
   border-radius: 3px;
@@ -469,6 +542,14 @@ const foe = computed(() => {
   border-radius: 2px;
   background: #3a3a44;
   overflow: hidden;
+}
+
+.exp-text {
+  margin-top: 2px;
+  color: #8fc9ff;
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .exp span {

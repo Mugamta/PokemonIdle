@@ -3,8 +3,10 @@
 //
 // 내용
 //   types   타입 상성 {공격 타입: {방어 타입: 배율}} (1배는 생략)
-//   moves   기술 추가 정보 {기술 id: {pri, self, crit, hits, drain, heal, stats, chance, ail, ailChance, fixed}}
-//   species 포켓몬별 {exp: 기초 경험치, growth: 성장 그룹, ev: 노력치 보상 [6]}
+//   moves   기술 추가 정보 {기술 id: {pri, self, crit, hits, drain, heal, stats, chance, ail, ailChance, fixed, fl}}
+//           fl = 특성 판정용 플래그 (contact, punch, sound, bite, pulse, ballistics, powder, slicing, wind)
+//   abilities 특성 숫자 id → identifier
+//   species 포켓몬별 {exp: 기초 경험치, growth: 성장 그룹, ev: 노력치 보상 [6], happy: 기본 친밀도}
 //   growth  성장 그룹별 레벨 1~100 누적 경험치 [101] (0번 = 사용 안 함)
 //   wild    버전 그룹별 야생 포켓몬 레벨업 기술 {vg: {포켓몬 id: [[기술 id, 레벨], ...]}}
 //           출현표(src/data/encounters/*.json)에 나오는 포켓몬·버전 그룹만
@@ -50,10 +52,11 @@ async function csv(name) {
   return parseCsv(await readFile(file, 'utf8'))
 }
 
-const [types, efficacy, moves, meta, metaStats, pokemon, species, stats, experience, pmoves, vgs] = await Promise.all(
-  ['types', 'type_efficacy', 'moves', 'move_meta', 'move_meta_stat_changes', 'pokemon', 'pokemon_species',
-    'pokemon_stats', 'experience', 'pokemon_moves', 'version_groups'].map(csv),
-)
+const [types, efficacy, moves, meta, metaStats, pokemon, species, stats, experience, pmoves, vgs, flagNames, flagMap, abilityRows] =
+  await Promise.all(
+    ['types', 'type_efficacy', 'moves', 'move_meta', 'move_meta_stat_changes', 'pokemon', 'pokemon_species',
+      'pokemon_stats', 'experience', 'pokemon_moves', 'version_groups', 'move_flags', 'move_flag_map', 'abilities'].map(csv),
+  )
 
 // ---------- 타입 상성 ----------
 const typeKey = Object.fromEntries(types.map((t) => [t.id, t.identifier]))
@@ -91,6 +94,18 @@ const metaBy =Object.fromEntries(meta.map((m) => [m.move_id, m]))
 const statsBy = {}
 for (const s of metaStats) (statsBy[s.move_id] ??= []).push([STAT[s.stat_id], Number(s.change)])
 
+// 특성 판정에 쓰는 플래그 (PokeAPI move_flags). 베기·바람 기술은 PokeAPI 에 없어 직접 지정
+const FLAGS = new Set(['contact', 'punch', 'sound', 'bite', 'pulse', 'ballistics', 'powder'])
+const flagName = Object.fromEntries(flagNames.map((f) => [f.id, f.identifier]))
+const flagsBy = {}
+for (const f of flagMap) if (FLAGS.has(flagName[f.move_flag_id])) (flagsBy[f.move_id] ??= []).push(flagName[f.move_flag_id])
+const SLICING = new Set(['cut', 'razor-leaf', 'slash', 'fury-cutter', 'air-cutter', 'aerial-ace', 'leaf-blade', 'night-slash',
+  'air-slash', 'x-scissor', 'psycho-cut', 'cross-poison', 'sacred-sword', 'razor-shell', 'secret-sword', 'solar-blade',
+  'behemoth-blade', 'stone-axe', 'ceaseless-edge', 'population-bomb', 'kowtow-cleave', 'aqua-cutter', 'bitter-blade',
+  'mighty-cleave', 'tachyon-cutter', 'psyblade'])
+const WIND = new Set(['air-cutter', 'bleakwind-storm', 'blizzard', 'fairy-wind', 'gust', 'heat-wave', 'hurricane', 'icy-wind',
+  'petal-blizzard', 'sandsear-storm', 'sandstorm', 'springtide-storm', 'tailwind', 'twister', 'whirlwind', 'wildbolt-storm'])
+
 const moveOut = {}
 for (const m of moves) {
   if (Number(m.id) >= 10000) continue
@@ -116,6 +131,10 @@ for (const m of moves) {
     if (Number(mm.ailment_chance)) o.ailChance = Number(mm.ailment_chance)
   }
   if (FIXED[m.identifier] != null) o.fixed = FIXED[m.identifier]
+  const fl = [...(flagsBy[m.id] ?? [])]
+  if (SLICING.has(m.identifier)) fl.push('slicing')
+  if (WIND.has(m.identifier)) fl.push('wind')
+  if (fl.length) o.fl = fl
   if (Object.keys(o).length) moveOut[m.id] = o
 }
 
@@ -132,6 +151,7 @@ for (const p of pokemon) {
     exp: Number(p.base_experience || 0),
     growth: Number(speciesById[p.species_id].growth_rate_id),
     ev: evBy[p.id],
+    happy: Number(speciesById[p.species_id].base_happiness || 0),
   }
 }
 
@@ -165,7 +185,10 @@ for (const [vg, set] of Object.entries(needed)) {
   for (const name of set) if (!out[name]) console.warn(`  ${vg}: ${name} 레벨업 기술 없음`)
 }
 
-await writeFile(OUT, JSON.stringify({ types: typeChart, moves: moveOut, species: speciesOut, growth, wild }))
+// ---------- 특성 ----------
+const abilities = Object.fromEntries(abilityRows.filter((a) => Number(a.id) < 10000).map((a) => [a.id, a.identifier]))
+
+await writeFile(OUT, JSON.stringify({ types: typeChart, moves: moveOut, species: speciesOut, growth, wild, abilities }))
 console.log(
   `types ${Object.keys(typeChart).length}, moves ${Object.keys(moveOut).length}, species ${Object.keys(speciesOut).length},`,
   `growth ${Object.keys(growth).length}, wild ${Object.entries(wild).map(([k, v]) => `${k}:${Object.keys(v).length}`).join(' ')}`,

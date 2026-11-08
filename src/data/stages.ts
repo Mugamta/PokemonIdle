@@ -331,8 +331,51 @@ function buildStages(regionId: number, regionKey: string, names: string[]): Stag
     if (water)
       list.push({ name: land ? `${name} (수상)` : name, place: water.place, kind: 'water', encounters: water })
   }
-  return list.map((s, i) => ({ ...s, id: `${regionId}-${i + 1}` }))
+  // 이전 순서(원래 나열 순서)의 id → 이름 (저장 데이터 변환용)
+  list.forEach((s, i) => legacyNames.set(`${regionId}-${i + 1}`, s.name))
+  return reorderWater(list).map((s, i) => ({ ...s, id: `${regionId}-${i + 1}` }))
 }
+
+/** 출현 레벨: max = 최고 레벨 (보스 레벨 기준), avg = 출현율 가중 평균 최고 레벨 */
+function levels(set: EncounterSet | undefined): { max: number; avg: number } {
+  if (!set) return { max: 0, avg: 0 }
+  const lists = 'all' in set ? [set.all] : [set.day, set.night]
+  const list = lists.flat().filter((e) => !e.special)
+  const total = list.reduce((a, e) => a + e.rate, 0)
+  return {
+    max: Math.max(0, ...list.map((e) => e.max)),
+    avg: total ? list.reduce((a, e) => a + e.rate * e.max, 0) / total : 0,
+  }
+}
+
+/**
+ * 수상 스테이지(낚싯대 출현 포함이라 레벨이 높음)를 뒤로 미룸:
+ * 원래 위치 이후에서 최고 레벨·평균 레벨이 모두 수상 스테이지 이상인 첫 육지 스테이지 바로 뒤로 옮김
+ * (평균도 보는 이유: 돌산터널처럼 드물게 고레벨이 나오는 곳에 붙지 않도록).
+ * 그런 육지 스테이지가 없으면 원래 위치 그대로
+ */
+function reorderWater<T extends Omit<Stage, 'id'>>(list: T[]): T[] {
+  const lv = list.map((s) => levels(s.encounters))
+  const after = new Map<number, T[]>()
+  const out: T[] = []
+  list.forEach((s, i) => {
+    if (s.kind === 'water') {
+      const j = list.findIndex(
+        (x, k) => k > i && x.kind === 'land' && lv[k]!.max >= lv[i]!.max && lv[k]!.avg >= lv[i]!.avg,
+      )
+      if (j >= 0) {
+        if (!after.has(j)) after.set(j, [])
+        after.get(j)!.push(s)
+        return
+      }
+    }
+    out.push(s, ...(after.get(i) ?? []))
+  })
+  return out
+}
+
+/** 이전 스테이지 순서의 id → 스테이지 이름 */
+const legacyNames = new Map<string, string>()
 
 export const REGIONS: Region[] = RAW.map((r, i) => ({
   id: i + 1,
@@ -343,6 +386,13 @@ export const REGIONS: Region[] = RAW.map((r, i) => ({
   hidden: r.hidden,
   stages: buildStages(i + 1, r.key, r.stages),
 }))
+
+/** 이전 순서(수상 스테이지 재배치 전) 저장 데이터의 스테이지 id → 현재 id */
+export function migrateStageId(oldId: string): string {
+  const name = legacyNames.get(oldId)
+  const region = REGIONS.find((r) => oldId.startsWith(`${r.id}-`))
+  return region?.stages.find((s) => s.name === name)?.id ?? oldId
+}
 
 export function findStage(id: string): { region: Region; stage: Stage } | null {
   for (const region of REGIONS) {
