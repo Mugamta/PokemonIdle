@@ -3,7 +3,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ro } from '../core/battle'
 import { findStage } from '../data/stages'
-import { FAINT_MS, type FaintState } from '../stores/game'
+import { FAINT_MS, RETREAT_MS, type FaintState } from '../stores/game'
 
 const props = defineProps<{ faint: FaintState }>()
 
@@ -66,6 +66,10 @@ const place = computed(() => (props.faint.home ? `${props.faint.town} 집` : `${
         {{ faint.fly ? '공중날기로' : '' }} {{ returnStage.id }} {{ ro(returnStage.name) }} 돌아갑니다
       </template>
     </p>
+    <p v-if="!faint.retreat" class="tip">
+      💡 TIP: 패배할 것 같을 때 <b>✚ 회복</b> 버튼을 누르면 회복 시간이 {{ FAINT_MS / 1000 }}초 →
+      {{ RETREAT_MS / 1000 }}초로 줄어들고, 회복이 끝나면 똑같이 원래 장소로 이동합니다.
+    </p>
   </div>
 </template>
 
@@ -121,6 +125,21 @@ const place = computed(() => (props.faint.home ? `${props.faint.town} 집` : `${
 .desc.small {
   color: #9a9aa6;
   font-size: 12px;
+}
+
+.tip {
+  max-width: 300px;
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d8d2a8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tip b {
+  color: #ff9ec4;
 }
 
 .bar {
