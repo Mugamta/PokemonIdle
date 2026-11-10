@@ -7,7 +7,7 @@ import { load, save } from '../src/core/save'
 import { findStage } from '../src/data/stages'
 import { EGG_MOVE_PRICE, eggMoveOptions, PARTY_MAX, tutorOptions, useGameStore, type PartyMember } from '../src/stores/game'
 import { loadLearnMethods } from '../src/data/dex'
-import { pickAutoBall } from '../src/data/shop'
+import { pickAutoBall, rankAutoBalls } from '../src/data/shop'
 import { useBattleLogStore } from '../src/stores/battleLog'
 import { REGIONS } from '../src/data/stages'
 
@@ -420,6 +420,12 @@ describe('자동 사용에 합쳐진 자동 구매', () => {
     expect(pickAutoBall([ballOpt('poke', 1, 0.01, 200), ballOpt('great', 1.5, 0.02, 600)], 1.5)).toBe('great')
     // 살 수도 없고 가진 것도 없으면 null
     expect(pickAutoBall([{ ...ballOpt('poke', 1, 0.3, 200), buyable: false }], 1)).toBeNull()
+  })
+
+  test('몬스터볼 후보 목록: 기준 이상인 볼만 가성비 순, 없으면 배율 순', () => {
+    const opts = [ballOpt('poke', 1, 0.3, 200), ballOpt('great', 1.5, 0.5, 600), ballOpt('ultra', 2, 0.8, 800)]
+    expect(rankAutoBalls(opts, 1.5).map((o) => o.id)).toEqual(['ultra', 'great'])
+    expect(rankAutoBalls(opts, 3).map((o) => o.id)).toEqual(['ultra', 'great', 'poke'])
   })
 
   test('몬스터볼: 도감에 없는 야생 포켓몬에게 가진 볼을 먼저, 없으면 사서 던짐', () => {

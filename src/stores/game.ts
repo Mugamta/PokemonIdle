@@ -96,6 +96,7 @@ import {
   planHealAfterBattle,
   pickCheapestItem,
   pickAutoBall,
+  type BallOption,
   AUTO_BALL_STEPS,
   DEFAULT_AUTO_BALL,
   NO_AUTO_BALLS,
@@ -1777,24 +1778,27 @@ export const useGameStore = defineStore('game', {
       //    (가진 것은 공짜, 없으면 사서 씀. 마스터볼·파크볼은 쓰지 않음)
       const e = this.enemy
       if (on('ball') && e && !e.boss && !this.caught.includes(e.species)) {
-        const foe = this.enemyBattler()!
-        const ctx = this.catchContext()
-        const pick = pickAutoBall(
-          SHOP_ITEMS.filter((i) => i.category === 'ball' && !NO_AUTO_BALLS.includes(i.id)).map((i) => ({
-            id: i.id,
-            price: i.price,
-            owned: this.items[i.id] ?? 0,
-            buyable: this.money >= i.price,
-            mult: ballMultOf(i.id, ctx),
-            chance: catchChance(i.id, ctx, foe.hp, maxHpOf(foe)),
-          })),
-          this.autoBall,
-        )
+        const pick = pickAutoBall(this.autoBallOptions()!, this.autoBall)
         if (pick && ready(pick) && this.useItem(pick)) return true
       }
       return false
     },
 
+    /** 몬스터볼 자동 사용 후보 (지금 상대 기준 배율·포획률). 잡을 수 있는 야생 포켓몬과 싸우는 중이 아니면 null */
+    autoBallOptions(): BallOption[] | null {
+      const e = this.enemy
+      const foe = e && !e.boss ? this.enemyBattler() : null
+      if (!e || !foe) return null
+      const ctx = this.catchContext()
+      return SHOP_ITEMS.filter((i) => i.category === 'ball' && !NO_AUTO_BALLS.includes(i.id)).map((i) => ({
+        id: i.id,
+        price: i.price,
+        owned: this.items[i.id] ?? 0,
+        buyable: this.money >= i.price,
+        mult: ballMultOf(i.id, ctx),
+        chance: catchChance(i.id, ctx, foe.hp, maxHpOf(foe)),
+      }))
+    },
     /** 기절 회복 아이템을 target 에게 씀 (가방에 없으면 삼). 썼으면 true */
     autoReviveUse(id: string, target: number): boolean {
       const def = shopItem(id)

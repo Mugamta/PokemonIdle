@@ -190,6 +190,27 @@ export function ballMultOf(ball: string, c: CatchContext): number {
   const base = dexData.value?.index.find((p) => p.id === c.species)?.capture ?? 45
   return (r.mult * Math.max(1, Math.min(255, base + r.add))) / base
 }
+/** 볼이 조건을 만족할 때의 최대 보정 배율 (자동 사용 후보 표시용, 없으면 1배). 헤비볼은 상대에 따라 달라 Infinity */
+export const BALL_MAX_MULT: Record<string, number> = {
+  'great-ball': 1.5,
+  'sport-ball': 1.5,
+  'safari-ball': 1.5,
+  'ultra-ball': 2,
+  'net-ball': 3.5,
+  'dive-ball': 3.5,
+  'lure-ball': 4,
+  'nest-ball': 4,
+  'repeat-ball': 3.5,
+  'timer-ball': 4,
+  'dusk-ball': 3,
+  'quick-ball': 5,
+  'level-ball': 8,
+  'moon-ball': 4,
+  'fast-ball': 4,
+  'heavy-ball': Infinity,
+  'dream-ball': 4,
+  'beast-ball': 5,
+}
 /** 볼 효과 설명 (상점·도감 표시용) */
 export const BALL_NOTES: Record<string, string> = {
   'master-ball': '반드시 잡힙니다.',

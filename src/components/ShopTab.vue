@@ -16,6 +16,9 @@ import {
   STAT_VIEW_PERKS,
   AUTO_HEAL_STEPS,
   AUTO_BALL_STEPS,
+  NO_AUTO_BALLS,
+  rankAutoBalls,
+  ballSpentPerCatch,
   AUTO_ASH_STEPS,
   SACRED_ASH,
   isAutoReviveItem,
@@ -48,7 +51,7 @@ import {
   type ItemCategory,
   type Perk,
 } from '../data/shop'
-import { BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, tmShopList, type HeldGroup } from '../data/items'
+import { BALL_MAX_MULT, BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, tmShopList, type HeldGroup } from '../data/items'
 import ItemIcon from './ItemIcon.vue'
 import QuickUseDialog from './QuickUseDialog.vue'
 import ScrollTabs from './ScrollTabs.vue'
@@ -282,6 +285,18 @@ const reviveItems = SHOP_ITEMS.filter((i) => isAutoReviveItem(i.id))
 const healKeyOf = (p: Perk): AutoHealKey | null =>
   p.id === 'autoUse:heal' ? 'heal' : p.id === 'autoUse:healAfter' ? 'healAfter' : null
 const itemName = (id: string) => dexData.value?.items[id]?.ko ?? id
+/** 몬스터볼 자동 사용 후보 표시 개수 (전투 중) */
+const AUTO_BALL_SHOWN = 5
+/** 몬스터볼 자동 사용: 지금 상대 기준 후보 (쓸 순서대로). 야생 포켓몬과 싸우는 중이 아니면 null */
+const autoBallNow = computed(() => {
+  const opts = game.autoBallOptions()
+  return opts && rankAutoBalls(opts, game.autoBall)
+})
+/** 몬스터볼 자동 사용: 고른 배율을 낼 수 있는 볼 (전투 밖 표시용) */
+const autoBallStatic = computed(() =>
+  SHOP_ITEMS.filter((i) => i.category === 'ball' && !NO_AUTO_BALLS.includes(i.id) && (BALL_MAX_MULT[i.id] ?? 1) >= game.autoBall),
+)
+const multText = (m: number) => (Number.isFinite(m) ? `${Math.round(m * 100) / 100}배` : '확정')
 
 
 /** 파티 슬롯 도구 조건: 도구 종류·같은 도구 개수를 모두 최대로 늘린 파티 포켓몬 수 */
@@ -745,6 +760,32 @@ const slotRows = computed(() =>
             </select>
             인 볼 중 가성비 좋은 볼 사용
           </div>
+          <template v-if="game.hasPerk(p.id) && p.id === 'autoUse:ball'">
+            <template v-if="autoBallNow">
+              <p class="desc">
+                지금 상대 기준 후보{{ game.caught.includes(game.enemy!.species) ? ' (도감에 있어 던지지 않음)' : '' }}
+                <template v-if="autoBallNow.length && autoBallNow[0]!.mult < game.autoBall"> · 기준에 닿는 볼이 없어 배율 순</template>
+              </p>
+              <p v-if="!autoBallNow.length" class="desc">가진 볼도 없고 살 돈도 없습니다.</p>
+              <ol v-else class="ball-cands">
+                <li v-for="(o, n) in autoBallNow.slice(0, AUTO_BALL_SHOWN)" :key="o.id" :class="{ pick: n === 0 }">
+                  <ItemIcon :id="o.id" :size="20" />
+                  <span class="grow">{{ itemName(o.id) }}<small v-if="o.owned" class="muted"> ×{{ o.owned }}</small></span>
+                  <span class="muted">{{ multText(o.mult) }} · {{ Math.round(o.chance * 1000) / 10 }}%</span>
+                  <span class="price">{{ o.owned ? '가진 것' : `마리당 ${won(Math.round(ballSpentPerCatch(o)))}` }}</span>
+                </li>
+              </ol>
+            </template>
+            <p v-else-if="game.autoBall === 1" class="desc">후보: 모든 볼 (상대를 만나면 한 마리 잡는 데 드는 돈이 가장 적은 볼)</p>
+            <ol v-else class="ball-cands">
+              <li v-for="it in autoBallStatic" :key="it.id">
+                <ItemIcon :id="it.id" :size="20" />
+                <span class="grow">{{ itemName(it.id) }}<small v-if="game.items[it.id]" class="muted"> ×{{ game.items[it.id] }}</small></span>
+                <span class="muted">{{ BALL_NOTES[it.id] }}</span>
+                <span class="price">{{ won(it.price) }}</span>
+              </li>
+            </ol>
+          </template>
           <div v-if="game.hasPerk(p.id) && healKeyOf(p)" class="opt">
             HP가
             <select
@@ -1044,6 +1085,22 @@ const slotRows = computed(() =>
   cursor: pointer;
 }
 
+.ball-cands {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 12px;
+}
+.ball-cands li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.ball-cands li.pick {
+  color: #ffcb05;
+  font-weight: 700;
+}
 .opt {
   display: flex;
   align-items: center;

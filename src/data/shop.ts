@@ -692,6 +692,17 @@ export interface BallOption extends Omit<HealOption, 'amount'> {
  * 쓸 수 있는 게 없으면 null
  */
 export function pickAutoBall(opts: BallOption[], minMult: number): string | null {
+  return rankAutoBalls(opts, minMult)[0]?.id ?? null
+}
+
+/** 한 마리 잡는 데 드는 돈 (가진 볼은 0) */
+export const ballSpentPerCatch = (o: BallOption): number => (o.owned > 0 ? 0 : o.price) / o.chance
+
+/**
+ * 몬스터볼 자동 사용 후보를 쓸 순서대로: 보정 배율이 minMult 이상인 볼을 가성비 순으로.
+ * 기준에 닿는 볼이 없으면 쓸 수 있는 볼을 배율이 높은 순으로 (첫 번째만 실제로 씀)
+ */
+export function rankAutoBalls(opts: BallOption[], minMult: number): BallOption[] {
   const usable = opts.filter((o) => o.chance > 0 && (o.owned > 0 || o.buyable))
   const perCatch = (o: BallOption): HealCost => {
     const c = costOf(o)
@@ -699,8 +710,8 @@ export function pickAutoBall(opts: BallOption[], minMult: number): string | null
   }
   const byCost = (a: BallOption, b: BallOption) => cheaper(perCatch(a), perCatch(b))
   const enough = usable.filter((o) => o.mult >= minMult).sort(byCost)
-  if (enough.length) return enough[0]!.id
-  return usable.sort((a, b) => b.mult - a.mult || byCost(a, b))[0]?.id ?? null
+  if (enough.length) return enough
+  return usable.sort((a, b) => b.mult - a.mult || byCost(a, b))
 }
 
 /**
