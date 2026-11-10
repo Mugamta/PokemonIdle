@@ -15,6 +15,7 @@ import {
   type AutoCategory,
   type ItemCategory,
   type TrainGroup,
+  type TrainItem,
 } from '../data/shop'
 import {
   canLearnMachine,
@@ -36,7 +37,7 @@ import {
   type PartyMember,
 } from '../stores/game'
 import { formOf, megaFormFor, TERA_SHARD_COST, teraShardOf, teraShardType } from '../core/gimmicks'
-import { abilityInfo } from '../core/abilities'
+import { abilityInfo, hiddenAbility, normalAbilities } from '../core/abilities'
 import { josa, maxHpOf, ro } from '../core/battle'
 import { BALL_NOTES, catchChance, isMachine, isRecord } from '../data/items'
 import { findStage } from '../data/stages'
@@ -345,8 +346,7 @@ const trainGroups = computed(() => {
           ? (options.find((o) => m && game.trainEffect(m, def, o.value)) ?? options[0])?.value
           : saved
       const usable = !!m && !!game.trainEffect(m, def, picked)
-      let why = ''
-      if (!usable && m) why = def.iv && m.level < BOTTLE_CAP_LEVEL ? `레벨 ${BOTTLE_CAP_LEVEL} 이상만 쓸 수 있습니다` : '지금은 효과가 없습니다'
+      const why = !usable && m ? trainWhy(m, def) : ''
       return {
         def,
         count: game.items[def.id]!,
@@ -360,6 +360,26 @@ const trainGroups = computed(() => {
     }),
   })).filter((x) => x.items.length)
 })
+/** 육성 아이템을 쓸 수 없는 이유 (화면에 표시) */
+function trainWhy(m: PartyMember, def: TrainItem): string {
+  const name = species(m.species)?.ko ?? m.species
+  const abil = (id: string | null) => abilityInfo(id ?? '')?.ko ?? id ?? '-'
+  if (def.iv && m.level < BOTTLE_CAP_LEVEL) return `레벨 ${BOTTLE_CAP_LEVEL} 이상만 쓸 수 있습니다.`
+  if (def.ability === 'capsule') {
+    if (m.hiddenAbility) return `${name}의 특성은 숨겨진 특성이라 특성캡슐로 바꿀 수 없습니다. (특성패치로 일반 특성으로 바꿀 수 있음)`
+    const normal = normalAbilities(m.species)
+    if (normal.length < 2) return `${name}의 일반 특성은 ${abil(normal[0] ?? null)} 하나뿐이라 바꿀 수 없습니다.`
+  }
+  if (def.ability === 'patch' && !m.hiddenAbility) {
+    const hidden = hiddenAbility(m.species)
+    if (!hidden) return `${name}에게는 숨겨진 특성이 없습니다.`
+    if (hidden === memberAbility(m)) return `이미 숨겨진 특성(${abil(hidden)})입니다.`
+  }
+  if (def.exp != null && m.level >= 100) return '이미 레벨 100입니다.'
+  if (def.nature && m.nature === def.nature) return '이미 이 성격입니다.'
+  if (def.ev != null) return def.ev > 0 ? '이 능력치의 노력치를 더 올릴 수 없습니다.' : '노력치가 0이고 친밀도도 최대입니다.'
+  return '지금은 효과가 없습니다.'
+}
 function useTrain(id: string, target: number | string | undefined, times: number) {
   game.useTrainItem(game.party.indexOf(trainMember.value!), id, target, times)
 }
@@ -936,6 +956,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                     10개
                   </button>
                 </div>
+                <p v-if="it.why" class="item-text why">{{ it.why }}</p>
                 <p v-if="it.info?.text" class="item-text">{{ it.info.text }}</p>
               </li>
             </ul>
@@ -947,6 +968,10 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 </template>
 
 <style scoped>
+.item-text.why {
+  color: #ffb74d;
+}
+
 /* 배틀 하위 탭: 패널 높이에 맞춰 로그가 남은 공간을 채움 (패널 스크롤 없음) */
 .battle.fill {
   display: flex;
