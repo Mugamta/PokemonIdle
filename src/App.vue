@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import BattleScene from './components/BattleScene.vue'
 import BattleTab from './components/BattleTab.vue'
 import DexTab from './components/DexTab.vue'
@@ -11,6 +11,7 @@ import StarterPicker from './components/StarterPicker.vue'
 import StageTab from './components/StageTab.vue'
 import TabBar from './components/TabBar.vue'
 import { TABS, type TabId } from './components/tabs'
+import { installAudio, playMusic } from './core/audio'
 import { startGameLoop } from './core/gameLoop'
 import { load, save } from './core/save'
 import { loadBattle } from './data/battle'
@@ -27,7 +28,12 @@ const activeTab = ref<TabId>('battle')
 const loaded = ref(false)
 const activeLabel = computed(() => TABS.find((t) => t.id === activeTab.value)?.label)
 
+// 배경음악: 포켓몬센터 회복 중 / 보스전 / 그 외
+const music = computed(() => (!loaded.value ? null : game.faint ? 'center' : game.enemy?.boss ? 'boss' : 'field'))
+watch(music, (id) => playMusic(id), { immediate: true })
+
 onMounted(() => {
+  installAudio()
   const data = load<typeof game.$state>()
   if (data) game.$patch(data.state)
   // stageOrder 가 없는 저장 데이터는 수상 스테이지 재배치 전 순서(1)

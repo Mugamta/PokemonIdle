@@ -628,6 +628,12 @@ Grouped by artist. Names are taken from SpriteCollab `credit_names.txt`; artists
 
 ---
 
+## Music & Sound Effects
+
+All background music and sound effects are original compositions, synthesized in real time with the Web Audio API (`src/core/audio.ts`). No audio from the Pokémon games is included.
+
+배경음악과 효과음은 모두 이 프로젝트에서 새로 만든 곡·소리이며, 게임 원작 음원은 사용하지 않습니다.
+
 ## Game Data
 
 **Source:** [PokéAPI](https://pokeapi.co/) ([GitHub](https://github.com/PokeAPI/pokeapi)): Pokémon, moves, abilities, items, types, learnsets, and encounter data.

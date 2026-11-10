@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { audioSettings } from '../core/audio'
 import { DIFFICULTIES } from '../core/battle'
 import { exportSave, importSave, resetSave, save } from '../core/save'
 import { dexData, loadDex } from '../data/dex'
@@ -154,6 +155,21 @@ const credits = computed(() => {
       </section>
 
       <section class="card">
+        <h3>사운드</h3>
+        <label class="volume">
+          <span>배경음악</span>
+          <input v-model.number="audioSettings.music" type="range" min="0" max="1" step="0.05" />
+          <output>{{ Math.round(audioSettings.music * 100) }}</output>
+        </label>
+        <label class="volume">
+          <span>효과음</span>
+          <input v-model.number="audioSettings.sfx" type="range" min="0" max="1" step="0.05" />
+          <output>{{ Math.round(audioSettings.sfx * 100) }}</output>
+        </label>
+        <p class="hint">브라우저 정책상 화면을 한 번 누른 뒤부터 소리가 납니다. 0으로 두면 꺼집니다.</p>
+      </section>
+
+      <section class="card">
         <h3>데이터 백업</h3>
         <p class="hint top">백업 코드나 파일을 다른 브라우저·기기에서 불러오면 이어서 플레이할 수 있습니다.</p>
         <div class="data-btns">
@@ -283,6 +299,31 @@ const credits = computed(() => {
 </template>
 
 <style scoped>
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.volume span {
+  width: 64px;
+  flex: none;
+}
+
+.volume input {
+  flex: 1;
+  accent-color: #ffcb05;
+}
+
+.volume output {
+  width: 28px;
+  text-align: right;
+  color: #9a9aa6;
+  font-size: 13px;
+}
+
 .settings {
   display: flex;
   flex-direction: column;

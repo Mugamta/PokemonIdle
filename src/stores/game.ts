@@ -1,3 +1,4 @@
+import { sfx } from '../core/audio'
 import { defineStore } from 'pinia'
 import {
   chooseMove,
@@ -302,6 +303,11 @@ export function canLearnMachine(m: Pick<PartyMember, 'species'>, moveId: string)
   const num = moveNumOf(moveId)
   return num != null && !!learnsets.value?.[m.species]?.some((e) => e[0] === num)
 }
+/** 한 턴 효과음에서 공격 사이 간격 (초) */
+const HIT_SFX_GAP = 0.3
+/** 이번 턴 공격 효과음이 끝나는 시점 (쓰러짐·레벨업 효과음을 그 뒤에 재생) */
+let turnSfxDelay = 0
+
 let moveNumCache: { src: unknown; map: Map<string, number> } | null = null
 function moveNumOf(id: string): number | undefined {
   const dex = dexData.value
@@ -1040,6 +1046,7 @@ export const useGameStore = defineStore('game', {
       const name = speciesOf(enemy.species)?.ko ?? enemy.species
       log.beginBattle(name, !!enemy.boss)
       log.push(enemy.boss ? `보스 ${josa(name, '이', '가')} 승부를 걸어왔다!` : `앗! 야생 ${josa(name, '이', '가')} 튀어나왔다!`, 'info')
+      if (enemy.boss) sfx('boss')
       // 특성 정보: 서로 상대가 가질 수 있는 특성을 후보로 시작
       enemy.intel = { cands: speciesAbilities(enemy.species, !!enemy.boss || this.difficulty === 'hard'), known: false }
       const mine = this.party[0]
@@ -1208,6 +1215,12 @@ export const useGameStore = defineStore('game', {
       const enemyMove = chooseMove({ ...foe, moves: foeMoves }, me, DIFFICULTY_AI[this.difficulty])
       const result: TurnResult = runTurn(me, foe, playerMove, enemyMove, override)
       for (const line of result.lines) log.push(line)
+      // 효과음: 공격마다 조금씩 간격을 두고, 쓰러짐은 마지막 공격 뒤에
+      result.hits.forEach((h, i) => {
+        sfx(h.eff > 1 ? 'hitSuper' : h.eff < 1 ? 'hitWeak' : 'hit', i * HIT_SFX_GAP)
+        if (h.crit) sfx('crit', i * HIT_SFX_GAP + 0.05)
+      })
+      turnSfxDelay = result.hits.length * HIT_SFX_GAP
       this.battleTurns++
       if (enemyMove !== 'struggle' && result.enemyMoved && this.ppActive) {
         const left = ppOf(this.enemy, enemyMove)
@@ -1247,6 +1260,7 @@ export const useGameStore = defineStore('game', {
       if (foe.hp <= 0) this.onEnemyFainted()
       // 같은 턴에 둘 다 쓰러질 수 있음 (반동·독 등)
       if (me.hp <= 0 && member.hp === 0 && !this.faint) this.onPlayerFainted()
+      turnSfxDelay = 0
     },
 
     // ---------- 아이템 ----------
@@ -1394,6 +1408,9 @@ export const useGameStore = defineStore('game', {
       log.push(`${josa(ballName, '을', '를')} 던졌다!`, 'info')
       const { caught, shakes } = rollCatch(ballId, this.catchContext(), foe.hp, maxHpOf(foe))
       if (shakes > 0) log.push(`볼이 ${shakes}번 흔들렸다…`)
+      sfx('throw')
+      for (let i = 0; i < Math.min(3, shakes); i++) sfx('shake', 0.4 + i * 0.35)
+      sfx(caught ? 'catch' : 'breakOut', 0.4 + Math.min(3, shakes) * 0.35)
       if (caught) {
         this.onEnemyCaught(ballId)
         return true
@@ -1834,6 +1851,7 @@ export const useGameStore = defineStore('game', {
       if (price == null || count < 1 || this.money < price * count) return false
       this.money -= price * count
       this.items[itemId] = (this.items[itemId] ?? 0) + count
+      sfx('buy')
       return true
     },
     /** 가방의 아이템 팔기 */
@@ -1914,6 +1932,7 @@ export const useGameStore = defineStore('game', {
       const stageId = this.currentStageId
       const name = speciesOf(enemy.species)?.ko ?? enemy.species
       log.push(`${enemy.boss ? '보스 ' : '야생 '}${josa(name, '은', '는')} 쓰러졌다!`, 'good')
+      sfx('faint', turnSfxDelay)
       this.endBattleGimmick()
 
       // 경험치 · 노력치 (행운의알·학습장치·교정깁스·파워 계열 도구)
@@ -2016,6 +2035,7 @@ export const useGameStore = defineStore('game', {
         // 최대 HP 증가분만큼 현재 HP도 증가 (원작과 동일)
         if (member.hp != null) member.hp = Math.max(0, member.hp + (maxHp() - oldMax))
         log.push(`${josa(name, '은', '는')} 레벨 ${ro(String(member.level))} 올랐다!`, 'good')
+        sfx('levelUp', turnSfxDelay + 0.3)
         // 원작 친밀도: 레벨업 시 0~99 +5, 100~199 +3, 200~ +2
         const f = friendshipOf(member)
         this.addFriendship(member, f < 100 ? 5 : f < 200 ? 3 : 2)
@@ -2245,6 +2265,7 @@ export const useGameStore = defineStore('game', {
       if (member.hp != null) member.hp = Math.max(0, member.hp + (maxHp(to) - oldMax))
       log.push(`어라…!? ${before}의 모습이…!`, 'info')
       log.push(`축하합니다! ${josa(before, '은', '는')} ${ro(after)} 진화했다!`, 'good')
+      sfx('evolve', turnSfxDelay + 0.8)
       if (!this.caught.includes(to)) this.caught.push(to)
       // 진화할 때(레벨 0) · 현재 레벨에 배우는 기술
       for (const lv of [0, member.level]) for (const id of movesLearnedAt(to, lv, this.unlockedGens)) this.learnMove(member, id)
@@ -2282,9 +2303,11 @@ export const useGameStore = defineStore('game', {
         member.moves[i] = moveId
         const old = dexData.value?.movesById[replaceId!]?.ko ?? replaceId!
         log.push(`${josa(name, '은', '는')} ${josa(old, '을', '를')} 깨끗이 잊고 ${josa(move, '을', '를')} 배웠다!`, 'good')
+        sfx('learn', turnSfxDelay + 1.1)
       } else {
         member.moves.push(moveId)
         log.push(`${josa(name, '은', '는')} ${josa(move, '을', '를')} 배웠다!`, 'good')
+        sfx('learn', turnSfxDelay + 1.1)
       }
     },
 
@@ -2330,6 +2353,7 @@ export const useGameStore = defineStore('game', {
       const first = !this.clearedStages.includes(stageId)
       if (first) this.clearedStages.push(stageId)
       log.push(`${found.stage.id} ${found.stage.name} 클리어!`, 'good')
+      sfx('clear', turnSfxDelay + 0.5)
       if (stageId === AUTO_UNLOCK_STAGE && !this.autoUnlocked) {
         this.autoUnlocked = true
         log.push('자동 전투가 해금되었습니다! 전투 화면 왼쪽 위 스위치로 켤 수 있습니다.', 'good')
@@ -2349,6 +2373,7 @@ export const useGameStore = defineStore('game', {
       const name = speciesOf(member.species)?.ko ?? member.species
       this.endGimmick()
       log.push(`${josa(name, '은', '는')} 쓰러졌다!`, 'bad')
+      sfx('playerFaint', turnSfxDelay)
       this.addFriendship(member, -1)
       member.status = null
       member.sleep = undefined
@@ -2426,6 +2451,7 @@ export const useGameStore = defineStore('game', {
       }
       this.playerStages = {}
       this.faint = null
+      sfx('heal')
       this.arrive(f.returnTo)
       useBattleLogStore().divider()
       const stage = findStage(f.returnTo)?.stage

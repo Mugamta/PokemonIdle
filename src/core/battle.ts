@@ -1237,6 +1237,7 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
       inflictStatus(def, chain, post, false, att)
     }
   }
+  if (total > 0) turnHits?.push({ def, eff: ex.fixed == null ? eff : 1, crit: crits > 0 })
   if (crits) log.push(crits > 1 || landed > 1 ? `급소에 ${crits}번 맞았다!` : '급소에 맞았다!')
   if (ex.fixed == null && eff > 1) log.push('효과가 굉장했다!')
   if (ex.fixed == null && eff < 1) log.push('효과가 별로인 듯하다…')
@@ -1523,8 +1524,21 @@ export function onBattleEnd(b: Battler, foe: Battler): string[] {
   return log
 }
 
+/** 이번 턴에 들어간 공격 (효과음용). def = 맞은 쪽 */
+let turnHits: { def: Battler; eff: number; crit: boolean }[] | null = null
+
+export interface TurnHit {
+  /** 맞은 쪽 */
+  target: 'player' | 'enemy'
+  /** 타입 상성 배율 (고정 데미지는 1) */
+  eff: number
+  crit: boolean
+}
+
 export interface TurnResult {
   lines: string[]
+  /** 데미지를 준 공격 순서대로 (효과음용) */
+  hits: TurnHit[]
   /** 내 포켓몬이 실제로 기술을 썼는지 (PP 소모 판단용) */
   playerMoved: boolean
   /** 내 기술 PP 소모량 (프레셔 = 2) */
@@ -1547,6 +1561,8 @@ export function runTurn(
   playerOverride?: MoveData,
 ): TurnResult {
   const log: string[] = []
+  const hits: { def: Battler; eff: number; crit: boolean }[] = []
+  turnHits = hits
   let playerMoved = false
   let enemyMoved = false
   // 다이월은 그 턴에만
@@ -1628,7 +1644,15 @@ export function runTurn(
   }
   const ppCost = ab(enemy, player) === 'pressure' ? 2 : 1
   const enemyPpCost = ab(player, enemy) === 'pressure' ? 2 : 1
-  return { lines: log, playerMoved, ppCost, enemyMoved, enemyPpCost }
+  turnHits = null
+  return {
+    lines: log,
+    hits: hits.map((h) => ({ target: h.def === player ? 'player' : 'enemy', eff: h.eff, crit: h.crit })),
+    playerMoved,
+    ppCost,
+    enemyMoved,
+    enemyPpCost,
+  }
 }
 
 // ---------- 기술 배치 ----------
