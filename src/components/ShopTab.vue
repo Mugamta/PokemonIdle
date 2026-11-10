@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 상점: 회복·몬스터볼·배틀용 도구·지닌 도구·기술머신·진화·육성 아이템 구매, 편의성 기능, 기술칸 추가, 아이템 판매
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import { dexData, loadDex, loadLearnsets, TYPE_COLORS } from '../data/dex'
 import { evoItemUsage } from '../data/evolutions'
 import {
@@ -286,37 +286,49 @@ const reviveItems = SHOP_ITEMS.filter((i) => isAutoReviveItem(i.id))
 const healKeyOf = (p: Perk): AutoHealKey | null =>
   p.id === 'autoUse:heal' ? 'heal' : p.id === 'autoUse:healAfter' ? 'healAfter' : null
 const itemName = (id: string) => dexData.value?.items[id]?.ko ?? id
-/** 몬스터볼 자동 사용: 지금 상대 기준 후보 (쓸 순서대로). 야생 포켓몬과 싸우는 중이 아니면 null */
-const autoBallNow = computed(() => {
-  const opts = game.autoBallOptions()
-  return opts && rankAutoBalls(opts, game.autoBall)
-})
-const autoBallNowById = computed(() => Object.fromEntries((game.autoBallOptions() ?? []).map((o) => [o.id, o])))
-/** 이번에 던질 볼 (도감에 있는 상대면 없음) */
-const autoBallPick = computed(() =>
-  game.enemy && !game.caught.includes(game.enemy.species) ? (autoBallNow.value?.[0] ?? null) : null,
-)
+const multText = (m: number) => (Number.isFinite(m) ? `${Math.round(m * 100) / 100}배` : '확정')
 const ballCostText = (o: BallOption) => (o.owned ? '가진 것' : `마리당 ${won(Math.round(ballSpentPerCatch(o)))}`)
+interface AutoBallView {
+  byId: Record<string, BallOption>
+  /** 이번에 던질 볼 (도감에 있는 상대면 없음) */
+  pick: BallOption | null
+  /** 이번에 던질 볼 한 줄 요약 */
+  summary: string
+}
+/** 몬스터볼 자동 사용: 지금 상대 기준 후보·요약. 야생 포켓몬과 싸우는 중이 아니면 null */
+const autoBallLive = computed((): AutoBallView | null => {
+  const opts = game.autoBallOptions()
+  if (!opts || !game.enemy) return null
+  const head = '이번에 던질 볼: '
+  const byId = Object.fromEntries(opts.map((o) => [o.id, o]))
+  if (game.caught.includes(game.enemy.species)) return { byId, pick: null, summary: `${head}없음 (도감에 있는 포켓몬)` }
+  const o = rankAutoBalls(opts, game.autoBall)[0] ?? null
+  if (!o) return { byId, pick: null, summary: `${head}없음 (가진 볼도, 살 돈도 없음)` }
+  const fallback = o.mult < game.autoBall ? ' · 기준에 닿는 볼이 없어 배율이 가장 높은 볼' : ''
+  const summary = `${head}${itemName(o.id)} (${multText(o.mult)} · ${Math.round(o.chance * 1000) / 10}% · ${ballCostText(o)})${fallback}`
+  return { byId, pick: o, summary }
+})
+/** 화면에 보이는 값: 전투 사이(다음 상대를 찾는 중)에는 직전 상대 기준 값을 그대로 둬서 글자가 깜빡이지 않게 함 */
+const autoBallShown = shallowRef<AutoBallView | null>(null)
+watch(
+  autoBallLive,
+  (v) => {
+    if (v) autoBallShown.value = v
+  },
+  { immediate: true },
+)
+const autoBallNowById = computed(() => autoBallShown.value?.byId ?? {})
+const autoBallPick = computed(() => autoBallShown.value?.pick ?? null)
 /** 후보 줄의 지금 상대 기준 값 */
 function ballNowText(id: string): string {
   const o = autoBallNowById.value[id]
   return o ? `지금 ${multText(o.mult)} · ${Math.round(o.chance * 1000) / 10}% · ${ballCostText(o)}` : '지금 —'
 }
-/** 이번에 던질 볼 한 줄 요약 */
-const autoBallSummary = computed(() => {
-  const head = '이번에 던질 볼: '
-  if (!autoBallNow.value || !game.enemy) return `${head}— (야생 포켓몬과 싸우는 중이 아님)`
-  if (game.caught.includes(game.enemy.species)) return `${head}없음 (도감에 있는 포켓몬)`
-  const o = autoBallPick.value
-  if (!o) return `${head}없음 (가진 볼도, 살 돈도 없음)`
-  const fallback = o.mult < game.autoBall ? ' · 기준에 닿는 볼이 없어 배율이 가장 높은 볼' : ''
-  return `${head}${itemName(o.id)} (${multText(o.mult)} · ${Math.round(o.chance * 1000) / 10}% · ${ballCostText(o)})${fallback}`
-})
+const autoBallSummary = computed(() => autoBallShown.value?.summary ?? '이번에 던질 볼: — (야생 포켓몬과 싸우는 중이 아님)')
 /** 몬스터볼 자동 사용: 고른 배율을 낼 수 있는 볼 (전투 밖 표시용) */
 const autoBallStatic = computed(() =>
   SHOP_ITEMS.filter((i) => i.category === 'ball' && !NO_AUTO_BALLS.includes(i.id) && (BALL_MAX_MULT[i.id] ?? 1) >= game.autoBall),
 )
-const multText = (m: number) => (Number.isFinite(m) ? `${Math.round(m * 100) / 100}배` : '확정')
 
 
 /** 파티 슬롯 도구 조건: 도구 종류·같은 도구 개수를 모두 최대로 늘린 파티 포켓몬 수 */
