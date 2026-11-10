@@ -6,7 +6,7 @@ import { phaseAt, useNow } from '../core/dayNight'
 import { battleData, STATUS_COLORS, STATUS_LABELS } from '../data/battle'
 import { dexData, loadDex, STAT_LABELS, TYPE_COLORS } from '../data/dex'
 import { calcStats } from '../data/natures'
-import { findStage } from '../data/stages'
+import { findStage, stageTerrain } from '../data/stages'
 import { expAtLevel, isConsumableItem, moveData, ro } from '../core/battle'
 import { formOf } from '../core/gimmicks'
 import { useBattleLogStore } from '../stores/battleLog'
@@ -23,6 +23,9 @@ onMounted(() => loadDex().catch(() => {}))
 
 const night = computed(() => phaseAt(now.value) === 'night')
 const stage = computed(() => findStage(game.currentStageId)?.stage)
+/** 전투 배경 지형 (수상·동굴·건물 등은 풀밭 대신 다른 색). 동굴·건물 안은 밤에도 어두워지지 않음 */
+const terrain = computed(() => (stage.value ? stageTerrain(stage.value) : 'grass'))
+const indoor = computed(() => terrain.value === 'cave' || terrain.value === 'building' || terrain.value === 'volcano')
 const travelTarget = computed(() => (game.travel ? findStage(game.travel.to)?.stage : null))
 const travelLeft = computed(() =>
   game.travel ? Math.max(0, Math.ceil((game.travel.arriveAt - now.value) / 1000)) : 0,
@@ -160,7 +163,7 @@ const foeItem = computed(() => {
 </script>
 
 <template>
-  <div class="scene" :class="{ night, shake: !!bossIntro }">
+  <div class="scene" :class="[`t-${terrain}`, { night: night && !indoor, shake: !!bossIntro }]">
     <!-- 좌상단: 자동 전투 -->
     <div class="controls">
       <button
@@ -361,16 +364,97 @@ const foeItem = computed(() => {
 }
 
 .scene {
+  /* 지형별 색: 하늘(위·아래) / 땅(위·아래) / 발판 */
+  --sky1: #8fcbe8;
+  --sky2: #c4e6f2;
+  --g1: #9fd38a;
+  --g2: #7cbf68;
+  --pad: rgba(60, 110, 50, 0.55);
   position: relative;
   height: 100%;
   overflow: hidden;
-  background:
-    linear-gradient(to bottom, #8fcbe8 0%, #c4e6f2 45%, #9fd38a 45%, #7cbf68 100%);
+  background: linear-gradient(to bottom, var(--sky1) 0%, var(--sky2) 45%, var(--g1) 45%, var(--g2) 100%);
 }
 
 /* 밤: 배경과 포켓몬만 어둡게 (정보 상자는 그대로) */
 .scene.night {
-  background: linear-gradient(to bottom, #1c2a4a 0%, #34466e 45%, #3d5e3a 45%, #2f4a2c 100%);
+  --sky1: #1c2a4a;
+  --sky2: #34466e;
+  --g1: #3d5e3a;
+  --g2: #2f4a2c;
+}
+
+.scene.t-forest {
+  --sky1: #6fa86a;
+  --sky2: #a9d39a;
+  --g1: #6fae5c;
+  --g2: #4f8c42;
+  --pad: rgba(40, 80, 34, 0.6);
+}
+.scene.t-forest.night {
+  --sky1: #12241a;
+  --sky2: #22402c;
+  --g1: #2c4a28;
+  --g2: #1f381c;
+}
+
+.scene.t-water {
+  --g1: #5aa8e0;
+  --g2: #2f78c0;
+  --pad: rgba(220, 240, 255, 0.45);
+}
+.scene.t-water.night {
+  --g1: #24476e;
+  --g2: #172f4e;
+}
+
+.scene.t-sand {
+  --g1: #ead79a;
+  --g2: #d4b56c;
+  --pad: rgba(150, 110, 50, 0.45);
+}
+.scene.t-sand.night {
+  --g1: #6e6040;
+  --g2: #54482e;
+}
+
+.scene.t-ice {
+  --sky1: #b8d8ee;
+  --sky2: #e4f2fb;
+  --g1: #e2f1fa;
+  --g2: #b8d9ee;
+  --pad: rgba(90, 140, 180, 0.4);
+}
+.scene.t-ice.night {
+  --sky1: #1e2a44;
+  --sky2: #34466a;
+  --g1: #5a7088;
+  --g2: #445a72;
+}
+
+/* 실내 (동굴·건물·화산): 하늘 대신 벽, 밤에도 그대로 */
+.scene.t-cave {
+  --sky1: #2e2620;
+  --sky2: #4a3e33;
+  --g1: #8a7458;
+  --g2: #6a5640;
+  --pad: rgba(40, 28, 18, 0.5);
+}
+
+.scene.t-volcano {
+  --sky1: #3a1a14;
+  --sky2: #6a2c1c;
+  --g1: #8a4a32;
+  --g2: #5e2e1e;
+  --pad: rgba(255, 110, 40, 0.35);
+}
+
+.scene.t-building {
+  --sky1: #5a5a6a;
+  --sky2: #7c7c8e;
+  --g1: #b8b0a0;
+  --g2: #968e7e;
+  --pad: rgba(50, 50, 60, 0.4);
 }
 
 .platform {
@@ -396,7 +480,7 @@ const foeItem = computed(() => {
   left: 50%;
   translate: -50% 0;
   border-radius: 50%;
-  background: rgba(60, 110, 50, 0.55);
+  background: var(--pad);
   box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.12);
 }
 

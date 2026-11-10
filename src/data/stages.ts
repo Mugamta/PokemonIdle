@@ -383,3 +383,24 @@ export const regionOfGimmick = (g: Gimmick): Region | undefined => REGIONS.find(
 export function regionsOfGen(gen: number): Region[] {
   return REGIONS.filter((r) => r.gens.includes(gen))
 }
+
+/** 전투 배경 지형 (장소 이름으로 판단, 해당 없으면 풀밭) */
+export type Terrain = 'grass' | 'forest' | 'cave' | 'ice' | 'volcano' | 'building' | 'sand' | 'water'
+
+const TERRAIN_RULES: [Terrain, RegExp][] = [
+  ['ice', /얼음|빙|동토|Icefall|쌍둥이섬/],
+  ['volcano', /불꽃샛길|하드마운틴|Mt\. Ember/],
+  ['building', /탑|타워|저택|발전소|제철소|게이트|양옥집|하늘기둥|신전|기둥|Pillar|버려진배/],
+  [
+    'cave',
+    /동굴|터널|굴|지하도|탄갱|우물|사당|챔피언로드|달맞이산|은빛산|절구산|천관산(?! 기슭)|유성의 폭포|소용돌이섬|알프의 유적(?! \(바깥\))|Cave|미혹|귀혼|신수유적|강철섬/,
+  ],
+  ['sand', /사막|해안|Beach|Canyon|Valley/],
+  ['forest', /숲|Forest|Bush/],
+]
+
+/** 스테이지의 전투 배경 지형 */
+export function stageTerrain(stage: Pick<Stage, 'kind' | 'name' | 'place'>): Terrain {
+  if (stage.kind === 'water') return 'water'
+  return TERRAIN_RULES.find(([, re]) => re.test(stage.name) || re.test(stage.place))?.[0] ?? 'grass'
+}

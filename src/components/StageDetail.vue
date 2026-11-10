@@ -40,6 +40,9 @@ const progress = computed(() => game.progressOf(props.stage.id))
 const allSpecies = computed(() => stageSpecies(props.stage.encounters))
 const seenCount = computed(() => allSpecies.value.filter((s) => progress.value.seen.includes(s)).length)
 const seen = (id: string) => progress.value.seen.includes(id)
+/** 몬스터볼 마크: caught = 포획함, seen = 이 스테이지에서 조우만 함, none = 조우하지 않음 */
+const ballOf = (id: string) => (game.caught.includes(id) ? 'caught' : seen(id) ? 'seen' : 'none')
+const BALL_TITLES = { caught: '포획한 포켓몬', seen: '조우만 한 포켓몬', none: '아직 조우하지 않은 포켓몬' } as const
 const travelingHere = computed(() => game.travel?.to === props.stage.id)
 const travelLeft = computed(() =>
   game.travel ? Math.max(0, Math.ceil((game.travel.arriveAt - now.value) / 1000)) : 0,
@@ -87,8 +90,9 @@ const travelLeft = computed(() =>
     </p>
     <ul v-if="entries.length" class="encounters">
       <li v-for="e in entries" :key="e.p" :class="{ special: e.special }">
+        <span class="ball" :class="ballOf(e.p)" :title="BALL_TITLES[ballOf(e.p)]" />
         <PokeSprite :species="e.p" :size="32" lazy />
-        <span class="mon">{{ speciesName(e.p) }}<small v-if="!e.special && seen(e.p)" class="seen"> ✓</small></span>
+        <span class="mon">{{ speciesName(e.p) }}</span>
         <span class="lv">Lv.{{ e.min === e.max ? e.min : `${e.min}~${e.max}` }}</span>
         <span class="rate">{{ e.rate }}%</span>
         <span v-if="e.special" class="badge">특수</span>
@@ -127,8 +131,52 @@ const travelLeft = computed(() =>
   color: #7a7a86;
 }
 
-.seen {
-  color: #7fe0a0;
+/* 몬스터볼 마크: 포획 = 빨강·흰색, 조우만 = 회색, 조우 안 함 = 테두리만 (실루엣) */
+.ball {
+  position: relative;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.5px solid #222;
+  border-radius: 50%;
+  background: linear-gradient(var(--top) 0 44%, #222 44% 56%, var(--bottom) 56%);
+}
+
+.ball::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  box-sizing: border-box;
+  border: 1.5px solid #222;
+  border-radius: 50%;
+  background: var(--bottom);
+  transform: translate(-50%, -50%);
+}
+
+.ball.caught {
+  --top: #e33;
+  --bottom: #fff;
+}
+
+.ball.seen {
+  --top: #8a8a96;
+  --bottom: #c8c8d0;
+}
+
+.ball.none {
+  --top: transparent;
+  --bottom: transparent;
+  border-color: #55555f;
+  background: linear-gradient(transparent 0 44%, #55555f 44% 56%, transparent 56%);
+}
+
+.ball.none::after {
+  border-color: #55555f;
+  background: #23232b;
 }
 
 .detail {
