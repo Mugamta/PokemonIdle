@@ -4,7 +4,7 @@ import { dexData, loadDex, STAT_LABELS, TYPE_COLORS } from '../data/dex'
 import { calcStats, NATURES, STAT_KEYS } from '../data/natures'
 import { evolutionsOf, FRIENDSHIP_EVOLVE, FRIENDSHIP_MAX } from '../data/evolutions'
 import { HEART_SCALE } from '../data/shop'
-import { isMachine, isRecord } from '../data/items'
+import { isMachine, isRecord, tmShopList } from '../data/items'
 import {
   canLearnMachine,
   evolutionCondText,
@@ -141,25 +141,44 @@ const pendingList = computed(() => (member.value?.pending ?? []).map((id) => ({ 
 const heartScales = computed(() => game.items[HEART_SCALE] ?? 0)
 /** 기술 교체 하위 탭: 자력기(잊은 기술 되살리기) / 기술머신 */
 const learnTab = ref<'self' | 'tm'>('self')
-/** 가지고 있는 기술머신 중 이 포켓몬이 새로 배울 수 있는 것 */
+/**
+ * 이 포켓몬이 기술머신으로 새로 배울 수 있는 기술 전체 (기술마다 한 줄).
+ * 가지고 있으면 그 머신(기술머신 우선)을 쓰고, 없으면 상점 머신을 사서 씀
+ */
 const learnableMachines = computed(() => {
   const m = member.value
-  if (!m || !dexData.value) return []
+  const dex = dexData.value
+  if (!m || !dex) return []
   const known = m.learned ?? m.moves
-  const seen = new Set<string>()
-  return Object.entries(game.items)
-    .flatMap(([id, n]) => {
-      const move = n > 0 && isMachine(id) ? dexData.value!.items[id]?.move : undefined
-      if (!move || known.includes(move) || seen.has(move) || !canLearnMachine(m, move)) return []
-      seen.add(move)
-      return [{ id, n, name: dexData.value!.items[id]?.ko ?? id, move, info: moveInfo(move), record: isRecord(id) }]
+  // 기술별 보유 머신 (기술레코드보다 기술머신 우선)
+  const owned = new Map<string, { id: string; n: number }>()
+  for (const [id, n] of Object.entries(game.items)) {
+    const move = n > 0 && isMachine(id) ? dex.items[id]?.move : undefined
+    if (!move) continue
+    const cur = owned.get(move)
+    if (!cur) owned.set(move, { id, n })
+    else owned.set(move, { id: isRecord(cur.id) && !isRecord(id) ? id : cur.id, n: cur.n + n })
+  }
+  return tmShopList()
+    .filter((t) => !known.includes(t.move) && canLearnMachine(m, t.move))
+    .map((t) => {
+      const have = owned.get(t.move)
+      const id = have?.id ?? t.id
+      return { id, buyId: t.id, price: t.price, n: have?.n ?? 0, name: dex.items[id]?.ko ?? id, move: t.move, info: moveInfo(t.move), record: isRecord(id) }
     })
     .sort((a, b) => (a.info?.ko ?? a.move).localeCompare(b.info?.ko ?? b.move, 'ko'))
 })
-function teach(itemId: string) {
+type MachineRow = (typeof learnableMachines.value)[number]
+const won = (n: number) => `${n.toLocaleString()}원`
+function teach(t: MachineRow) {
   const s = picked.value
-  if (!s || s.kind === 'locked') return
-  game.useMachine(memberIdx.value, itemId, s.kind === 'move' ? s.id : undefined)
+  if (!s || s.kind === 'locked' || game.faint) return
+  let id = t.id
+  if (t.n <= 0) {
+    if (!game.buyItem(t.buyId)) return
+    id = t.buyId
+  }
+  game.useMachine(memberIdx.value, id, s.kind === 'move' ? s.id : undefined)
   pickedSlot.value = null
 }
 
@@ -522,18 +541,28 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
               <template v-if="learnTab === 'tm'">
                 <h5 class="train-sec">
                   기술머신으로 가르치기
-                  <span class="muted">가지고 있는 기술머신 중 배울 수 있는 기술 · 기술레코드는 사라짐</span>
+                  <span class="muted">보유 0이면 사서 바로 사용 · 소지금 {{ won(game.money) }} · 기술레코드는 사라짐</span>
                 </h5>
-                <p v-if="!learnableMachines.length" class="msg">배울 수 있는 기술머신이 없습니다. 상점 → 기술머신에서 살 수 있습니다.</p>
+                <p v-if="!learnableMachines.length" class="msg">기술머신으로 새로 배울 수 있는 기술이 없습니다.</p>
                 <ul v-else class="rows mrows">
                   <li
                     v-for="t in learnableMachines"
                     :key="t.move"
-                    class="clickable"
-                    :title="`${t.name}${t.record ? ` ×${t.n} (1개 소모)` : ''}로 이 기술을 가르칩니다`"
-                    @click="teach(t.id)"
+                    :class="{ clickable: t.n > 0 || game.money >= t.price, disabled: t.n <= 0 && game.money < t.price }"
+                    :title="
+                      t.n > 0
+                        ? `${t.name}로 이 기술을 가르칩니다${t.record ? ' (1개 소모)' : ''}`
+                        : game.money >= t.price
+                          ? `${josa(t.name, '을', '를')} ${won(t.price)}에 사서 바로 가르칩니다`
+                          : `소지금이 부족합니다 (${won(t.price)})`
+                    "
+                    @click="teach(t)"
                   >
-                    <span class="grow">{{ t.info?.ko ?? t.move }} <small class="muted">{{ t.name }}<template v-if="t.record"> ×{{ t.n }}</template></small></span>
+                    <span class="grow">
+                      {{ t.info?.ko ?? t.move }}
+                      <small class="muted">{{ t.name }} · 보유 {{ t.n }}</small>
+                      <small v-if="t.n <= 0" class="buy-tag">구매 후 사용 {{ won(t.price) }}</small>
+                    </span>
                     <template v-if="t.info">
                       <span class="type" :style="{ background: TYPE_COLORS[t.info.type] }">{{ dexData.types[t.info.type] }}</span>
                       <span class="muted">{{ CLS_LABEL[t.info.cls] }}</span>
@@ -601,6 +630,11 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 .learn-tabs button.active {
   border-color: #ffcb05;
   color: #fff;
+}
+
+.buy-tag {
+  margin-left: 4px;
+  color: #ffb74d;
 }
 
 .item-text.why {
