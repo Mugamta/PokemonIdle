@@ -307,214 +307,212 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 
     <template v-else>
       <!-- 능력치 / 기술: 파티 포켓몬별 -->
-      <template>
-        <p v-if="!game.party.length" class="msg">파티에 포켓몬이 없습니다.</p>
-        <template v-else>
-          <HScroll class="members" :active="memberIndex">
-            <button
-              v-for="(m, i) in game.party"
-              :key="i"
-              type="button"
-              :class="{ active: member === m, fainted: m.hp === 0 }"
-              @click="memberIndex = i"
-            >
-              <span v-if="i === 0" class="lead-mark" title="싸우는 포켓몬">★</span>
-              {{ species(m.species)?.ko ?? m.species }} <small>Lv.{{ m.level }}</small>
-              <ItemIcon v-for="id in Object.keys(heldOf(m))" :key="id" :id="id" :size="16" />
-              <span v-if="m.pending?.length" class="pending-badge" :title="`배우려는 기술 ${m.pending.length}개`">새 기술 {{ m.pending.length }}</span>
-            </button>
-          </HScroll>
+      <p v-if="!game.party.length" class="msg">파티에 포켓몬이 없습니다.</p>
+      <template v-else>
+        <HScroll class="members" :active="memberIndex">
+          <button
+            v-for="(m, i) in game.party"
+            :key="i"
+            type="button"
+            :class="{ active: member === m, fainted: m.hp === 0 }"
+            @click="memberIndex = i"
+          >
+            <span v-if="i === 0" class="lead-mark" title="싸우는 포켓몬">★</span>
+            {{ species(m.species)?.ko ?? m.species }} <small>Lv.{{ m.level }}</small>
+            <ItemIcon v-for="id in Object.keys(heldOf(m))" :key="id" :id="id" :size="16" />
+            <span v-if="m.pending?.length" class="pending-badge" :title="`배우려는 기술 ${m.pending.length}개`">새 기술 {{ m.pending.length }}</span>
+          </button>
+        </HScroll>
 
-          <section v-if="sub === 'stats' && stats" class="card">
-            <div class="card-head">
-              <PokeSprite :species="member!.species" :size="56" />
-              <strong>{{ species(member!.species)?.ko }}</strong>
-              <span class="muted">Lv.{{ member!.level }} · {{ NATURES[member!.nature]?.ko ?? '-' }} · {{ hpText(member!) }}</span>
-            </div>
-            <p class="muted held-line">
-              지닌 도구
-              <template v-if="heldIds(member!).length">
-                <span v-for="id in heldIds(member!)" :key="id" class="held-chip">
-                  <ItemIcon :id="id" :size="18" />
-                  {{ itemKo(id) }}<template v-if="member!.held![id]! > 1"> ×{{ member!.held![id] }}</template
-                  ><template v-if="member!.heldSpent?.[id]"> (사용함{{ member!.held![id]! > 1 ? ` ${member!.heldSpent[id]}개` : '' }})</template>
-                </span>
-              </template>
-              <template v-else> 없음</template>
+        <section v-if="sub === 'stats' && stats" class="card">
+          <div class="card-head">
+            <PokeSprite :species="member!.species" :size="56" />
+            <strong>{{ species(member!.species)?.ko }}</strong>
+            <span class="muted">Lv.{{ member!.level }} · {{ NATURES[member!.nature]?.ko ?? '-' }} · {{ hpText(member!) }}</span>
+          </div>
+          <p class="muted held-line">
+            지닌 도구
+            <template v-if="heldIds(member!).length">
+              <span v-for="id in heldIds(member!)" :key="id" class="held-chip">
+                <ItemIcon :id="id" :size="18" />
+                {{ itemKo(id) }}<template v-if="member!.held![id]! > 1"> ×{{ member!.held![id] }}</template
+                ><template v-if="member!.heldSpent?.[id]"> (사용함{{ member!.held![id]! > 1 ? ` ${member!.heldSpent[id]}개` : '' }})</template>
+              </span>
+            </template>
+            <template v-else> 없음</template>
+          </p>
+          <p v-if="ability" class="ability">
+            <strong>특성 {{ ability.ko }}</strong><span v-if="member!.hiddenAbility" class="muted"> (숨겨진 특성)</span>
+            <span class="muted">{{ ability.text }}</span>
+          </p>
+          <p v-if="game.gimmickUnlocked('tera')" class="muted held-line">
+            테라스탈 타입
+            <span class="type" :style="{ background: TYPE_COLORS[teraTypeOf(member!)] }">{{ dexData.types[teraTypeOf(member!)] }}</span>
+            <small>(도구 탭에서 테라피스 {{ TERA_SHARD_COST }}개로 변경)</small>
+          </p>
+          <p v-if="megaInfo" class="muted held-line" :class="{ 'mega-ok': megaInfo.ok }">메가진화 · {{ megaInfo.text }}</p>
+          <p v-if="memberIdx === 0 && game.gimmickActive?.kind === 'mega'" class="muted held-line">
+            지금 {{ formOf(game.gimmickActive.form)?.ko }}(으)로 메가진화한 상태입니다. (위 능력치는 원래 모습 기준)
+          </p>
+          <table class="stats">
+            <thead>
+              <tr>
+                <th />
+                <th>실능치</th>
+                <th v-if="game.statViewLevel >= 1">종족값</th>
+                <th v-if="game.statViewLevel >= 2">개체값</th>
+                <th v-if="game.statViewLevel >= 3">노력치</th>
+                <th v-if="game.hasPerk('evBreak:1')" title="끄면 전투로 이 능력치의 노력치를 얻지 않습니다">노력치 획득</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(s, i) in stats" :key="s.label">
+                <th>{{ s.label }}</th>
+                <td class="value" :class="s.mod">{{ s.value }}<span v-if="s.mod">{{ s.mod === 'up' ? '▲' : '▼' }}</span></td>
+                <td v-if="game.statViewLevel >= 1">{{ s.base }}</td>
+                <td v-if="game.statViewLevel >= 2">{{ s.iv }}</td>
+                <td v-if="game.statViewLevel >= 3">{{ s.ev }}</td>
+                <td v-if="game.hasPerk('evBreak:1')">
+                  <input
+                    type="checkbox"
+                    :checked="!s.locked"
+                    @change="game.setEvLock(memberIdx, i, !($event.target as HTMLInputElement).checked)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="game.statViewLevel >= 4" class="formula">
+            <p class="muted">
+              HP = ⌊(2×종족값 + 개체값 + ⌊노력치/4⌋) × 레벨/100⌋ + 레벨 + 10<br />
+              그 외 = ⌊(⌊(2×종족값 + 개체값 + ⌊노력치/4⌋) × 레벨/100⌋ + 5) × 성격보정⌋ (▲ 1.1 · ▼ 0.9)
             </p>
-            <p v-if="ability" class="ability">
-              <strong>특성 {{ ability.ko }}</strong><span v-if="member!.hiddenAbility" class="muted"> (숨겨진 특성)</span>
-              <span class="muted">{{ ability.text }}</span>
-            </p>
-            <p v-if="game.gimmickUnlocked('tera')" class="muted held-line">
-              테라스탈 타입
-              <span class="type" :style="{ background: TYPE_COLORS[teraTypeOf(member!)] }">{{ dexData.types[teraTypeOf(member!)] }}</span>
-              <small>(도구 탭에서 테라피스 {{ TERA_SHARD_COST }}개로 변경)</small>
-            </p>
-            <p v-if="megaInfo" class="muted held-line" :class="{ 'mega-ok': megaInfo.ok }">메가진화 · {{ megaInfo.text }}</p>
-            <p v-if="memberIdx === 0 && game.gimmickActive?.kind === 'mega'" class="muted held-line">
-              지금 {{ formOf(game.gimmickActive.form)?.ko }}(으)로 메가진화한 상태입니다. (위 능력치는 원래 모습 기준)
-            </p>
-            <table class="stats">
-              <thead>
-                <tr>
-                  <th />
-                  <th>실능치</th>
-                  <th v-if="game.statViewLevel >= 1">종족값</th>
-                  <th v-if="game.statViewLevel >= 2">개체값</th>
-                  <th v-if="game.statViewLevel >= 3">노력치</th>
-                  <th v-if="game.hasPerk('evBreak:1')" title="끄면 전투로 이 능력치의 노력치를 얻지 않습니다">노력치 획득</th>
-                </tr>
-              </thead>
+            <table class="ftable">
               <tbody>
-                <tr v-for="(s, i) in stats" :key="s.label">
+                <tr v-for="s in stats" :key="s.label">
                   <th>{{ s.label }}</th>
-                  <td class="value" :class="s.mod">{{ s.value }}<span v-if="s.mod">{{ s.mod === 'up' ? '▲' : '▼' }}</span></td>
-                  <td v-if="game.statViewLevel >= 1">{{ s.base }}</td>
-                  <td v-if="game.statViewLevel >= 2">{{ s.iv }}</td>
-                  <td v-if="game.statViewLevel >= 3">{{ s.ev }}</td>
-                  <td v-if="game.hasPerk('evBreak:1')">
-                    <input
-                      type="checkbox"
-                      :checked="!s.locked"
-                      @change="game.setEvLock(memberIdx, i, !($event.target as HTMLInputElement).checked)"
-                    />
-                  </td>
+                  <template v-if="s.formula">
+                    <td v-for="(part, k) in s.formula" :key="k" :class="`f${k}`">{{ part }}</td>
+                  </template>
+                  <td v-else colspan="6" class="fnote">껍질몬은 항상 1</td>
+                  <td class="fres">= {{ s.value }}</td>
                 </tr>
               </tbody>
             </table>
-            <div v-if="game.statViewLevel >= 4" class="formula">
-              <p class="muted">
-                HP = ⌊(2×종족값 + 개체값 + ⌊노력치/4⌋) × 레벨/100⌋ + 레벨 + 10<br />
-                그 외 = ⌊(⌊(2×종족값 + 개체값 + ⌊노력치/4⌋) × 레벨/100⌋ + 5) × 성격보정⌋ (▲ 1.1 · ▼ 0.9)
-              </p>
-              <table class="ftable">
-                <tbody>
-                  <tr v-for="s in stats" :key="s.label">
-                    <th>{{ s.label }}</th>
-                    <template v-if="s.formula">
-                      <td v-for="(part, k) in s.formula" :key="k" :class="`f${k}`">{{ part }}</td>
-                    </template>
-                    <td v-else colspan="6" class="fnote">껍질몬은 항상 1</td>
-                    <td class="fres">= {{ s.value }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+          </div>
 
-            <div class="friend">
-              <span class="label">친밀도</span>
-              <div class="fbar"><span :style="{ width: `${(friendship / FRIENDSHIP_MAX) * 100}%` }" :class="{ full: friendship >= FRIENDSHIP_EVOLVE }" /></div>
-              <span class="num">{{ friendship }} / {{ FRIENDSHIP_MAX }}</span>
-            </div>
+          <div class="friend">
+            <span class="label">친밀도</span>
+            <div class="fbar"><span :style="{ width: `${(friendship / FRIENDSHIP_MAX) * 100}%` }" :class="{ full: friendship >= FRIENDSHIP_EVOLVE }" /></div>
+            <span class="num">{{ friendship }} / {{ FRIENDSHIP_MAX }}</span>
+          </div>
 
-            <h4 class="sec evo-head">진화</h4>
-            <p v-if="!evoList.length" class="msg evo-none">더 이상 진화하지 않습니다.</p>
-            <ul v-else class="rows evo">
-              <li v-for="(v, i) in evoList" :key="i">
-                <PokeSprite :species="v.e.to" :size="36" />
-                <span class="grow"><strong>{{ v.name }}</strong></span>
-                <span class="muted cond" :class="{ met: v.met && v.e.via === 'level' }">{{ v.cond }}</span>
-              </li>
-            </ul>
-            <p v-if="evoList.length && game.everstone" class="msg evo-none">변함없는돌이 켜져 있어 레벨업으로 진화하지 않습니다.</p>
+          <h4 class="sec evo-head">진화</h4>
+          <p v-if="!evoList.length" class="msg evo-none">더 이상 진화하지 않습니다.</p>
+          <ul v-else class="rows evo">
+            <li v-for="(v, i) in evoList" :key="i">
+              <PokeSprite :species="v.e.to" :size="36" />
+              <span class="grow"><strong>{{ v.name }}</strong></span>
+              <span class="muted cond" :class="{ met: v.met && v.e.via === 'level' }">{{ v.cond }}</span>
+            </li>
+          </ul>
+          <p v-if="evoList.length && game.everstone" class="msg evo-none">변함없는돌이 켜져 있어 레벨업으로 진화하지 않습니다.</p>
+        </section>
+
+        <template v-if="sub === 'moves'">
+          <div class="move-grid">
+            <template v-for="(s, i) in moveSlots" :key="i">
+              <button
+                v-if="s.kind === 'move'"
+                type="button"
+                class="mslot"
+                :class="{ picked: pickedSlot === i }"
+                :style="{ '--c': (s.info && TYPE_COLORS[s.info.type]) ?? '#666' }"
+                @click="clickSlot(i)"
+              >
+                <span class="name">{{ s.info?.ko ?? s.id }} <small class="pp">{{ ppText(s.id) }}</small></span>
+                <span v-if="s.info" class="meta">
+                  <span class="mtype">{{ dexData.types[s.info.type] }}</span>
+                  {{ CLS_LABEL[s.info.cls] }} · 위력 {{ s.info.power ?? '-' }} · 명중 {{ s.info.acc ?? '-' }}
+                </span>
+              </button>
+              <button
+                v-else-if="s.kind === 'empty'"
+                type="button"
+                class="mslot empty"
+                :class="{ picked: pickedSlot === i }"
+                @click="clickSlot(i)"
+              >
+                + 빈 칸
+              </button>
+              <div v-else class="mslot empty locked">🔒 {{ s.cond }}</div>
+            </template>
+          </div>
+
+          <!-- 레벨업으로 배우려는 기술 대기열: 맨 앞부터 하나씩 처리 -->
+          <section v-if="pendingList.length" class="card pending">
+            <h4 class="sec">
+              배우려는 기술 <small>{{ pendingList.length }}개 대기 중 · 배운 순서대로 하나씩 처리합니다</small>
+            </h4>
+            <div class="pending-head mrow">
+              <span class="grow"><strong>{{ pendingList[0]!.info?.ko ?? pendingList[0]!.id }}</strong></span>
+              <template v-if="pendingList[0]!.info">
+                <span class="type" :style="{ background: TYPE_COLORS[pendingList[0]!.info.type] }">{{ dexData.types[pendingList[0]!.info.type] }}</span>
+                <span class="muted">{{ CLS_LABEL[pendingList[0]!.info.cls] }}</span>
+                <span class="muted num"><small>위력</small> {{ pendingList[0]!.info.power ?? '-' }}</span>
+                <span class="muted num"><small>명중</small> {{ pendingList[0]!.info.acc ?? '-' }}</span>
+              </template>
+            </div>
+            <p class="item-text">위 기술칸에서 잊을 기술을 눌러 교체하거나, 배우지 않을 수 있습니다. 배우지 않은 기술은 잊은 기술이 되어 하트비늘로 되살릴 수 있습니다.</p>
+            <p v-if="pendingList.length > 1" class="item-text">
+              다음: {{ pendingList.slice(1).map((p) => p.info?.ko ?? p.id).join(' → ') }}
+            </p>
+            <div class="picker-actions">
+              <button type="button" class="small-btn" @click="game.skipPending(memberIdx)">배우지 않기</button>
+            </div>
           </section>
 
-          <template v-if="sub === 'moves'">
-            <div class="move-grid">
-              <template v-for="(s, i) in moveSlots" :key="i">
-                <button
-                  v-if="s.kind === 'move'"
-                  type="button"
-                  class="mslot"
-                  :class="{ picked: pickedSlot === i }"
-                  :style="{ '--c': (s.info && TYPE_COLORS[s.info.type]) ?? '#666' }"
-                  @click="clickSlot(i)"
-                >
-                  <span class="name">{{ s.info?.ko ?? s.id }} <small class="pp">{{ ppText(s.id) }}</small></span>
-                  <span v-if="s.info" class="meta">
-                    <span class="mtype">{{ dexData.types[s.info.type] }}</span>
-                    {{ CLS_LABEL[s.info.cls] }} · 위력 {{ s.info.power ?? '-' }} · 명중 {{ s.info.acc ?? '-' }}
-                  </span>
-                </button>
-                <button
-                  v-else-if="s.kind === 'empty'"
-                  type="button"
-                  class="mslot empty"
-                  :class="{ picked: pickedSlot === i }"
-                  @click="clickSlot(i)"
-                >
-                  + 빈 칸
-                </button>
-                <div v-else class="mslot empty locked">🔒 {{ s.cond }}</div>
-              </template>
-            </div>
-
-            <!-- 레벨업으로 배우려는 기술 대기열: 맨 앞부터 하나씩 처리 -->
-            <section v-if="pendingList.length" class="card pending">
+          <section class="card picker">
+            <p v-if="!picked" class="msg">
+              {{ pendingList.length ? '잊을 기술칸을 눌러 주세요.' : '바꿀 기술칸을 눌러 주세요. 잊은 기술은 하트비늘로 되살릴 수 있습니다.' }}
+            </p>
+            <template v-else>
               <h4 class="sec">
-                배우려는 기술 <small>{{ pendingList.length }}개 대기 중 · 배운 순서대로 하나씩 처리합니다</small>
+                {{ pickedSlot! + 1 }}번 칸
+                <small>{{ picked.kind === 'move' ? `${picked.info?.ko ?? picked.id} 대신` : '빈 칸' }}</small>
               </h4>
-              <div class="pending-head mrow">
-                <span class="grow"><strong>{{ pendingList[0]!.info?.ko ?? pendingList[0]!.id }}</strong></span>
-                <template v-if="pendingList[0]!.info">
-                  <span class="type" :style="{ background: TYPE_COLORS[pendingList[0]!.info.type] }">{{ dexData.types[pendingList[0]!.info.type] }}</span>
-                  <span class="muted">{{ CLS_LABEL[pendingList[0]!.info.cls] }}</span>
-                  <span class="muted num"><small>위력</small> {{ pendingList[0]!.info.power ?? '-' }}</span>
-                  <span class="muted num"><small>명중</small> {{ pendingList[0]!.info.acc ?? '-' }}</span>
-                </template>
+              <div v-if="picked.kind === 'move' && pendingList.length" class="picker-actions pending-swap">
+                <button type="button" class="small-btn" @click="learnPendingHere">
+                  {{ picked.info?.ko ?? picked.id }} 잊고 {{ pendingList[0]!.info?.ko ?? pendingList[0]!.id }} 배우기
+                </button>
               </div>
-              <p class="item-text">위 기술칸에서 잊을 기술을 눌러 교체하거나, 배우지 않을 수 있습니다. 배우지 않은 기술은 잊은 기술이 되어 하트비늘로 되살릴 수 있습니다.</p>
-              <p v-if="pendingList.length > 1" class="item-text">
-                다음: {{ pendingList.slice(1).map((p) => p.info?.ko ?? p.id).join(' → ') }}
-              </p>
+              <h5 class="train-sec">
+                잊은 기술 되살리기
+                <span class="muted">하트비늘 ×{{ heartScales }} (1개 소모<template v-if="!heartScales"> · 상점 → 육성 → 기술 떠올리기</template>)</span>
+              </h5>
+              <p v-if="!forgotten.length" class="msg">잊은 기술이 없습니다.</p>
+              <ul v-else class="rows mrows">
+                <li
+                  v-for="m in forgotten"
+                  :key="m.id"
+                  :class="{ clickable: heartScales > 0, disabled: !heartScales }"
+                  :title="heartScales ? '하트비늘 1개를 써서 이 기술을 장착합니다' : '하트비늘이 없습니다'"
+                  @click="heartScales && recall(m.id)"
+                >
+                  <span class="grow">{{ m.info?.ko ?? m.id }}</span>
+                  <template v-if="m.info">
+                    <span class="type" :style="{ background: TYPE_COLORS[m.info.type] }">{{ dexData.types[m.info.type] }}</span>
+                    <span class="muted">{{ CLS_LABEL[m.info.cls] }}</span>
+                    <span class="muted num"><small>위력</small> {{ m.info.power ?? '-' }}</span>
+                    <span class="muted num"><small>명중</small> {{ m.info.acc ?? '-' }}</span>
+                  </template>
+                </li>
+              </ul>
               <div class="picker-actions">
-                <button type="button" class="small-btn" @click="game.skipPending(memberIdx)">배우지 않기</button>
+                <button type="button" class="small-btn" @click="pickedSlot = null">취소</button>
               </div>
-            </section>
-
-            <section class="card picker">
-              <p v-if="!picked" class="msg">
-                {{ pendingList.length ? '잊을 기술칸을 눌러 주세요.' : '바꿀 기술칸을 눌러 주세요. 잊은 기술은 하트비늘로 되살릴 수 있습니다.' }}
-              </p>
-              <template v-else>
-                <h4 class="sec">
-                  {{ pickedSlot! + 1 }}번 칸
-                  <small>{{ picked.kind === 'move' ? `${picked.info?.ko ?? picked.id} 대신` : '빈 칸' }}</small>
-                </h4>
-                <div v-if="picked.kind === 'move' && pendingList.length" class="picker-actions pending-swap">
-                  <button type="button" class="small-btn" @click="learnPendingHere">
-                    {{ picked.info?.ko ?? picked.id }} 잊고 {{ pendingList[0]!.info?.ko ?? pendingList[0]!.id }} 배우기
-                  </button>
-                </div>
-                <h5 class="train-sec">
-                  잊은 기술 되살리기
-                  <span class="muted">하트비늘 ×{{ heartScales }} (1개 소모<template v-if="!heartScales"> · 상점 → 육성 → 기술 떠올리기</template>)</span>
-                </h5>
-                <p v-if="!forgotten.length" class="msg">잊은 기술이 없습니다.</p>
-                <ul v-else class="rows mrows">
-                  <li
-                    v-for="m in forgotten"
-                    :key="m.id"
-                    :class="{ clickable: heartScales > 0, disabled: !heartScales }"
-                    :title="heartScales ? '하트비늘 1개를 써서 이 기술을 장착합니다' : '하트비늘이 없습니다'"
-                    @click="heartScales && recall(m.id)"
-                  >
-                    <span class="grow">{{ m.info?.ko ?? m.id }}</span>
-                    <template v-if="m.info">
-                      <span class="type" :style="{ background: TYPE_COLORS[m.info.type] }">{{ dexData.types[m.info.type] }}</span>
-                      <span class="muted">{{ CLS_LABEL[m.info.cls] }}</span>
-                      <span class="muted num"><small>위력</small> {{ m.info.power ?? '-' }}</span>
-                      <span class="muted num"><small>명중</small> {{ m.info.acc ?? '-' }}</span>
-                    </template>
-                  </li>
-                </ul>
-                <div class="picker-actions">
-                  <button type="button" class="small-btn" @click="pickedSlot = null">취소</button>
-                </div>
-              </template>
-            </section>
-          </template>
+            </template>
+          </section>
         </template>
       </template>
     </template>
