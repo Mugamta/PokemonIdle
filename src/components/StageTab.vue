@@ -49,7 +49,8 @@ watch(
           <span v-if="stage.kind === 'water'" class="tag water">수상</span>
           <span v-if="game.currentStageId === stage.id" class="tag here">현재</span>
           <span v-if="game.clearedStages.includes(stage.id)" class="tag cleared">클리어</span>
-          <span v-else-if="!game.stageUnlocked(stage.id)" class="tag lock">🔒</span>
+          <span v-if="game.waterLocked(stage.id)" class="tag lock" title="파도타기 포켓몬이나 낚싯대 필요">🔒</span>
+          <span v-else-if="!game.clearedStages.includes(stage.id) && !game.stageUnlocked(stage.id)" class="tag lock">🔒</span>
           <span class="chevron">{{ view.stageId === stage.id ? '▴' : '▾' }}</span>
         </button>
         <StageDetail v-if="view.stageId === stage.id" :stage="stage" />

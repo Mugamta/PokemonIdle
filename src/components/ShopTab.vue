@@ -34,7 +34,7 @@ import {
   type ItemCategory,
   type Perk,
 } from '../data/shop'
-import { BALL_NOTES, EXP_SHARE_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, tmShopList, type HeldGroup } from '../data/items'
+import { BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, tmShopList, type HeldGroup } from '../data/items'
 import ItemIcon from './ItemIcon.vue'
 import ShopRow from './ShopRow.vue'
 import { BASE_SLOTS_MAX, canLearnMachine, EXTRA_SLOTS, PP_START_STAGE, SLOT_DEFEATS, useGameStore } from '../stores/game'
@@ -520,6 +520,20 @@ const slotRows = computed(() =>
     <!-- 편의성 -->
     <section v-else-if="sub === 'perks'" class="card">
       <ul class="rows">
+        <li>
+          <div class="main">
+            <ItemIcon :id="FISHING_ROD_ITEM.id" />
+            <span class="grow"><strong>{{ itemName(FISHING_ROD_ITEM.id) }}</strong></span>
+            <span v-if="game.rodOwned" class="owned">구매함</span>
+            <template v-else>
+              <span class="price">{{ won(FISHING_ROD_ITEM.price) }}</span>
+              <button type="button" class="buy" :disabled="game.money < FISHING_ROD_ITEM.price" @click="game.buyRod()">구매</button>
+            </template>
+          </div>
+          <p class="desc item">
+            수상 스테이지(파도타기·낚시 출현)는 파도타기를 아는 파티 포켓몬이 있거나 낚싯대가 있어야 들어갈 수 있습니다. 한 번 사면 계속 쓸 수 있습니다.
+          </p>
+        </li>
         <li v-for="p in perkList" :key="p.id">
           <div class="main">
             <span class="grow"><strong>{{ p.label }}</strong></span>

@@ -62,6 +62,9 @@ const travelLeft = computed(() =>
 
     <div class="actions">
       <button v-if="isHere" type="button" class="move" disabled>현재 위치</button>
+      <button v-else-if="game.waterLocked(stage.id)" type="button" class="move" disabled>
+        🔒 파도타기를 아는 파티 포켓몬이나 낚싯대가 있어야 이동 가능
+      </button>
       <button v-else-if="!unlocked" type="button" class="move" disabled>🔒 이전 스테이지 보스를 쓰러뜨리면 해금</button>
       <button v-else-if="game.faint" type="button" class="move" disabled>포켓몬 회복 중…</button>
       <template v-else-if="travelingHere">

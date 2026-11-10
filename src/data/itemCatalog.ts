@@ -2,7 +2,7 @@
 import { isMegaItem, Z_CRYSTALS } from '../core/gimmicks'
 import { BATTLE_HELD, POWER_ITEMS } from '../core/items'
 import { dexData, type ItemInfo } from './dex'
-import { BALL_NOTES, EXP_SHARE_ITEM, heldItem, isMachine, LUCKY_EGG, MACHO_BRACE, MONEY_ITEMS, SOOTHE_BELL, tmPrice } from './items'
+import { BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, heldItem, isMachine, LUCKY_EGG, MACHO_BRACE, MONEY_ITEMS, SOOTHE_BELL, tmPrice } from './items'
 import { EVERSTONE_ITEM, evoItem, priceOf, sellPrice, shopItem, trainItem } from './shop'
 
 export type DexItemGroup =
@@ -91,7 +91,10 @@ export function itemUse(id: string): ItemUse {
   if (id in Z_CRYSTALS) roles.push('Z기술 (Z기술 해금 후)')
   if (id.endsWith('-tera-shard')) roles.push('테라스탈 타입 바꾸기 (테라스탈 해금 후)')
   if (id === EXP_SHARE_ITEM.id) roles.push('경험치 나누기 (공용 기능)')
-  const buy = priceOf(id) ?? (id === EXP_SHARE_ITEM.id ? EXP_SHARE_ITEM.price : undefined)
+  if (id === FISHING_ROD_ITEM.id) roles.push('수상 스테이지 이동 (공용 기능)')
+  const buy =
+    priceOf(id) ??
+    (id === EXP_SHARE_ITEM.id ? EXP_SHARE_ITEM.price : id === FISHING_ROD_ITEM.id ? FISHING_ROD_ITEM.price : undefined)
   const sell = sellPrice(id)
   if (!roles.length && sell > 0) roles.push('상점에 팔기')
   return { buy, sell: sell > 0 ? sell : undefined, roles }

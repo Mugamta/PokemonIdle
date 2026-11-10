@@ -99,6 +99,7 @@ import {
   catchChance,
   EXP_SHARE_ITEM,
   EXP_SHARE_RATE,
+  FISHING_ROD_ITEM,
   FRIEND_BALL_FRIENDSHIP,
   isMachine,
   isRecord,
@@ -509,6 +510,8 @@ export const useGameStore = defineStore('game', {
     /** 학습장치 구매 여부 / 켜짐 (공용 기능) */
     expShareOwned: false,
     expShare: false,
+    /** 낚싯대 구매 여부 (수상 스테이지 이동) */
+    rodOwned: false,
     /** 전투 중인 상대 (이동 중이거나 출현 정보가 없으면 null) */
     enemy: null as WildPokemon | null,
     /** 내 포켓몬의 능력 랭크 (전투마다 초기화) */
@@ -581,6 +584,12 @@ export const useGameStore = defineStore('game', {
     /** 전투 중 싸우는 포켓몬이 묶여 교체·도망 불가 (그림자꿰매기 등) */
     leadTrapped: (s): boolean => !!s.enemy && !!s.playerVol.trapped && (s.party[0]?.hp ?? 0) > 0,
     canFly: (s) => s.party.some((m) => m.moves.includes('fly')),
+    /** 파도타기를 아는 파티 포켓몬이 있음 */
+    canSurf: (s) => s.party.some((m) => m.moves.includes('surf')),
+    /** 수상 스테이지(파도타기·낚시)에 들어갈 수 있음: 파도타기 포켓몬 또는 낚싯대 */
+    waterAccess(): boolean {
+      return this.canSurf || this.rodOwned
+    },
     /** PP 소모 여부 (PP_START_STAGE 클리어 후) */
     ppActive: (s) => s.clearedStages.includes(PP_START_STAGE),
     hasPerk: (s) => (id: PerkId) => s.perks.includes(id),
@@ -634,13 +643,28 @@ export const useGameStore = defineStore('game', {
     unlockedGens: (s) => REGIONS.filter((r) => s.unlockedRegions.includes(r.id)).flatMap((r) => r.gens),
     /** 이동 가능한 지방인지 (히든 지방은 조건 포켓몬 포획 필요) */
     canEnter: (s) => (region: Region) => !region.hidden || s.caught.includes(region.hidden.requiresCaught),
-    /** 이동 가능한 스테이지: 지방의 첫 스테이지, 클리어한 스테이지, 클리어한 스테이지의 다음 스테이지 */
-    stageUnlocked: (s) => (stageId: string) => {
-      const found = findStage(stageId)
-      if (!found) return false
-      const i = found.region.stages.indexOf(found.stage)
-      if (i === 0 || stageId === s.currentStageId || s.clearedStages.includes(stageId)) return true
-      return s.clearedStages.includes(found.region.stages[i - 1]!.id)
+    /**
+     * 이동 가능한 스테이지: 지방의 첫 스테이지, 클리어한 스테이지, 클리어한 스테이지의 다음 스테이지.
+     * 수상 스테이지는 파도타기 포켓몬이나 낚싯대가 있어야 하고, 진행을 막지 않음 (앞의 수상 스테이지는 건너뛰고 판단)
+     */
+    stageUnlocked(): (stageId: string) => boolean {
+      return (stageId) => {
+        const found = findStage(stageId)
+        if (!found) return false
+        if (stageId === this.currentStageId) return true
+        if (found.stage.kind === 'water' && !this.waterAccess) return false
+        if (this.clearedStages.includes(stageId)) return true
+        const stages = found.region.stages
+        for (let j = stages.indexOf(found.stage) - 1; j >= 0; j--) {
+          if (this.clearedStages.includes(stages[j]!.id)) return true
+          if (stages[j]!.kind !== 'water') return false
+        }
+        return true
+      }
+    },
+    /** 수상 스테이지 접근 조건 때문에 잠긴 스테이지 */
+    waterLocked(): (stageId: string) => boolean {
+      return (stageId) => findStage(stageId)?.stage.kind === 'water' && stageId !== this.currentStageId && !this.waterAccess
     },
     progressOf: (s) => (stageId: string): StageProgress => s.stageProgress[stageId] ?? { seen: [], defeats: 0 },
     /** 보스 등장 조건: 마지막 보스전 이후 일반 포켓몬을 BOSS_DEFEATS 마리 쓰러뜨림 */
@@ -1841,6 +1865,12 @@ export const useGameStore = defineStore('game', {
     setExpShare(on: boolean) {
       if (this.expShareOwned) this.expShare = on
     },
+    buyRod(): boolean {
+      if (this.rodOwned || this.money < FISHING_ROD_ITEM.price) return false
+      this.money -= FISHING_ROD_ITEM.price
+      this.rodOwned = true
+      return true
+    },
 
     // ---------- 상점 ----------
     buyItem(itemId: string, count = 1): boolean {
@@ -2359,8 +2389,9 @@ export const useGameStore = defineStore('game', {
         log.push('자동 전투가 해금되었습니다! 전투 화면 왼쪽 위 스위치로 켤 수 있습니다.', 'good')
       }
       // 전진 모드: 다음 스테이지로 진입 (반복 모드는 현재 스테이지에서 일반 BOSS_DEFEATS 마리 + 보스 반복)
+      // 수상 스테이지에 들어갈 수 없으면 건너뜀
       const i = found.region.stages.indexOf(found.stage)
-      const next = found.region.stages[i + 1]
+      const next = found.region.stages.slice(i + 1).find((st) => st.kind !== 'water' || this.waterAccess)
       if (this.stageMode === 'advance' && next && this.stageUnlocked(next.id)) {
         log.push(`${next.id} ${ro(next.name)} 이동합니다.`, 'info')
         this.arrive(next.id)
