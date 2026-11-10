@@ -6,6 +6,7 @@ import { evoItemUsage } from '../data/evolutions'
 import {
   AUTO_CENTER_PERK,
   BOSS_INTRO_PERK,
+  DEX_ADVANCE_PERK,
   DEX_REVEAL_PERK,
   END_HEAL_PERK,
   SLOT_HELD_PERK,
@@ -733,6 +734,19 @@ const slotRows = computed(() =>
             </template>
           </div>
           <p class="desc">{{ BOSS_INTRO_PERK.desc }}</p>
+        </li>
+        <li v-if="cur === 'battle'">
+          <div class="main">
+            <span class="grow"><strong>{{ DEX_ADVANCE_PERK.label }}</strong></span>
+            <span v-if="game.hasPerk(DEX_ADVANCE_PERK.id)" class="owned">구매함</span>
+            <template v-else>
+              <span class="price">{{ won(DEX_ADVANCE_PERK.price) }}</span>
+              <button type="button" class="buy" :disabled="game.money < DEX_ADVANCE_PERK.price" @click="game.buyPerk(DEX_ADVANCE_PERK.id)">
+                구매
+              </button>
+            </template>
+          </div>
+          <p class="desc">{{ DEX_ADVANCE_PERK.desc }}</p>
         </li>
         <li v-if="cur === 'battle'">
           <div class="main">

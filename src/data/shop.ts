@@ -387,12 +387,14 @@ export type EvBreakPerkId = 'evBreak:1'
 export type ChainPerkId = AiPerkId | DisplayPerkId | SpeedPerkId | StatViewPerkId | EvBreakPerkId
 /** 보스 등장 연출 생략 (켜고 끌 수 있음) */
 export type ToggleUtilPerkId = 'bossIntro:skip' | 'autoCenter:pp'
+/** 도감 완성 후 전진 (전투 화면의 전진·반복 옆에 '도감' 모드가 생김) */
+export type StageModePerkId = 'stageMode:dex'
 export type DexPerkId = 'dex:reveal'
 /** 판정 강화: 원래 게임 규칙보다 유리하게 판정하는 기능 */
 export type JudgePerkId = 'judge:endHeal'
 /** 지닌 도구를 포켓몬이 아닌 파티 슬롯에 묶음 */
 export type SlotHeldPerkId = 'heldSlot:bind'
-export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId | DexPerkId | JudgePerkId | SlotHeldPerkId
+export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId | StageModePerkId | DexPerkId | JudgePerkId | SlotHeldPerkId
 export interface Perk {
   id: PerkId
   label: string
@@ -449,6 +451,14 @@ export const AUTO_CENTER_PERK = {
   label: 'PP 자동 센터 귀환',
   desc: '자동 전투 중 전투가 끝났을 때 싸우는 포켓몬의 모든 기술 PP가 10% 미만이면 자동으로 포켓몬센터에 다녀옵니다. (보스전 진행도는 유지)',
   price: 5000,
+}
+
+/** 도감 완성 후 전진: 스테이지 출현 포켓몬을 모두 잡을 때까지 반복하다가, 다 잡으면 다음 스테이지로 전진 */
+export const DEX_ADVANCE_PERK = {
+  id: 'stageMode:dex' as StageModePerkId,
+  label: '도감 완성 후 전진',
+  desc: "전투 화면의 전진·반복 옆에 '도감' 모드가 생깁니다. 보스를 쓰러뜨렸을 때 스테이지 출현 포켓몬을 아직 다 잡지 못했으면 반복처럼 현재 스테이지에 머물고, 모두 잡았으면 전진처럼 다음 스테이지로 이동합니다. 사면 바로 '도감' 모드로 바뀝니다.",
+  price: 10000,
 }
 
 /** 도감 정보 공개: 포획하지 않은 포켓몬(조우하지 않은 포켓몬 포함)의 도감 정보를 모두 볼 수 있음 */

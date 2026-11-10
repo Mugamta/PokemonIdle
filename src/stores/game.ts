@@ -70,6 +70,7 @@ import { NATURES } from '../data/natures'
 import type { SpriteDefault } from '../data/sprites'
 import {
   AUTO_CENTER_PERK,
+  DEX_ADVANCE_PERK,
   AUTO_CENTER_PP_RATIO,
   type AutoCenterPriority,
   BOSS_INTRO_PERK,
@@ -192,7 +193,8 @@ export function ppOf(m: Pick<PartyMember, 'pp' | 'ppUps'>, moveId: string): numb
 }
 
 /** 보스 클리어 후 동작 */
-export type StageMode = 'advance' | 'repeat'
+/** 전진 / 반복 / 도감 (도감 완성 전엔 반복, 완성 후엔 전진. 상점 기능 'stageMode:dex' 필요) */
+export type StageMode = 'advance' | 'repeat' | 'dex'
 
 /** 자동 전투의 특수 기능 사용: off = 안 씀, boss = 보스전에서만, always = 매 전투 */
 export type AutoGimmick = 'off' | 'boss' | 'always'
@@ -1085,7 +1087,7 @@ export const useGameStore = defineStore('game', {
       if (!Number.isFinite(this.money)) this.money = 0
       if (this.enemy && !this.enemy.species) this.enemy = null
       if (!this.autoUnlocked) this.auto = false
-      if (this.stageMode !== 'repeat') this.stageMode = 'advance'
+      if (this.stageMode === 'dex' ? !this.perks.includes(DEX_ADVANCE_PERK.id) : this.stageMode !== 'repeat') this.stageMode = 'advance'
       if (!['off', 'boss', 'always'].includes(this.autoGimmick)) this.autoGimmick = 'always'
       // 전투 밖에 특수 기능 효과가 남아 있으면 정리 (다이맥스 HP 복구)
       if (!this.enemy) this.endBattleGimmick()
@@ -2489,7 +2491,7 @@ export const useGameStore = defineStore('game', {
     },
     buyPerk(id: PerkId): boolean {
       const chain = CHAIN_PERKS.find((p) => p.id === id)
-      const perk = chain ?? [...PERKS, BOSS_INTRO_PERK, AUTO_CENTER_PERK, DEX_REVEAL_PERK, END_HEAL_PERK].find((p) => p.id === id)
+      const perk = chain ?? [...PERKS, BOSS_INTRO_PERK, AUTO_CENTER_PERK, DEX_ADVANCE_PERK, DEX_REVEAL_PERK, END_HEAL_PERK].find((p) => p.id === id)
       if (!perk || this.perks.includes(id) || this.money < perk.price) return false
       if (chain?.requires && !this.perks.includes(chain.requires)) return false
       this.money -= perk.price
@@ -2501,6 +2503,10 @@ export const useGameStore = defineStore('game', {
       }
       if (id === 'autoCenter:pp') {
         this.autoCenter = true
+        return true
+      }
+      if (id === DEX_ADVANCE_PERK.id) {
+        this.stageMode = 'dex'
         return true
       }
       if (id === 'dex:reveal' || id === END_HEAL_PERK.id) return true
@@ -3003,10 +3009,12 @@ export const useGameStore = defineStore('game', {
         log.push('자동 전투가 해금되었습니다! 전투 화면 왼쪽 위 스위치로 켤 수 있습니다.', 'good')
       }
       // 전진 모드: 다음 스테이지로 진입 (반복 모드는 현재 스테이지에서 일반 BOSS_DEFEATS 마리 + 보스 반복)
+      // 도감 모드: 출현 포켓몬을 모두 잡았으면 전진, 아니면 반복 (출현 정보가 없는 스테이지는 전진)
       // 수상 스테이지에 들어갈 수 없으면 건너뜀
       const i = found.region.stages.indexOf(found.stage)
       const next = found.region.stages.slice(i + 1).find((st) => st.kind !== 'water' || !!this.stageEncounters(st))
-      if (this.stageMode === 'advance' && next && this.stageUnlocked(next.id)) {
+      const advance = this.stageMode === 'advance' || (this.stageMode === 'dex' && this.stageDexDone(found.stage) !== false)
+      if (advance && next && this.stageUnlocked(next.id)) {
         log.push(`${next.id} ${ro(next.name)} 이동합니다.`, 'info')
         this.arrive(next.id)
       }
@@ -3101,6 +3109,7 @@ export const useGameStore = defineStore('game', {
       if (p) p.defeats = 0
     },
     setStageMode(mode: StageMode) {
+      if (mode === 'dex' && !this.perks.includes(DEX_ADVANCE_PERK.id)) return
       this.stageMode = mode
     },
     setAuto(on: boolean) {

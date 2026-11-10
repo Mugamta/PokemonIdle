@@ -174,7 +174,7 @@ const foeItem = computed(() => {
         <span class="knob" />
         <span class="label">{{ game.autoUnlocked ? '자동' : '🔒 자동' }}</span>
       </button>
-      <div v-if="game.autoUnlocked" class="mode-toggle" title="보스를 쓰러뜨린 뒤 다음 스테이지로 갈지, 현재 스테이지에서 일반 10마리 + 보스를 반복할지">
+      <div v-if="game.autoUnlocked" class="mode-toggle" title="보스를 쓰러뜨린 뒤 다음 스테이지로 갈지, 현재 스테이지에서 일반 10마리 + 보스를 반복할지 (도감: 출현 포켓몬을 다 잡을 때까지 반복 후 전진)">
         <button
           type="button"
           :class="{ active: game.stageMode === 'advance' }"
@@ -188,6 +188,15 @@ const foeItem = computed(() => {
           @click="game.setStageMode('repeat')"
         >
           반복
+        </button>
+        <button
+          v-if="game.hasPerk('stageMode:dex')"
+          type="button"
+          :class="{ active: game.stageMode === 'dex' }"
+          title="출현 포켓몬을 모두 잡을 때까지 반복하다가, 다 잡으면 보스를 쓰러뜨린 뒤 다음 스테이지로 전진"
+          @click="game.setStageMode('dex')"
+        >
+          도감
         </button>
       </div>
     </div>
