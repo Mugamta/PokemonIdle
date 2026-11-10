@@ -1,4 +1,4 @@
-import { sfx } from '../core/audio'
+import { moveSfx, sfx } from '../core/audio'
 import { defineStore } from 'pinia'
 import {
   chooseMove,
@@ -305,7 +305,9 @@ export function canLearnMachine(m: Pick<PartyMember, 'species'>, moveId: string)
   return num != null && !!learnsets.value?.[m.species]?.some((e) => e[0] === num)
 }
 /** 한 턴 효과음에서 공격 사이 간격 (초) */
-const HIT_SFX_GAP = 0.3
+const HIT_SFX_GAP = 0.4
+/** 기술 효과음이 나온 뒤 타격음까지 (초) */
+const HIT_SFX_IMPACT = 0.14
 /** 이번 턴 공격 효과음이 끝나는 시점 (쓰러짐·레벨업 효과음을 그 뒤에 재생) */
 let turnSfxDelay = 0
 
@@ -1240,9 +1242,13 @@ export const useGameStore = defineStore('game', {
       const result: TurnResult = runTurn(me, foe, playerMove, enemyMove, override)
       for (const line of result.lines) log.push(line)
       // 효과음: 공격마다 조금씩 간격을 두고, 쓰러짐은 마지막 공격 뒤에
+      // 기술 타입별 효과음 → (공격기면) 상성에 따른 타격음
       result.hits.forEach((h, i) => {
-        sfx(h.eff > 1 ? 'hitSuper' : h.eff < 1 ? 'hitWeak' : 'hit', i * HIT_SFX_GAP)
-        if (h.crit) sfx('crit', i * HIT_SFX_GAP + 0.05)
+        const t = i * HIT_SFX_GAP
+        moveSfx(h.type, t, h.status)
+        if (h.status) return
+        sfx(h.eff > 1 ? 'hitSuper' : h.eff < 1 ? 'hitWeak' : 'hit', t + HIT_SFX_IMPACT)
+        if (h.crit) sfx('crit', t + HIT_SFX_IMPACT + 0.05)
       })
       turnSfxDelay = result.hits.length * HIT_SFX_GAP
       this.battleTurns++

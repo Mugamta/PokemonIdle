@@ -1087,6 +1087,7 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
       return
     }
     if (!selfOnly && !breaks) ruleOut(def, (c) => blockOf(att, c, m, type, eff) != null || abilityOf(c) === 'magic-bounce')
+    turnHits?.push({ def: selfOnly ? att : def, eff: 0, crit: false, type, status: true })
     applyStatusMove(att, def, m, log)
     afterMove(att, def, m, log)
     return
@@ -1237,7 +1238,7 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
       inflictStatus(def, chain, post, false, att)
     }
   }
-  if (total > 0) turnHits?.push({ def, eff: ex.fixed == null ? eff : 1, crit: crits > 0 })
+  if (total > 0) turnHits?.push({ def, eff: ex.fixed == null ? eff : 1, crit: crits > 0, type })
   if (crits) log.push(crits > 1 || landed > 1 ? `급소에 ${crits}번 맞았다!` : '급소에 맞았다!')
   if (ex.fixed == null && eff > 1) log.push('효과가 굉장했다!')
   if (ex.fixed == null && eff < 1) log.push('효과가 별로인 듯하다…')
@@ -1525,7 +1526,7 @@ export function onBattleEnd(b: Battler, foe: Battler): string[] {
 }
 
 /** 이번 턴에 들어간 공격 (효과음용). def = 맞은 쪽 */
-let turnHits: { def: Battler; eff: number; crit: boolean }[] | null = null
+let turnHits: { def: Battler; eff: number; crit: boolean; type: string; status?: boolean }[] | null = null
 
 export interface TurnHit {
   /** 맞은 쪽 */
@@ -1533,11 +1534,15 @@ export interface TurnHit {
   /** 타입 상성 배율 (고정 데미지는 1) */
   eff: number
   crit: boolean
+  /** 기술 타입 (특성·테라 등으로 바뀐 실제 타입) */
+  type: string
+  /** 변화기 (데미지 없음) */
+  status?: boolean
 }
 
 export interface TurnResult {
   lines: string[]
-  /** 데미지를 준 공격 순서대로 (효과음용) */
+  /** 데미지를 준 공격·성공한 변화기 순서대로 (효과음용) */
   hits: TurnHit[]
   /** 내 포켓몬이 실제로 기술을 썼는지 (PP 소모 판단용) */
   playerMoved: boolean
@@ -1561,7 +1566,7 @@ export function runTurn(
   playerOverride?: MoveData,
 ): TurnResult {
   const log: string[] = []
-  const hits: { def: Battler; eff: number; crit: boolean }[] = []
+  const hits: NonNullable<typeof turnHits> = []
   turnHits = hits
   let playerMoved = false
   let enemyMoved = false
@@ -1647,7 +1652,7 @@ export function runTurn(
   turnHits = null
   return {
     lines: log,
-    hits: hits.map((h) => ({ target: h.def === player ? 'player' : 'enemy', eff: h.eff, crit: h.crit })),
+    hits: hits.map((h) => ({ target: h.def === player ? 'player' : 'enemy', eff: h.eff, crit: h.crit, type: h.type, status: h.status })),
     playerMoved,
     ppCost,
     enemyMoved,

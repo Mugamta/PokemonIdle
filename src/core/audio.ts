@@ -575,6 +575,108 @@ export function sfx(id: SfxId, delay = 0) {
   }
 }
 
+/** 기술 효과음끼리 너무 촘촘히 겹치지 않도록 */
+let lastMoveSfx = -1
+
+/**
+ * 기술 타입별 효과음 (타격음 앞에 깔리는 짧은 음색).
+ * status = 변화기 (조금 작게, 타격음 없이)
+ */
+export function moveSfx(type: string, delay = 0, status = false) {
+  const c = ctx
+  if (!c || !sfxBus || c.state !== 'running' || audioSettings.sfx <= 0) return
+  const t = c.currentTime + delay
+  if (Math.abs(t - lastMoveSfx) < 0.05) return
+  lastMoveSfx = t
+  const o = sfxBus
+  const k = status ? 0.65 : 1
+  const f = (n: string) => freqOf(n)
+
+  switch (type) {
+    case 'fire': // 화르륵: 저역 노이즈가 부풀었다 사그라듦 + 상승음
+      noise(o, t, 0.28, 0.4 * k, 900, 'lowpass')
+      noise(o, t + 0.05, 0.2, 0.2 * k, 2500, 'bandpass')
+      tone(o, 'sawtooth', 120, t, 0.22, 0.08 * k, { slideTo: 320 })
+      break
+    case 'water': // 첨벙: 사인 하강 두 번 (물방울)
+      tone(o, 'sine', 1400, t, 0.08, 0.28 * k, { slideTo: 500 })
+      tone(o, 'sine', 1100, t + 0.07, 0.1, 0.24 * k, { slideTo: 350 })
+      noise(o, t, 0.16, 0.12 * k, 1800, 'bandpass')
+      break
+    case 'electric': // 지지직: 고음 펄스가 위아래로 떨림
+      for (let i = 0; i < 5; i++) tone(o, 'pulse12', i % 2 ? 1900 : 2600, t + i * 0.03, 0.03, 0.09 * k)
+      noise(o, t, 0.16, 0.18 * k, 5000)
+      break
+    case 'grass': // 사락: 대역 노이즈 + 부드러운 삼각파 상승
+      noise(o, t, 0.18, 0.2 * k, 3500, 'bandpass')
+      tone(o, 'triangle', f('E5'), t, 0.08, 0.2 * k)
+      tone(o, 'triangle', f('A5'), t + 0.07, 0.1, 0.2 * k)
+      break
+    case 'ice': // 쨍: 아주 높은 사인 반짝임
+      tone(o, 'sine', f('E7'), t, 0.12, 0.14 * k)
+      tone(o, 'sine', f('B7'), t + 0.05, 0.14, 0.11 * k)
+      tone(o, 'triangle', f('G#6'), t + 0.1, 0.12, 0.12 * k)
+      noise(o, t, 0.06, 0.12 * k, 8000)
+      break
+    case 'fighting': // 퍽: 짧고 묵직한 저음 펀치
+      tone(o, 'sine', 180, t, 0.08, 0.45 * k, { slideTo: 50 })
+      noise(o, t, 0.05, 0.3 * k, 600, 'lowpass')
+      break
+    case 'poison': // 부글부글: 낮은 사인 거품 셋
+      for (let i = 0; i < 3; i++) tone(o, 'sine', 260 + i * 70, t + i * 0.06, 0.06, 0.25 * k, { slideTo: 520 + i * 90 })
+      break
+    case 'ground': // 쿠구궁: 저역 노이즈 럼블 + 낮은 하강음
+      noise(o, t, 0.32, 0.45 * k, 250, 'lowpass')
+      tone(o, 'triangle', 110, t, 0.3, 0.32 * k, { slideTo: 40, release: 0.15 })
+      break
+    case 'flying': // 휘익: 바람 가르는 노이즈 + 사인 스윕
+      noise(o, t, 0.22, 0.22 * k, 2000, 'bandpass')
+      tone(o, 'sine', 500, t, 0.2, 0.12 * k, { slideTo: 1400 })
+      break
+    case 'psychic': // 우웅: 떨리는 사인 2음이 위로
+      tone(o, 'sine', f('A4'), t, 0.26, 0.18 * k, { slideTo: f('A5') })
+      tone(o, 'sine', f('C#5'), t, 0.26, 0.12 * k, { slideTo: f('E6') })
+      tone(o, 'pulse12', f('A5'), t + 0.12, 0.12, 0.05 * k)
+      break
+    case 'bug': // 붕붕: 빠른 저음 펄스 날갯짓
+      for (let i = 0; i < 6; i++) tone(o, 'pulse25', i % 2 ? 210 : 240, t + i * 0.028, 0.025, 0.1 * k)
+      break
+    case 'rock': // 와르르: 짧은 노이즈 파편 셋
+      for (let i = 0; i < 3; i++) noise(o, t + i * 0.05, 0.06, 0.38 * k, 500 + i * 300, 'lowpass')
+      tone(o, 'square', 140, t, 0.1, 0.12 * k, { slideTo: 70 })
+      break
+    case 'ghost': // 으스스: 비브라토 걸린 하강 사인
+      tone(o, 'sine', f('E5'), t, 0.32, 0.2 * k, { slideTo: f('E4'), vibrato: true })
+      tone(o, 'triangle', f('Bb4'), t + 0.04, 0.28, 0.12 * k, { slideTo: f('Bb3') })
+      break
+    case 'dragon': // 크아: 거친 톱니파 포효 + 저음
+      tone(o, 'sawtooth', 160, t, 0.26, 0.13 * k, { slideTo: 90, release: 0.1 })
+      tone(o, 'sawtooth', 240, t, 0.22, 0.08 * k, { slideTo: 130 })
+      noise(o, t, 0.24, 0.2 * k, 700, 'bandpass')
+      break
+    case 'dark': // 스윽: 낮은 사각파 단3도 하강
+      tone(o, 'square', f('E3'), t, 0.09, 0.12 * k)
+      tone(o, 'square', f('C#3'), t + 0.08, 0.12, 0.12 * k, { slideTo: f('A2') })
+      noise(o, t, 0.1, 0.15 * k, 1200, 'bandpass')
+      break
+    case 'steel': // 챙: 금속성 고음 두 개 + 짧은 노이즈
+      tone(o, 'square', 1250, t, 0.14, 0.08 * k)
+      tone(o, 'square', 1870, t, 0.14, 0.06 * k)
+      noise(o, t, 0.04, 0.25 * k, 6000)
+      break
+    case 'fairy': // 반짝: 장조 아르페지오 상승
+      tone(o, 'triangle', f('E6'), t, 0.06, 0.18 * k)
+      tone(o, 'triangle', f('G#6'), t + 0.045, 0.06, 0.18 * k)
+      tone(o, 'triangle', f('B6'), t + 0.09, 0.1, 0.16 * k)
+      tone(o, 'sine', f('E7'), t + 0.13, 0.12, 0.1 * k)
+      break
+    default: // normal · 타입 없음: 짧은 휙
+      noise(o, t, 0.08, 0.2 * k, 1500, 'bandpass')
+      tone(o, 'square', 400, t, 0.06, 0.07 * k, { slideTo: 700 })
+      break
+  }
+}
+
 // ---------- 시작 ----------
 let installed = false
 /**
