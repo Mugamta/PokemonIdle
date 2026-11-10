@@ -5,6 +5,7 @@ import { WEATHER_LABELS } from '../core/battle'
 import { useGameStore } from '../stores/game'
 import { useStageViewStore } from '../stores/stageView'
 import StageDetail from './StageDetail.vue'
+import LeagueDialog from './LeagueDialog.vue'
 
 const view = useStageViewStore()
 const game = useGameStore()
@@ -15,8 +16,16 @@ function conquered(region: Region) {
   return region.stages.filter((st) => game.clearedStages.includes(st.id) && game.stageDexDone(st) !== false).length
 }
 
-function openRegion(id: number) {
-  view.selectRegion(id)
+/** 리그 도전 창을 띄운 (잠긴) 지방 */
+const leagueFor = ref<Region | null>(null)
+
+function openRegion(region: Region) {
+  // 앞 지방의 리그를 제패하지 않은 지방: 리그 도전 창
+  if (game.regionLocked(region)) {
+    leagueFor.value = region
+    return
+  }
+  view.selectRegion(region.id)
   showStages.value = true
 }
 
@@ -80,17 +89,20 @@ watch(
         type="button"
         class="item clickable"
         :class="{ selected: view.regionId === region.id }"
-        @click="openRegion(region.id)"
+        @click="openRegion(region)"
       >
         <span class="num">{{ region.id }}</span>
         <span class="name rname">{{ region.name }}<small class="ver">{{ region.version }}</small></span>
         <span v-if="region.hidden" class="tag hidden">히든</span>
+        <span v-if="game.regionLocked(region)" class="tag league" title="앞 지방의 포켓몬 리그를 제패해야 갈 수 있습니다">🔒 리그</span>
+        <span v-if="game.leagueCleared.includes(region.key)" class="tag champ" title="이 지방의 포켓몬 리그를 제패했습니다">리그 제패</span>
         <span v-if="game.regionDexDone(region)" class="tag dex" title="모든 스테이지의 출현 포켓몬을 잡았습니다">도감 완성</span>
         <span v-if="game.regionCleared(region)" class="tag cleared" title="모든 스테이지를 클리어했습니다">전부 클리어</span>
         <span class="count" title="정복한 스테이지 (클리어 + 도감 완성) / 전체 스테이지">정복 {{ conquered(region) }}/{{ region.stages.length }}개</span>
       </button>
     </li>
   </ul>
+  <LeagueDialog v-if="leagueFor" :region="leagueFor" @close="leagueFor = null" />
 </template>
 
 <style scoped>
@@ -106,6 +118,16 @@ watch(
 
 .tag.dex {
   background: #7a2f2f;
+  color: #fff;
+}
+
+.tag.league {
+  background: #3a3a44;
+  color: #ffcb05;
+}
+
+.tag.champ {
+  background: #8a6d00;
   color: #fff;
 }
 

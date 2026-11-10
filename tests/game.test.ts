@@ -906,3 +906,110 @@ describe('알 기술·기술가르침', () => {
     expect(game.bp).toBe(0)
   })
 })
+
+describe('포켓몬 리그', () => {
+  const kanto = () => REGIONS[0]!
+  const johto = () => REGIONS[1]!
+  /** 리그 트레이너 포켓몬을 바로 쓰러뜨림 */
+  function beatMon(game: ReturnType<typeof useGameStore>) {
+    game.enemy!.hp = 0
+    game.onEnemyFainted()
+  }
+
+  test('앞 지방 리그를 제패해야 다음 지방에 들어갈 수 있고, 이미 가 본 지방은 열려 있음', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    expect(game.regionLocked(kanto())).toBe(false)
+    expect(game.regionLocked(johto())).toBe(true)
+    game.moveTo(johto().stages[0]!.id)
+    expect(game.travel).toBeNull()
+    expect(game.currentStageId).toBe('1-1')
+    game.leagueCleared.push(kanto().key)
+    expect(game.regionLocked(johto())).toBe(false)
+    // 리그 조건이 생기기 전에 가 본 지방
+    game.leagueCleared = []
+    game.unlockedRegions.push(REGIONS[2]!.id)
+    expect(game.regionLocked(REGIONS[2]!)).toBe(false)
+  })
+
+  test('모든 스테이지를 클리어해야 도전 가능, 사천왕 4명 + 챔피언 연전 후 제패하면 다음 지방으로 이동', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter('mewtwo', ['psychic']))
+    game.party[0]!.level = 100
+    expect(game.startLeague(kanto().key)).toBe(false)
+    game.clearedStages = kanto().stages.map((s) => s.id)
+    expect(game.leagueReady(kanto())).toBe(true)
+    expect(game.startLeague(kanto().key, false)).toBe(true)
+    expect(game.league).toMatchObject({ region: kanto().key, trainer: 0, mon: 0 })
+    run(game, 5000)
+    expect(game.enemy?.trainer?.name).toBe('칸나')
+    expect(game.enemy?.boss).toBe(true)
+    // 트레이너 포켓몬은 잡을 수 없음
+    game.items['master-ball'] = 1
+    expect(game.throwBall('master-ball')).toBe(false)
+    let guard = 0
+    while (game.league && guard++ < 40) {
+      if (!game.enemy) game.sendLeagueMon()
+      beatMon(game)
+    }
+    expect(game.league).toBeNull()
+    expect(game.leagueCleared).toContain(kanto().key)
+    expect(findStage(game.currentStageId)?.region.id).toBe(johto().id)
+  })
+
+  test('센터에 가면(패배·회복 버튼) 도전 기록이 초기화됨', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    game.clearedStages = kanto().stages.map((s) => s.id)
+    game.startLeague(kanto().key)
+    game.sendLeagueMon()
+    beatMon(game)
+    expect(game.league?.mon).toBe(1)
+    game.retreat()
+    expect(game.league).toBeNull()
+    expect(game.leagueCleared).toEqual([])
+  })
+
+  test('마지막 스테이지를 클리어하면: 리그 제패 전엔 머물고, 제패 후엔 다음 지방으로 (도감 모드는 도감을 다 채운 뒤)', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    const stages = kanto().stages
+    const last = stages[stages.length - 1]!
+    game.clearedStages = stages.map((s) => s.id)
+    game.currentStageId = last.id
+    game.onBossCleared(last.id)
+    expect(game.currentStageId).toBe(last.id)
+    game.leagueCleared.push(kanto().key)
+    game.onBossCleared(last.id)
+    expect(findStage(game.currentStageId)?.region.id).toBe(johto().id)
+
+    // 도감 모드: 못 잡은 포켓몬이 있으면 다음 지방으로 가지 않음
+    game.perks.push('autoUse:ball', 'stageMode:dex')
+    game.autoUse.ball = true
+    game.stageMode = 'dex'
+    game.currentStageId = last.id
+    game.caught = stageSpecies(game.stageEncounters(last)!)
+    game.onBossCleared(last.id)
+    expect(findStage(game.currentStageId)?.region.id).toBe(kanto().id)
+  })
+
+  test('저장 데이터의 잘못된 리그 진행은 정리', () => {
+    const game = useGameStore()
+    game.league = { region: 'nowhere', trainer: 0, mon: 0, variant: 0 }
+    game.validate()
+    expect(game.league).toBeNull()
+    expect(game.leagueCleared).toEqual([])
+  })
+})
+
+describe('포켓몬 리그 (화면 값)', () => {
+  test('반응형 프록시로 넘어온 지방도 제패해야 할 리그를 찾음', async () => {
+    const { reactive } = await import('vue')
+    const { requiredLeagueRegion } = await import('../src/data/league')
+    expect(requiredLeagueRegion(reactive(REGIONS[1]!) as never)?.key).toBe(REGIONS[0]!.key)
+  })
+})

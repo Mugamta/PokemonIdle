@@ -114,7 +114,7 @@ const travelLeft = computed(() =>
         <button type="button" class="cancel" @click="game.cancelTravel()">취소</button>
       </template>
       <button v-else type="button" class="move" @click="game.moveTo(stage.id)">
-        {{ game.canFly ? '공중날기로 즉시 이동' : `이동하기 (${TRAVEL_MS / 1000}초)` }}
+        {{ game.canFly ? '공중날기로 즉시 이동' : `이동하기 (${TRAVEL_MS / 1000}초)` }}{{ game.league ? ' · 리그 도전 포기' : '' }}
       </button>
     </div>
   </div>

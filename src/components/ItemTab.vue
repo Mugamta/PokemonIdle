@@ -359,7 +359,7 @@ function sell(id: string, n: number) {
                   type="button"
                   class="small-btn"
                   :disabled="!it.usable || !!game.faint"
-                  :title="it.usable ? '' : g.cat === 'ball' ? (game.enemy?.boss ? '보스는 잡을 수 없습니다' : '야생 포켓몬과 싸울 때만 던질 수 있습니다') : '지금은 효과가 없습니다'"
+                  :title="it.usable ? '' : g.cat === 'ball' ? (game.enemy?.trainer ? '트레이너의 포켓몬은 잡을 수 없습니다' : game.enemy?.boss ? '보스는 잡을 수 없습니다' : '야생 포켓몬과 싸울 때만 던질 수 있습니다') : '지금은 효과가 없습니다'"
                   @click="useShopItem(g.cat, it.def.id)"
                 >
                   {{ g.cat === 'ball' ? '던지기' : '사용' }}

@@ -1,0 +1,3358 @@
+{
+ "kanto-rby": [
+  {
+   "id": "LORELEI",
+   "name": "칸나",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "dewgong",
+      "level": 54,
+      "iv": 17,
+      "moves": [
+       "growl",
+       "aurora-beam",
+       "rest",
+       "take-down"
+      ]
+     },
+     {
+      "species": "cloyster",
+      "level": 53,
+      "iv": 17,
+      "moves": [
+       "supersonic",
+       "clamp",
+       "aurora-beam",
+       "spike-cannon"
+      ]
+     },
+     {
+      "species": "slowbro",
+      "level": 54,
+      "iv": 17,
+      "moves": [
+       "growl",
+       "water-gun",
+       "withdraw",
+       "amnesia"
+      ]
+     },
+     {
+      "species": "jynx",
+      "level": 56,
+      "iv": 17,
+      "moves": [
+       "double-slap",
+       "ice-punch",
+       "body-slam",
+       "thrash"
+      ]
+     },
+     {
+      "species": "lapras",
+      "level": 56,
+      "iv": 17,
+      "moves": [
+       "body-slam",
+       "confuse-ray",
+       "blizzard",
+       "hydro-pump"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "BRUNO",
+   "name": "시바",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "onix",
+      "level": 53,
+      "iv": 17,
+      "moves": [
+       "rock-throw",
+       "rage",
+       "slam",
+       "harden"
+      ]
+     },
+     {
+      "species": "hitmonchan",
+      "level": 55,
+      "iv": 17,
+      "moves": [
+       "ice-punch",
+       "thunder-punch",
+       "mega-punch",
+       "counter"
+      ]
+     },
+     {
+      "species": "hitmonlee",
+      "level": 55,
+      "iv": 17,
+      "moves": [
+       "jump-kick",
+       "focus-energy",
+       "high-jump-kick",
+       "mega-kick"
+      ]
+     },
+     {
+      "species": "onix",
+      "level": 56,
+      "iv": 17,
+      "moves": [
+       "rock-throw",
+       "rage",
+       "slam",
+       "harden"
+      ]
+     },
+     {
+      "species": "machamp",
+      "level": 58,
+      "iv": 17,
+      "moves": [
+       "leer",
+       "focus-energy",
+       "fissure",
+       "submission"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "AGATHA",
+   "name": "국화",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "gengar",
+      "level": 56,
+      "iv": 17,
+      "moves": [
+       "confuse-ray",
+       "night-shade",
+       "hypnosis",
+       "dream-eater"
+      ]
+     },
+     {
+      "species": "golbat",
+      "level": 56,
+      "iv": 17,
+      "moves": [
+       "supersonic",
+       "confuse-ray",
+       "wing-attack",
+       "haze"
+      ]
+     },
+     {
+      "species": "haunter",
+      "level": 55,
+      "iv": 17,
+      "moves": [
+       "confuse-ray",
+       "night-shade",
+       "hypnosis",
+       "dream-eater"
+      ]
+     },
+     {
+      "species": "arbok",
+      "level": 58,
+      "iv": 17,
+      "moves": [
+       "bite",
+       "glare",
+       "screech",
+       "acid"
+      ]
+     },
+     {
+      "species": "gengar",
+      "level": 60,
+      "iv": 17,
+      "moves": [
+       "confuse-ray",
+       "night-shade",
+       "toxic",
+       "dream-eater"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "LANCE",
+   "name": "목호",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "gyarados",
+      "level": 58,
+      "iv": 17,
+      "moves": [
+       "dragon-rage",
+       "leer",
+       "hydro-pump",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonair",
+      "level": 56,
+      "iv": 17,
+      "moves": [
+       "agility",
+       "slam",
+       "dragon-rage",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonair",
+      "level": 56,
+      "iv": 17,
+      "moves": [
+       "agility",
+       "slam",
+       "dragon-rage",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "aerodactyl",
+      "level": 60,
+      "iv": 17,
+      "moves": [
+       "supersonic",
+       "bite",
+       "take-down",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 62,
+      "iv": 17,
+      "moves": [
+       "agility",
+       "slam",
+       "barrier",
+       "hyper-beam"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "RIVAL3",
+   "name": "그린",
+   "title": "챔피언",
+   "champion": true,
+   "variants": [
+    [
+     {
+      "species": "pidgeot",
+      "level": 61,
+      "iv": 17,
+      "moves": [
+       "whirlwind",
+       "wing-attack",
+       "sky-attack",
+       "mirror-move"
+      ]
+     },
+     {
+      "species": "alakazam",
+      "level": 59,
+      "iv": 17,
+      "moves": [
+       "psybeam",
+       "recover",
+       "psychic",
+       "reflect"
+      ]
+     },
+     {
+      "species": "rhydon",
+      "level": 61,
+      "iv": 17,
+      "moves": [
+       "tail-whip",
+       "fury-attack",
+       "horn-drill",
+       "leer"
+      ]
+     },
+     {
+      "species": "arcanine",
+      "level": 61,
+      "iv": 17,
+      "moves": [
+       "roar",
+       "ember",
+       "leer",
+       "take-down"
+      ]
+     },
+     {
+      "species": "exeggutor",
+      "level": 63,
+      "iv": 17,
+      "moves": [
+       "barrage",
+       "hypnosis",
+       "stomp"
+      ]
+     },
+     {
+      "species": "blastoise",
+      "level": 65,
+      "iv": 17,
+      "moves": [
+       "bite",
+       "withdraw",
+       "blizzard",
+       "hydro-pump"
+      ]
+     }
+    ],
+    [
+     {
+      "species": "pidgeot",
+      "level": 61,
+      "iv": 17,
+      "moves": [
+       "whirlwind",
+       "wing-attack",
+       "sky-attack",
+       "mirror-move"
+      ]
+     },
+     {
+      "species": "alakazam",
+      "level": 59,
+      "iv": 17,
+      "moves": [
+       "psybeam",
+       "recover",
+       "psychic",
+       "reflect"
+      ]
+     },
+     {
+      "species": "rhydon",
+      "level": 61,
+      "iv": 17,
+      "moves": [
+       "tail-whip",
+       "fury-attack",
+       "horn-drill",
+       "leer"
+      ]
+     },
+     {
+      "species": "gyarados",
+      "level": 61,
+      "iv": 17,
+      "moves": [
+       "dragon-rage",
+       "leer",
+       "hydro-pump",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "arcanine",
+      "level": 63,
+      "iv": 17,
+      "moves": [
+       "roar",
+       "ember",
+       "leer",
+       "take-down"
+      ]
+     },
+     {
+      "species": "venusaur",
+      "level": 65,
+      "iv": 17,
+      "moves": [
+       "razor-leaf",
+       "growth",
+       "mega-drain",
+       "solar-beam"
+      ]
+     }
+    ],
+    [
+     {
+      "species": "pidgeot",
+      "level": 61,
+      "iv": 17,
+      "moves": [
+       "whirlwind",
+       "wing-attack",
+       "sky-attack",
+       "mirror-move"
+      ]
+     },
+     {
+      "species": "alakazam",
+      "level": 59,
+      "iv": 17,
+      "moves": [
+       "psybeam",
+       "recover",
+       "psychic",
+       "reflect"
+      ]
+     },
+     {
+      "species": "rhydon",
+      "level": 61,
+      "iv": 17,
+      "moves": [
+       "tail-whip",
+       "fury-attack",
+       "horn-drill",
+       "leer"
+      ]
+     },
+     {
+      "species": "exeggutor",
+      "level": 61,
+      "iv": 17,
+      "moves": [
+       "barrage",
+       "hypnosis",
+       "stomp"
+      ]
+     },
+     {
+      "species": "gyarados",
+      "level": 63,
+      "iv": 17,
+      "moves": [
+       "dragon-rage",
+       "leer",
+       "hydro-pump",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "charizard",
+      "level": 65,
+      "iv": 17,
+      "moves": [
+       "rage",
+       "slash",
+       "fire-blast",
+       "fire-spin"
+      ]
+     }
+    ]
+   ]
+  }
+ ],
+ "johto-gs": [
+  {
+   "id": "WILL",
+   "name": "일목",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "xatu",
+      "level": 40,
+      "iv": 26,
+      "moves": [
+       "quick-attack",
+       "future-sight",
+       "confuse-ray",
+       "psychic"
+      ]
+     },
+     {
+      "species": "jynx",
+      "level": 41,
+      "iv": 26,
+      "moves": [
+       "double-slap",
+       "lovely-kiss",
+       "ice-punch",
+       "psychic"
+      ]
+     },
+     {
+      "species": "exeggutor",
+      "level": 41,
+      "iv": 26,
+      "moves": [
+       "reflect",
+       "leech-seed",
+       "egg-bomb",
+       "psychic"
+      ]
+     },
+     {
+      "species": "slowbro",
+      "level": 41,
+      "iv": 26,
+      "moves": [
+       "curse",
+       "amnesia",
+       "body-slam",
+       "psychic"
+      ]
+     },
+     {
+      "species": "xatu",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "quick-attack",
+       "future-sight",
+       "confuse-ray",
+       "psychic"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "KOGA",
+   "name": "독수",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "ariados",
+      "level": 40,
+      "iv": 26,
+      "moves": [
+       "double-team",
+       "spider-web",
+       "baton-pass",
+       "giga-drain"
+      ]
+     },
+     {
+      "species": "venomoth",
+      "level": 41,
+      "iv": 26,
+      "moves": [
+       "supersonic",
+       "gust",
+       "psychic",
+       "toxic"
+      ]
+     },
+     {
+      "species": "forretress",
+      "level": 43,
+      "iv": 26,
+      "moves": [
+       "protect",
+       "swift",
+       "explosion",
+       "spikes"
+      ]
+     },
+     {
+      "species": "muk",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "minimize",
+       "acid-armor",
+       "sludge-bomb",
+       "toxic"
+      ]
+     },
+     {
+      "species": "crobat",
+      "level": 44,
+      "iv": 26,
+      "moves": [
+       "double-team",
+       "quick-attack",
+       "wing-attack",
+       "toxic"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "BRUNO",
+   "name": "시바",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "hitmontop",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "pursuit",
+       "quick-attack",
+       "dig",
+       "detect"
+      ]
+     },
+     {
+      "species": "hitmonlee",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "swagger",
+       "double-kick",
+       "high-jump-kick",
+       "foresight"
+      ]
+     },
+     {
+      "species": "hitmonchan",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "thunder-punch",
+       "ice-punch",
+       "fire-punch",
+       "mach-punch"
+      ]
+     },
+     {
+      "species": "onix",
+      "level": 43,
+      "iv": 26,
+      "moves": [
+       "bind",
+       "earthquake",
+       "sandstorm",
+       "rock-slide"
+      ]
+     },
+     {
+      "species": "machamp",
+      "level": 46,
+      "iv": 26,
+      "moves": [
+       "rock-slide",
+       "foresight",
+       "vital-throw",
+       "cross-chop"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "KAREN",
+   "name": "카렌",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "umbreon",
+      "level": 42,
+      "iv": 25,
+      "moves": [
+       "sand-attack",
+       "confuse-ray",
+       "feint-attack",
+       "mean-look"
+      ]
+     },
+     {
+      "species": "vileplume",
+      "level": 42,
+      "iv": 25,
+      "moves": [
+       "stun-spore",
+       "acid",
+       "moonlight",
+       "petal-dance"
+      ]
+     },
+     {
+      "species": "gengar",
+      "level": 45,
+      "iv": 25,
+      "moves": [
+       "lick",
+       "spite",
+       "curse",
+       "destiny-bond"
+      ]
+     },
+     {
+      "species": "murkrow",
+      "level": 44,
+      "iv": 25,
+      "moves": [
+       "quick-attack",
+       "whirlwind",
+       "pursuit",
+       "feint-attack"
+      ]
+     },
+     {
+      "species": "houndoom",
+      "level": 47,
+      "iv": 25,
+      "moves": [
+       "roar",
+       "pursuit",
+       "flamethrower",
+       "crunch"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "CHAMPION",
+   "name": "목호",
+   "title": "챔피언",
+   "champion": true,
+   "variants": [
+    [
+     {
+      "species": "gyarados",
+      "level": 44,
+      "iv": 26,
+      "moves": [
+       "flail",
+       "rain-dance",
+       "surf",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 47,
+      "iv": 26,
+      "moves": [
+       "thunder-wave",
+       "twister",
+       "thunder",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 47,
+      "iv": 26,
+      "moves": [
+       "thunder-wave",
+       "twister",
+       "blizzard",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "aerodactyl",
+      "level": 46,
+      "iv": 26,
+      "moves": [
+       "wing-attack",
+       "ancient-power",
+       "rock-slide",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "charizard",
+      "level": 46,
+      "iv": 26,
+      "moves": [
+       "flamethrower",
+       "wing-attack",
+       "slash",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 50,
+      "iv": 26,
+      "moves": [
+       "fire-blast",
+       "safeguard",
+       "outrage",
+       "hyper-beam"
+      ]
+     }
+    ]
+   ]
+  }
+ ],
+ "johto-c": [
+  {
+   "id": "WILL",
+   "name": "일목",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "xatu",
+      "level": 40,
+      "iv": 26,
+      "moves": [
+       "quick-attack",
+       "future-sight",
+       "confuse-ray",
+       "psychic"
+      ]
+     },
+     {
+      "species": "jynx",
+      "level": 41,
+      "iv": 26,
+      "moves": [
+       "double-slap",
+       "lovely-kiss",
+       "ice-punch",
+       "psychic"
+      ]
+     },
+     {
+      "species": "exeggutor",
+      "level": 41,
+      "iv": 26,
+      "moves": [
+       "reflect",
+       "leech-seed",
+       "egg-bomb",
+       "psychic"
+      ]
+     },
+     {
+      "species": "slowbro",
+      "level": 41,
+      "iv": 26,
+      "moves": [
+       "curse",
+       "amnesia",
+       "body-slam",
+       "psychic"
+      ]
+     },
+     {
+      "species": "xatu",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "quick-attack",
+       "future-sight",
+       "confuse-ray",
+       "psychic"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "KOGA",
+   "name": "독수",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "ariados",
+      "level": 40,
+      "iv": 26,
+      "moves": [
+       "double-team",
+       "spider-web",
+       "baton-pass",
+       "giga-drain"
+      ]
+     },
+     {
+      "species": "venomoth",
+      "level": 41,
+      "iv": 26,
+      "moves": [
+       "supersonic",
+       "gust",
+       "psychic",
+       "toxic"
+      ]
+     },
+     {
+      "species": "forretress",
+      "level": 43,
+      "iv": 26,
+      "moves": [
+       "protect",
+       "swift",
+       "explosion",
+       "spikes"
+      ]
+     },
+     {
+      "species": "muk",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "minimize",
+       "acid-armor",
+       "sludge-bomb",
+       "toxic"
+      ]
+     },
+     {
+      "species": "crobat",
+      "level": 44,
+      "iv": 26,
+      "moves": [
+       "double-team",
+       "quick-attack",
+       "wing-attack",
+       "toxic"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "BRUNO",
+   "name": "시바",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "hitmontop",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "pursuit",
+       "quick-attack",
+       "dig",
+       "detect"
+      ]
+     },
+     {
+      "species": "hitmonlee",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "swagger",
+       "double-kick",
+       "high-jump-kick",
+       "foresight"
+      ]
+     },
+     {
+      "species": "hitmonchan",
+      "level": 42,
+      "iv": 26,
+      "moves": [
+       "thunder-punch",
+       "ice-punch",
+       "fire-punch",
+       "mach-punch"
+      ]
+     },
+     {
+      "species": "onix",
+      "level": 43,
+      "iv": 26,
+      "moves": [
+       "bind",
+       "earthquake",
+       "sandstorm",
+       "rock-slide"
+      ]
+     },
+     {
+      "species": "machamp",
+      "level": 46,
+      "iv": 26,
+      "moves": [
+       "rock-slide",
+       "foresight",
+       "vital-throw",
+       "cross-chop"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "KAREN",
+   "name": "카렌",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "umbreon",
+      "level": 42,
+      "iv": 25,
+      "moves": [
+       "sand-attack",
+       "confuse-ray",
+       "feint-attack",
+       "mean-look"
+      ]
+     },
+     {
+      "species": "vileplume",
+      "level": 42,
+      "iv": 25,
+      "moves": [
+       "stun-spore",
+       "acid",
+       "moonlight",
+       "petal-dance"
+      ]
+     },
+     {
+      "species": "gengar",
+      "level": 45,
+      "iv": 25,
+      "moves": [
+       "lick",
+       "spite",
+       "curse",
+       "destiny-bond"
+      ]
+     },
+     {
+      "species": "murkrow",
+      "level": 44,
+      "iv": 25,
+      "moves": [
+       "quick-attack",
+       "whirlwind",
+       "pursuit",
+       "feint-attack"
+      ]
+     },
+     {
+      "species": "houndoom",
+      "level": 47,
+      "iv": 25,
+      "moves": [
+       "roar",
+       "pursuit",
+       "flamethrower",
+       "crunch"
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "id": "CHAMPION",
+   "name": "목호",
+   "title": "챔피언",
+   "champion": true,
+   "variants": [
+    [
+     {
+      "species": "gyarados",
+      "level": 44,
+      "iv": 26,
+      "moves": [
+       "flail",
+       "rain-dance",
+       "surf",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 47,
+      "iv": 26,
+      "moves": [
+       "thunder-wave",
+       "twister",
+       "thunder",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 47,
+      "iv": 26,
+      "moves": [
+       "thunder-wave",
+       "twister",
+       "blizzard",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "aerodactyl",
+      "level": 46,
+      "iv": 26,
+      "moves": [
+       "wing-attack",
+       "ancient-power",
+       "rock-slide",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "charizard",
+      "level": 46,
+      "iv": 26,
+      "moves": [
+       "flamethrower",
+       "wing-attack",
+       "slash",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 50,
+      "iv": 26,
+      "moves": [
+       "fire-blast",
+       "safeguard",
+       "outrage",
+       "hyper-beam"
+      ]
+     }
+    ]
+   ]
+  }
+ ],
+ "hoenn-rs": [
+  {
+   "id": "ELITE_FOUR",
+   "name": "혁진",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "mightyena",
+      "level": 46,
+      "iv": 30,
+      "moves": [
+       "roar",
+       "take-down",
+       "sand-attack",
+       "crunch"
+      ]
+     },
+     {
+      "species": "shiftry",
+      "level": 48,
+      "iv": 30,
+      "moves": [
+       "fake-out",
+       "double-team",
+       "swagger",
+       "extrasensory"
+      ]
+     },
+     {
+      "species": "cacturne",
+      "level": 46,
+      "iv": 30,
+      "moves": [
+       "leech-seed",
+       "feint-attack",
+       "needle-arm",
+       "cotton-spore"
+      ]
+     },
+     {
+      "species": "sharpedo",
+      "level": 48,
+      "iv": 30,
+      "moves": [
+       "crunch",
+       "swagger",
+       "surf",
+       "slash"
+      ]
+     },
+     {
+      "species": "absol",
+      "level": 49,
+      "iv": 31,
+      "moves": [
+       "aerial-ace",
+       "snatch",
+       "swords-dance",
+       "slash"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR",
+   "name": "회연",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "dusclops",
+      "level": 48,
+      "iv": 30,
+      "moves": [
+       "shadow-punch",
+       "confuse-ray",
+       "curse",
+       "future-sight"
+      ]
+     },
+     {
+      "species": "banette",
+      "level": 49,
+      "iv": 30,
+      "moves": [
+       "shadow-ball",
+       "spite",
+       "will-o-wisp",
+       "feint-attack"
+      ]
+     },
+     {
+      "species": "sableye",
+      "level": 50,
+      "iv": 30,
+      "moves": [
+       "shadow-ball",
+       "psychic",
+       "attract",
+       "feint-attack"
+      ]
+     },
+     {
+      "species": "banette",
+      "level": 49,
+      "iv": 30,
+      "moves": [
+       "shadow-ball",
+       "psychic",
+       "toxic",
+       "skill-swap"
+      ]
+     },
+     {
+      "species": "dusclops",
+      "level": 51,
+      "iv": 31,
+      "moves": [
+       "shadow-ball",
+       "ice-beam",
+       "confuse-ray",
+       "earthquake"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR",
+   "name": "미혜",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "glalie",
+      "level": 50,
+      "iv": 30,
+      "moves": [
+       "light-screen",
+       "crunch",
+       "hail",
+       "ice-beam"
+      ]
+     },
+     {
+      "species": "sealeo",
+      "level": 50,
+      "iv": 30,
+      "moves": [
+       "surf",
+       "body-slam",
+       "hail",
+       "ice-ball"
+      ]
+     },
+     {
+      "species": "sealeo",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "attract",
+       "dive",
+       "hail",
+       "blizzard"
+      ]
+     },
+     {
+      "species": "glalie",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "shadow-ball",
+       "crunch",
+       "hail",
+       "ice-beam"
+      ]
+     },
+     {
+      "species": "walrein",
+      "level": 53,
+      "iv": 31,
+      "moves": [
+       "surf",
+       "body-slam",
+       "blizzard",
+       "sheer-cold"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR",
+   "name": "권수",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "shelgon",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "rock-tomb",
+       "dragon-claw",
+       "protect",
+       "crunch"
+      ]
+     },
+     {
+      "species": "altaria",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "take-down",
+       "dragon-breath",
+       "dragon-dance",
+       "refresh"
+      ]
+     },
+     {
+      "species": "flygon",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "dig",
+       "dragon-breath",
+       "fly",
+       "sandstorm"
+      ]
+     },
+     {
+      "species": "flygon",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "flamethrower",
+       "crunch",
+       "dragon-breath",
+       "sand-attack"
+      ]
+     },
+     {
+      "species": "salamence",
+      "level": 55,
+      "iv": 31,
+      "moves": [
+       "flamethrower",
+       "dragon-claw",
+       "fly",
+       "crunch"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "CHAMPION",
+   "name": "성호",
+   "title": "챔피언",
+   "champion": true,
+   "variants": [
+    [
+     {
+      "species": "skarmory",
+      "level": 57,
+      "iv": 31,
+      "moves": [
+       "toxic",
+       "aerial-ace",
+       "spikes",
+       "steel-wing"
+      ]
+     },
+     {
+      "species": "claydol",
+      "level": 55,
+      "iv": 31,
+      "moves": [
+       "reflect",
+       "light-screen",
+       "ancient-power",
+       "earthquake"
+      ]
+     },
+     {
+      "species": "aggron",
+      "level": 56,
+      "iv": 31,
+      "moves": [
+       "thunder",
+       "earthquake",
+       "solar-beam",
+       "dragon-claw"
+      ]
+     },
+     {
+      "species": "cradily",
+      "level": 56,
+      "iv": 31,
+      "moves": [
+       "giga-drain",
+       "ancient-power",
+       "sludge-bomb",
+       "confuse-ray"
+      ]
+     },
+     {
+      "species": "armaldo",
+      "level": 56,
+      "iv": 31,
+      "moves": [
+       "water-pulse",
+       "ancient-power",
+       "aerial-ace",
+       "slash"
+      ]
+     },
+     {
+      "species": "metagross",
+      "level": 58,
+      "iv": 31,
+      "moves": [
+       "earthquake",
+       "psychic",
+       "meteor-mash",
+       "hyper-beam"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  }
+ ],
+ "hoenn-e": [
+  {
+   "id": "ELITE_FOUR",
+   "name": "혁진",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "mightyena",
+      "level": 46,
+      "iv": 30,
+      "moves": [
+       "roar",
+       "double-edge",
+       "sand-attack",
+       "crunch"
+      ]
+     },
+     {
+      "species": "shiftry",
+      "level": 48,
+      "iv": 30,
+      "moves": [
+       "torment",
+       "double-team",
+       "swagger",
+       "extrasensory"
+      ]
+     },
+     {
+      "species": "cacturne",
+      "level": 46,
+      "iv": 30,
+      "moves": [
+       "leech-seed",
+       "feint-attack",
+       "needle-arm",
+       "cotton-spore"
+      ]
+     },
+     {
+      "species": "crawdaunt",
+      "level": 48,
+      "iv": 30,
+      "moves": [
+       "surf",
+       "swords-dance",
+       "strength",
+       "facade"
+      ]
+     },
+     {
+      "species": "absol",
+      "level": 49,
+      "iv": 31,
+      "moves": [
+       "aerial-ace",
+       "rock-slide",
+       "swords-dance",
+       "slash"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR",
+   "name": "회연",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "dusclops",
+      "level": 48,
+      "iv": 30,
+      "moves": [
+       "shadow-punch",
+       "confuse-ray",
+       "curse",
+       "protect"
+      ]
+     },
+     {
+      "species": "banette",
+      "level": 49,
+      "iv": 30,
+      "moves": [
+       "shadow-ball",
+       "grudge",
+       "will-o-wisp",
+       "feint-attack"
+      ]
+     },
+     {
+      "species": "sableye",
+      "level": 50,
+      "iv": 30,
+      "moves": [
+       "shadow-ball",
+       "double-team",
+       "night-shade",
+       "feint-attack"
+      ]
+     },
+     {
+      "species": "banette",
+      "level": 49,
+      "iv": 30,
+      "moves": [
+       "shadow-ball",
+       "psychic",
+       "thunderbolt",
+       "facade"
+      ]
+     },
+     {
+      "species": "dusclops",
+      "level": 51,
+      "iv": 31,
+      "moves": [
+       "shadow-ball",
+       "ice-beam",
+       "rock-slide",
+       "earthquake"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR",
+   "name": "미혜",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "sealeo",
+      "level": 50,
+      "iv": 30,
+      "moves": [
+       "encore",
+       "body-slam",
+       "hail",
+       "ice-ball"
+      ]
+     },
+     {
+      "species": "glalie",
+      "level": 50,
+      "iv": 30,
+      "moves": [
+       "light-screen",
+       "crunch",
+       "icy-wind",
+       "ice-beam"
+      ]
+     },
+     {
+      "species": "sealeo",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "attract",
+       "double-edge",
+       "hail",
+       "blizzard"
+      ]
+     },
+     {
+      "species": "glalie",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "shadow-ball",
+       "explosion",
+       "hail",
+       "ice-beam"
+      ]
+     },
+     {
+      "species": "walrein",
+      "level": 53,
+      "iv": 31,
+      "moves": [
+       "surf",
+       "body-slam",
+       "ice-beam",
+       "sheer-cold"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR",
+   "name": "권수",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "shelgon",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "rock-tomb",
+       "dragon-claw",
+       "protect",
+       "double-edge"
+      ]
+     },
+     {
+      "species": "altaria",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "double-edge",
+       "dragon-breath",
+       "dragon-dance",
+       "aerial-ace"
+      ]
+     },
+     {
+      "species": "kingdra",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "smokescreen",
+       "dragon-dance",
+       "surf",
+       "body-slam"
+      ]
+     },
+     {
+      "species": "flygon",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "flamethrower",
+       "crunch",
+       "dragon-breath",
+       "earthquake"
+      ]
+     },
+     {
+      "species": "salamence",
+      "level": 55,
+      "iv": 31,
+      "moves": [
+       "flamethrower",
+       "dragon-claw",
+       "rock-slide",
+       "crunch"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "CHAMPION",
+   "name": "윤진",
+   "title": "챔피언",
+   "champion": true,
+   "variants": [
+    [
+     {
+      "species": "wailord",
+      "level": 57,
+      "iv": 31,
+      "moves": [
+       "rain-dance",
+       "water-spout",
+       "double-edge",
+       "blizzard"
+      ]
+     },
+     {
+      "species": "tentacruel",
+      "level": 55,
+      "iv": 31,
+      "moves": [
+       "toxic",
+       "hydro-pump",
+       "sludge-bomb",
+       "ice-beam"
+      ]
+     },
+     {
+      "species": "ludicolo",
+      "level": 56,
+      "iv": 31,
+      "moves": [
+       "giga-drain",
+       "surf",
+       "leech-seed",
+       "double-team"
+      ]
+     },
+     {
+      "species": "whiscash",
+      "level": 56,
+      "iv": 31,
+      "moves": [
+       "earthquake",
+       "surf",
+       "amnesia",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "gyarados",
+      "level": 56,
+      "iv": 31,
+      "moves": [
+       "dragon-dance",
+       "earthquake",
+       "hyper-beam",
+       "surf"
+      ]
+     },
+     {
+      "species": "milotic",
+      "level": 58,
+      "iv": 31,
+      "moves": [
+       "recover",
+       "surf",
+       "ice-beam",
+       "toxic"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  }
+ ],
+ "kanto-frlg": [
+  {
+   "id": "ELITE_FOUR",
+   "name": "칸나",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "dewgong",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "ice-beam",
+       "surf",
+       "hail",
+       "safeguard"
+      ]
+     },
+     {
+      "species": "cloyster",
+      "level": 51,
+      "iv": 30,
+      "moves": [
+       "spikes",
+       "protect",
+       "hail",
+       "dive"
+      ]
+     },
+     {
+      "species": "slowbro",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "ice-beam",
+       "surf",
+       "amnesia",
+       "yawn"
+      ]
+     },
+     {
+      "species": "jynx",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "ice-punch",
+       "double-slap",
+       "lovely-kiss",
+       "attract"
+      ]
+     },
+     {
+      "species": "lapras",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "confuse-ray",
+       "ice-beam",
+       "surf",
+       "body-slam"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR",
+   "name": "시바",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "onix",
+      "level": 51,
+      "iv": 30,
+      "moves": [
+       "earthquake",
+       "rock-tomb",
+       "iron-tail",
+       "roar"
+      ]
+     },
+     {
+      "species": "hitmonchan",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "sky-uppercut",
+       "mach-punch",
+       "rock-tomb",
+       "counter"
+      ]
+     },
+     {
+      "species": "hitmonlee",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "mega-kick",
+       "foresight",
+       "brick-break",
+       "facade"
+      ]
+     },
+     {
+      "species": "onix",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "double-edge",
+       "earthquake",
+       "iron-tail",
+       "sand-tomb"
+      ]
+     },
+     {
+      "species": "machamp",
+      "level": 56,
+      "iv": 30,
+      "moves": [
+       "cross-chop",
+       "bulk-up",
+       "scary-face",
+       "rock-tomb"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR",
+   "name": "국화",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "gengar",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "shadow-punch",
+       "confuse-ray",
+       "toxic",
+       "double-team"
+      ]
+     },
+     {
+      "species": "golbat",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "confuse-ray",
+       "poison-fang",
+       "air-cutter",
+       "bite"
+      ]
+     },
+     {
+      "species": "haunter",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "hypnosis",
+       "dream-eater",
+       "curse",
+       "mean-look"
+      ]
+     },
+     {
+      "species": "arbok",
+      "level": 56,
+      "iv": 30,
+      "moves": [
+       "sludge-bomb",
+       "screech",
+       "iron-tail",
+       "bite"
+      ]
+     },
+     {
+      "species": "gengar",
+      "level": 58,
+      "iv": 30,
+      "moves": [
+       "shadow-ball",
+       "sludge-bomb",
+       "hypnosis",
+       "nightmare"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR",
+   "name": "목호",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "gyarados",
+      "level": 56,
+      "iv": 30,
+      "moves": [
+       "hyper-beam",
+       "dragon-rage",
+       "twister",
+       "bite"
+      ]
+     },
+     {
+      "species": "dragonair",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "hyper-beam",
+       "safeguard",
+       "dragon-rage",
+       "outrage"
+      ]
+     },
+     {
+      "species": "dragonair",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "hyper-beam",
+       "safeguard",
+       "thunder-wave",
+       "outrage"
+      ]
+     },
+     {
+      "species": "aerodactyl",
+      "level": 58,
+      "iv": 30,
+      "moves": [
+       "hyper-beam",
+       "ancient-power",
+       "wing-attack",
+       "scary-face"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 60,
+      "iv": 30,
+      "moves": [
+       "hyper-beam",
+       "safeguard",
+       "outrage",
+       "wing-attack"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "CHAMPION",
+   "name": "그린",
+   "title": "챔피언",
+   "champion": true,
+   "variants": [
+    [
+     {
+      "species": "pidgeot",
+      "level": 59,
+      "iv": 31,
+      "moves": [
+       "aerial-ace",
+       "feather-dance",
+       "sand-attack",
+       "whirlwind"
+      ]
+     },
+     {
+      "species": "alakazam",
+      "level": 57,
+      "iv": 31,
+      "moves": [
+       "psychic",
+       "future-sight",
+       "recover",
+       "reflect"
+      ]
+     },
+     {
+      "species": "rhydon",
+      "level": 59,
+      "iv": 31,
+      "moves": [
+       "take-down",
+       "earthquake",
+       "rock-tomb",
+       "scary-face"
+      ]
+     },
+     {
+      "species": "arcanine",
+      "level": 59,
+      "iv": 31,
+      "moves": [
+       "extreme-speed",
+       "flamethrower",
+       "roar",
+       "bite"
+      ]
+     },
+     {
+      "species": "exeggutor",
+      "level": 61,
+      "iv": 31,
+      "moves": [
+       "giga-drain",
+       "egg-bomb",
+       "sleep-powder",
+       "light-screen"
+      ]
+     },
+     {
+      "species": "blastoise",
+      "level": 63,
+      "iv": 31,
+      "moves": [
+       "hydro-pump",
+       "rain-dance",
+       "skull-bash",
+       "bite"
+      ],
+      "item": "sitrus-berry"
+     }
+    ],
+    [
+     {
+      "species": "pidgeot",
+      "level": 59,
+      "iv": 31,
+      "moves": [
+       "aerial-ace",
+       "feather-dance",
+       "sand-attack",
+       "whirlwind"
+      ]
+     },
+     {
+      "species": "alakazam",
+      "level": 57,
+      "iv": 31,
+      "moves": [
+       "psychic",
+       "future-sight",
+       "recover",
+       "reflect"
+      ]
+     },
+     {
+      "species": "rhydon",
+      "level": 59,
+      "iv": 31,
+      "moves": [
+       "take-down",
+       "earthquake",
+       "rock-tomb",
+       "scary-face"
+      ]
+     },
+     {
+      "species": "gyarados",
+      "level": 59,
+      "iv": 31,
+      "moves": [
+       "hydro-pump",
+       "dragon-rage",
+       "bite",
+       "thrash"
+      ]
+     },
+     {
+      "species": "arcanine",
+      "level": 61,
+      "iv": 31,
+      "moves": [
+       "extreme-speed",
+       "flamethrower",
+       "roar",
+       "bite"
+      ]
+     },
+     {
+      "species": "venusaur",
+      "level": 63,
+      "iv": 31,
+      "moves": [
+       "solar-beam",
+       "synthesis",
+       "sunny-day",
+       "growth"
+      ],
+      "item": "sitrus-berry"
+     }
+    ],
+    [
+     {
+      "species": "pidgeot",
+      "level": 59,
+      "iv": 31,
+      "moves": [
+       "aerial-ace",
+       "feather-dance",
+       "sand-attack",
+       "whirlwind"
+      ]
+     },
+     {
+      "species": "alakazam",
+      "level": 57,
+      "iv": 31,
+      "moves": [
+       "psychic",
+       "future-sight",
+       "recover",
+       "reflect"
+      ]
+     },
+     {
+      "species": "rhydon",
+      "level": 59,
+      "iv": 31,
+      "moves": [
+       "take-down",
+       "earthquake",
+       "rock-tomb",
+       "scary-face"
+      ]
+     },
+     {
+      "species": "exeggutor",
+      "level": 59,
+      "iv": 31,
+      "moves": [
+       "giga-drain",
+       "egg-bomb",
+       "sleep-powder",
+       "light-screen"
+      ]
+     },
+     {
+      "species": "gyarados",
+      "level": 61,
+      "iv": 31,
+      "moves": [
+       "hydro-pump",
+       "dragon-rage",
+       "bite",
+       "thrash"
+      ]
+     },
+     {
+      "species": "charizard",
+      "level": 63,
+      "iv": 31,
+      "moves": [
+       "fire-blast",
+       "aerial-ace",
+       "slash",
+       "fire-spin"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  }
+ ],
+ "sinnoh-dp": [
+  {
+   "id": "ELITE_FOUR_AARON",
+   "name": "충호",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "dustox",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "toxic",
+       "bug-buzz",
+       "double-team",
+       "light-screen"
+      ]
+     },
+     {
+      "species": "beautifly",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "energy-ball",
+       "bug-buzz",
+       "psychic",
+       "shadow-ball"
+      ]
+     },
+     {
+      "species": "vespiquen",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "attack-order",
+       "defend-order",
+       "heal-order",
+       "power-gem"
+      ]
+     },
+     {
+      "species": "heracross",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "megahorn",
+       "close-combat",
+       "night-slash",
+       "stone-edge"
+      ]
+     },
+     {
+      "species": "drapion",
+      "level": 57,
+      "iv": 30,
+      "moves": [
+       "x-scissor",
+       "cross-poison",
+       "ice-fang",
+       "aerial-ace"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR_BERTHA",
+   "name": "들국화",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "quagsire",
+      "level": 55,
+      "iv": 30,
+      "moves": [
+       "dig",
+       "double-team",
+       "protect",
+       "sandstorm"
+      ]
+     },
+     {
+      "species": "sudowoodo",
+      "level": 56,
+      "iv": 30,
+      "moves": [
+       "earthquake",
+       "sucker-punch",
+       "hammer-arm",
+       "sandstorm"
+      ]
+     },
+     {
+      "species": "golem",
+      "level": 56,
+      "iv": 30,
+      "moves": [
+       "earthquake",
+       "gyro-ball",
+       "brick-break",
+       "sandstorm"
+      ]
+     },
+     {
+      "species": "whiscash",
+      "level": 55,
+      "iv": 30,
+      "moves": [
+       "fissure",
+       "aqua-tail",
+       "zen-headbutt",
+       "rock-slide"
+      ]
+     },
+     {
+      "species": "hippowdon",
+      "level": 59,
+      "iv": 30,
+      "moves": [
+       "earthquake",
+       "stone-edge",
+       "crunch",
+       "curse"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR_FLINT",
+   "name": "대엽",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "rapidash",
+      "level": 58,
+      "iv": 30,
+      "moves": [
+       "flare-blitz",
+       "solar-beam",
+       "bounce",
+       "sunny-day"
+      ]
+     },
+     {
+      "species": "steelix",
+      "level": 57,
+      "iv": 30,
+      "moves": [
+       "fire-fang",
+       "rock-tomb",
+       "screech",
+       "sunny-day"
+      ]
+     },
+     {
+      "species": "drifblim",
+      "level": 58,
+      "iv": 30,
+      "moves": [
+       "will-o-wisp",
+       "ominous-wind",
+       "double-team",
+       "baton-pass"
+      ]
+     },
+     {
+      "species": "lopunny",
+      "level": 57,
+      "iv": 30,
+      "moves": [
+       "fire-punch",
+       "charm",
+       "mirror-coat",
+       "sunny-day"
+      ]
+     },
+     {
+      "species": "infernape",
+      "level": 61,
+      "iv": 30,
+      "moves": [
+       "flare-blitz",
+       "thunder-punch",
+       "mach-punch",
+       "earthquake"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR_LUCIEN",
+   "name": "오엽",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "mr-mime",
+      "level": 59,
+      "iv": 30,
+      "moves": [
+       "psychic",
+       "thunderbolt",
+       "reflect",
+       "light-screen"
+      ]
+     },
+     {
+      "species": "girafarig",
+      "level": 59,
+      "iv": 30,
+      "moves": [
+       "psychic",
+       "shadow-ball",
+       "double-hit",
+       "crunch"
+      ]
+     },
+     {
+      "species": "medicham",
+      "level": 60,
+      "iv": 30,
+      "moves": [
+       "drain-punch",
+       "fire-punch",
+       "thunder-punch",
+       "ice-punch"
+      ]
+     },
+     {
+      "species": "alakazam",
+      "level": 60,
+      "iv": 30,
+      "moves": [
+       "psychic",
+       "energy-ball",
+       "focus-blast",
+       "recover"
+      ]
+     },
+     {
+      "species": "bronzong",
+      "level": 63,
+      "iv": 30,
+      "moves": [
+       "psychic",
+       "gyro-ball",
+       "earthquake",
+       "calm-mind"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "CHAMPION",
+   "name": "난천",
+   "title": "챔피언",
+   "champion": true,
+   "variants": [
+    [
+     {
+      "species": "spiritomb",
+      "level": 61,
+      "iv": 30,
+      "moves": [
+       "dark-pulse",
+       "psychic",
+       "silver-wind",
+       "embargo"
+      ]
+     },
+     {
+      "species": "roserade",
+      "level": 60,
+      "iv": 30,
+      "moves": [
+       "energy-ball",
+       "sludge-bomb",
+       "shadow-ball",
+       "extrasensory"
+      ]
+     },
+     {
+      "species": "gastrodon",
+      "level": 60,
+      "iv": 30,
+      "moves": [
+       "muddy-water",
+       "earthquake",
+       "stone-edge",
+       "sludge-bomb"
+      ]
+     },
+     {
+      "species": "lucario",
+      "level": 63,
+      "iv": 30,
+      "moves": [
+       "aura-sphere",
+       "dragon-pulse",
+       "psychic",
+       "earthquake"
+      ]
+     },
+     {
+      "species": "milotic",
+      "level": 63,
+      "iv": 30,
+      "moves": [
+       "surf",
+       "ice-beam",
+       "mirror-coat",
+       "aqua-ring"
+      ]
+     },
+     {
+      "species": "garchomp",
+      "level": 66,
+      "iv": 30,
+      "moves": [
+       "dragon-rush",
+       "earthquake",
+       "brick-break",
+       "giga-impact"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  }
+ ],
+ "sinnoh-pt": [
+  {
+   "id": "ELITE_FOUR_AARON",
+   "name": "충호",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "yanmega",
+      "level": 49,
+      "iv": 30,
+      "moves": [
+       "air-slash",
+       "bug-buzz",
+       "u-turn",
+       "double-team"
+      ]
+     },
+     {
+      "species": "scizor",
+      "level": 49,
+      "iv": 30,
+      "moves": [
+       "iron-head",
+       "x-scissor",
+       "night-slash",
+       "quick-attack"
+      ]
+     },
+     {
+      "species": "vespiquen",
+      "level": 50,
+      "iv": 30,
+      "moves": [
+       "attack-order",
+       "defend-order",
+       "heal-order",
+       "power-gem"
+      ]
+     },
+     {
+      "species": "heracross",
+      "level": 51,
+      "iv": 30,
+      "moves": [
+       "megahorn",
+       "close-combat",
+       "night-slash",
+       "stone-edge"
+      ]
+     },
+     {
+      "species": "drapion",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "x-scissor",
+       "cross-poison",
+       "ice-fang",
+       "aerial-ace"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR_BERTHA",
+   "name": "들국화",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "whiscash",
+      "level": 50,
+      "iv": 30,
+      "moves": [
+       "earth-power",
+       "aqua-tail",
+       "zen-headbutt",
+       "sandstorm"
+      ]
+     },
+     {
+      "species": "gliscor",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "earthquake",
+       "ice-fang",
+       "fire-fang",
+       "thunder-fang"
+      ]
+     },
+     {
+      "species": "hippowdon",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "earthquake",
+       "stone-edge",
+       "crunch",
+       "yawn"
+      ]
+     },
+     {
+      "species": "golem",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "earthquake",
+       "fire-punch",
+       "thunder-punch",
+       "sandstorm"
+      ]
+     },
+     {
+      "species": "rhyperior",
+      "level": 55,
+      "iv": 30,
+      "moves": [
+       "earthquake",
+       "rock-wrecker",
+       "megahorn",
+       "avalanche"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR_FLINT",
+   "name": "대엽",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "houndoom",
+      "level": 52,
+      "iv": 30,
+      "moves": [
+       "flamethrower",
+       "sludge-bomb",
+       "dark-pulse",
+       "sunny-day"
+      ]
+     },
+     {
+      "species": "flareon",
+      "level": 55,
+      "iv": 30,
+      "moves": [
+       "overheat",
+       "giga-impact",
+       "quick-attack",
+       "will-o-wisp"
+      ]
+     },
+     {
+      "species": "rapidash",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "flare-blitz",
+       "solar-beam",
+       "bounce",
+       "sunny-day"
+      ]
+     },
+     {
+      "species": "infernape",
+      "level": 55,
+      "iv": 30,
+      "moves": [
+       "flare-blitz",
+       "thunder-punch",
+       "mach-punch",
+       "earthquake"
+      ]
+     },
+     {
+      "species": "magmortar",
+      "level": 57,
+      "iv": 30,
+      "moves": [
+       "flamethrower",
+       "thunderbolt",
+       "solar-beam",
+       "hyper-beam"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR_LUCIAN",
+   "name": "오엽",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "mr-mime",
+      "level": 53,
+      "iv": 30,
+      "moves": [
+       "psychic",
+       "thunderbolt",
+       "reflect",
+       "light-screen"
+      ]
+     },
+     {
+      "species": "espeon",
+      "level": 55,
+      "iv": 30,
+      "moves": [
+       "psychic",
+       "shadow-ball",
+       "quick-attack",
+       "signal-beam"
+      ]
+     },
+     {
+      "species": "bronzong",
+      "level": 54,
+      "iv": 30,
+      "moves": [
+       "psychic",
+       "gyro-ball",
+       "earthquake",
+       "calm-mind"
+      ]
+     },
+     {
+      "species": "alakazam",
+      "level": 56,
+      "iv": 30,
+      "moves": [
+       "psychic",
+       "energy-ball",
+       "focus-blast",
+       "recover"
+      ]
+     },
+     {
+      "species": "gallade",
+      "level": 59,
+      "iv": 30,
+      "moves": [
+       "drain-punch",
+       "psycho-cut",
+       "leaf-blade",
+       "stone-edge"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "CHAMPION_CYNTHIA",
+   "name": "난천",
+   "title": "챔피언",
+   "champion": true,
+   "variants": [
+    [
+     {
+      "species": "spiritomb",
+      "level": 58,
+      "iv": 30,
+      "moves": [
+       "dark-pulse",
+       "psychic",
+       "silver-wind",
+       "shadow-ball"
+      ]
+     },
+     {
+      "species": "roserade",
+      "level": 58,
+      "iv": 30,
+      "moves": [
+       "energy-ball",
+       "sludge-bomb",
+       "toxic",
+       "extrasensory"
+      ]
+     },
+     {
+      "species": "togekiss",
+      "level": 60,
+      "iv": 30,
+      "moves": [
+       "air-slash",
+       "aura-sphere",
+       "water-pulse",
+       "shock-wave"
+      ]
+     },
+     {
+      "species": "lucario",
+      "level": 60,
+      "iv": 30,
+      "moves": [
+       "aura-sphere",
+       "extreme-speed",
+       "shadow-ball",
+       "stone-edge"
+      ]
+     },
+     {
+      "species": "milotic",
+      "level": 58,
+      "iv": 30,
+      "moves": [
+       "surf",
+       "ice-beam",
+       "mirror-coat",
+       "dragon-pulse"
+      ]
+     },
+     {
+      "species": "garchomp",
+      "level": 62,
+      "iv": 30,
+      "moves": [
+       "dragon-rush",
+       "earthquake",
+       "flamethrower",
+       "giga-impact"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  }
+ ],
+ "johto-hgss": [
+  {
+   "id": "ELITE_FOUR_WILL",
+   "name": "일목",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "xatu",
+      "level": 40,
+      "iv": 30,
+      "moves": [
+       "u-turn",
+       "me-first",
+       "confuse-ray",
+       "psychic"
+      ]
+     },
+     {
+      "species": "jynx",
+      "level": 41,
+      "iv": 30,
+      "moves": [
+       "double-slap",
+       "lovely-kiss",
+       "ice-punch",
+       "psychic"
+      ]
+     },
+     {
+      "species": "exeggutor",
+      "level": 41,
+      "iv": 30,
+      "moves": [
+       "reflect",
+       "hypnosis",
+       "egg-bomb",
+       "psychic"
+      ]
+     },
+     {
+      "species": "slowbro",
+      "level": 41,
+      "iv": 30,
+      "moves": [
+       "curse",
+       "amnesia",
+       "water-pulse",
+       "psychic"
+      ],
+      "abilitySlot": 2
+     },
+     {
+      "species": "xatu",
+      "level": 42,
+      "iv": 30,
+      "moves": [
+       "aerial-ace",
+       "ominous-wind",
+       "confuse-ray",
+       "psychic"
+      ],
+      "item": "sitrus-berry",
+      "abilitySlot": 2
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR_KOGA",
+   "name": "독수",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "ariados",
+      "level": 40,
+      "iv": 30,
+      "moves": [
+       "poison-jab",
+       "spider-web",
+       "baton-pass",
+       "giga-drain"
+      ],
+      "abilitySlot": 2
+     },
+     {
+      "species": "venomoth",
+      "level": 41,
+      "iv": 30,
+      "moves": [
+       "supersonic",
+       "gust",
+       "psychic",
+       "toxic"
+      ]
+     },
+     {
+      "species": "forretress",
+      "level": 43,
+      "iv": 30,
+      "moves": [
+       "protect",
+       "swift",
+       "explosion",
+       "toxic-spikes"
+      ]
+     },
+     {
+      "species": "muk",
+      "level": 42,
+      "iv": 30,
+      "moves": [
+       "minimize",
+       "screech",
+       "gunk-shot",
+       "toxic"
+      ],
+      "item": "black-sludge",
+      "abilitySlot": 2
+     },
+     {
+      "species": "crobat",
+      "level": 44,
+      "iv": 30,
+      "moves": [
+       "double-team",
+       "quick-attack",
+       "wing-attack",
+       "poison-fang"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR_BRUNO",
+   "name": "시바",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "hitmontop",
+      "level": 42,
+      "iv": 30,
+      "moves": [
+       "counter",
+       "quick-attack",
+       "dig",
+       "triple-kick"
+      ],
+      "abilitySlot": 2
+     },
+     {
+      "species": "hitmonlee",
+      "level": 42,
+      "iv": 30,
+      "moves": [
+       "swagger",
+       "focus-energy",
+       "high-jump-kick",
+       "blaze-kick"
+      ],
+      "abilitySlot": 2
+     },
+     {
+      "species": "hitmonchan",
+      "level": 42,
+      "iv": 30,
+      "moves": [
+       "thunder-punch",
+       "ice-punch",
+       "fire-punch",
+       "bullet-punch"
+      ],
+      "abilitySlot": 2
+     },
+     {
+      "species": "onix",
+      "level": 43,
+      "iv": 30,
+      "moves": [
+       "dragon-breath",
+       "earthquake",
+       "sandstorm",
+       "rock-slide"
+      ],
+      "abilitySlot": 2
+     },
+     {
+      "species": "machamp",
+      "level": 46,
+      "iv": 30,
+      "moves": [
+       "rock-slide",
+       "foresight",
+       "revenge",
+       "cross-chop"
+      ],
+      "item": "sitrus-berry",
+      "abilitySlot": 2
+     }
+    ]
+   ]
+  },
+  {
+   "id": "ELITE_FOUR_KAREN",
+   "name": "카렌",
+   "title": "사천왕",
+   "champion": false,
+   "variants": [
+    [
+     {
+      "species": "umbreon",
+      "level": 42,
+      "iv": 30,
+      "moves": [
+       "double-team",
+       "confuse-ray",
+       "feint-attack",
+       "payback"
+      ]
+     },
+     {
+      "species": "vileplume",
+      "level": 42,
+      "iv": 30,
+      "moves": [
+       "stun-spore",
+       "acid",
+       "moonlight",
+       "petal-dance"
+      ]
+     },
+     {
+      "species": "gengar",
+      "level": 45,
+      "iv": 30,
+      "moves": [
+       "lick",
+       "spite",
+       "focus-blast",
+       "destiny-bond"
+      ]
+     },
+     {
+      "species": "murkrow",
+      "level": 44,
+      "iv": 30,
+      "moves": [
+       "pluck",
+       "whirlwind",
+       "sucker-punch",
+       "feint-attack"
+      ],
+      "abilitySlot": 2
+     },
+     {
+      "species": "houndoom",
+      "level": 47,
+      "iv": 30,
+      "moves": [
+       "nasty-plot",
+       "dark-pulse",
+       "flamethrower",
+       "crunch"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  },
+  {
+   "id": "CHAMPION",
+   "name": "목호",
+   "title": "챔피언",
+   "champion": true,
+   "variants": [
+    [
+     {
+      "species": "gyarados",
+      "level": 46,
+      "iv": 30,
+      "moves": [
+       "flail",
+       "dragon-pulse",
+       "waterfall",
+       "ice-fang"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 49,
+      "iv": 30,
+      "moves": [
+       "thunder-wave",
+       "dragon-rush",
+       "thunder",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 49,
+      "iv": 30,
+      "moves": [
+       "thunder-wave",
+       "dragon-rush",
+       "blizzard",
+       "hyper-beam"
+      ]
+     },
+     {
+      "species": "aerodactyl",
+      "level": 48,
+      "iv": 30,
+      "moves": [
+       "aerial-ace",
+       "crunch",
+       "rock-slide",
+       "thunder-fang"
+      ],
+      "abilitySlot": 2
+     },
+     {
+      "species": "charizard",
+      "level": 48,
+      "iv": 30,
+      "moves": [
+       "shadow-claw",
+       "air-slash",
+       "dragon-claw",
+       "fire-fang"
+      ]
+     },
+     {
+      "species": "dragonite",
+      "level": 50,
+      "iv": 30,
+      "moves": [
+       "fire-blast",
+       "safeguard",
+       "outrage",
+       "hyper-beam"
+      ],
+      "item": "sitrus-berry"
+     }
+    ]
+   ]
+  }
+ ]
+}

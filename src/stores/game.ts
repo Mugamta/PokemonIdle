@@ -154,6 +154,7 @@ import {
 } from '../data/items'
 import { BATTLE_HELD, POWER_ITEM_EV, POWER_ITEMS } from '../core/items'
 import { findStage, stageWeather, migrateLegacyRegionIds, migrateLegacyStageId, REGIONS, type Region, type Stage } from '../data/stages'
+import { leagueOf, leagueStage, regionPlayable, requiredLeagueRegion, trainerLabel, type LeagueMon, type LeagueTrainer } from '../data/league'
 import { useBattleLogStore } from './battleLog'
 import GENDER_RATES from '../data/genderRates.json'
 
@@ -583,6 +584,32 @@ export interface WildPokemon {
   vol?: Volatile
   /** 내가 아는 이 포켓몬의 특성 정보 (자동 전투 AI 개선 2) */
   intel?: AbilityIntel
+  /** 트레이너의 포켓몬 (리그). boss 도 함께 켜짐 (포획·도망 불가, 트레이너 경험치) */
+  trainer?: EnemyTrainer
+}
+
+/** 상대 포켓몬의 트레이너 정보 */
+export interface EnemyTrainer {
+  /** 이름 (예: '칸나') */
+  name: string
+  /** 칭호 (예: '사천왕') */
+  title: string
+  champion: boolean
+  /** 이 트레이너의 몇 번째 포켓몬인지 (0부터) / 전체 마릿수 */
+  index: number
+  count: number
+}
+
+/** 진행 중인 포켓몬 리그 도전 (센터에 가면 초기화) */
+export interface LeagueRun {
+  /** 리그가 있는 지방 key */
+  region: string
+  /** 지금 상대 중인 트레이너 (0~4) */
+  trainer: number
+  /** 그 트레이너의 몇 번째 포켓몬과 싸울 차례인지 */
+  mon: number
+  /** 챔피언 엔트리 번호 (스타팅에 따라 바뀌는 챔피언) */
+  variant: number
 }
 
 export interface StageProgress {
@@ -693,6 +720,45 @@ function makeBoss(set: EncounterSet | null): WildPokemon | null {
   }
 }
 
+/** 리그 트레이너의 포켓몬: 원작 엔트리 (기술이 전투 데이터에 없으면 그 레벨의 야생 기술), 성격 무보정 */
+function makeLeagueMon(t: LeagueTrainer, m: LeagueMon, index: number, count: number): WildPokemon {
+  const known = (m.moves ?? []).filter((id) => !!dexData.value?.movesById[id])
+  const normal = normalAbilities(m.species)
+  const ability = m.abilitySlot != null ? (normal[m.abilitySlot - 1] ?? normal[0] ?? null) : rollAbility(m.species, false)
+  return {
+    species: m.species,
+    level: m.level,
+    nature: 'hardy',
+    gender: rollGender(m.species),
+    ivs: Array.from({ length: 6 }, () => m.iv),
+    hp: null,
+    moves: known.length ? known : wildMoveset(m.species, m.level),
+    ability,
+    item: m.item ?? null,
+    boss: true,
+    trainer: { name: t.name, title: t.title, champion: t.champion, index, count },
+  }
+}
+
+/**
+ * 챔피언 엔트리 고르기 (라이벌 챔피언은 플레이어 스타팅에 따라 바뀜):
+ * 에이스(마지막 포켓몬) 타입이 내 선두 포켓몬에게 가장 잘 통하는 엔트리
+ */
+export function pickVariant(t: LeagueTrainer, lead: string | undefined): number {
+  if (t.variants.length < 2 || !lead) return 0
+  const mine = speciesOf(lead)?.types ?? []
+  const score = (team: LeagueMon[]) => {
+    const ace = team[team.length - 1]
+    const types = (ace && speciesOf(ace.species)?.types) ?? []
+    return Math.max(0, ...types.map((a) => mine.reduce((m, d) => m * (battleData.value?.types[a]?.[d] ?? 1), 1)))
+  }
+  let best = 0
+  t.variants.forEach((v, i) => {
+    if (score(v) > score(t.variants[best]!)) best = i
+  })
+  return best
+}
+
 export const useGameStore = defineStore('game', {
   state: () => ({
     playTimeMs: 0,
@@ -736,6 +802,10 @@ export const useGameStore = defineStore('game', {
     clearedStages: [] as string[],
     /** 해금된 지방 id (한 번이라도 도착한 지방). 1번 지방은 처음부터 해금 */
     unlockedRegions: [1] as number[],
+    /** 포켓몬 리그를 제패한 지방 key (다음 지방으로 가는 조건) */
+    leagueCleared: [] as string[],
+    /** 진행 중인 포켓몬 리그 도전 */
+    league: null as LeagueRun | null,
     /** 포획한 적 있는 포켓몬 id */
     caught: [] as string[],
     /** 조우한 적 있는 포켓몬 id (보스 포함. 포획·진화로 얻은 포켓몬은 caught 로 판단) */
@@ -937,6 +1007,29 @@ export const useGameStore = defineStore('game', {
     unlockedGens: (s) => REGIONS.filter((r) => s.unlockedRegions.includes(r.id)).flatMap((r) => r.gens),
     /** 이동 가능한 지방인지 (히든 지방은 조건 포켓몬 포획 필요) */
     canEnter: (s) => (region: Region) => !region.hidden || s.caught.includes(region.hidden.requiresCaught),
+    /**
+     * 앞 지방의 포켓몬 리그를 아직 제패하지 않아 들어갈 수 없는 지방.
+     * 이미 들어가 본 지방(리그 조건이 생기기 전 저장 데이터 포함)은 열어 둠
+     */
+    regionLocked: (s) => (region: Region): boolean => {
+      if (s.unlockedRegions.includes(region.id)) return false
+      const need = requiredLeagueRegion(region)
+      return !!need && !s.leagueCleared.includes(need.key)
+    },
+    /** 리그에 도전할 수 있음: 지방의 모든 스테이지를 클리어 (갈 수 없는 수상 스테이지 제외) */
+    leagueReady(): (region: Region) => boolean {
+      return (region) =>
+        !!leagueOf(region) && region.stages.every((st) => this.clearedStages.includes(st.id) || this.waterLocked(st.id))
+    },
+    /** 지방의 모든 스테이지에서 지금 만날 수 있는 포켓몬을 다 잡았는지 */
+    regionDexReachableDone(): (region: Region) => boolean {
+      return (region) => region.stages.every((st) => this.stageDexReachableDone(st) !== false)
+    },
+    /** 진행 중인 리그에서 지금 상대하는 트레이너 */
+    leagueTrainer: (s): LeagueTrainer | null => {
+      const run = s.league
+      return (run && leagueOf({ key: run.region })?.[run.trainer]) ?? null
+    },
     /** 스테이지 출현 포켓몬을 모두 잡았는지 (출현 정보가 없으면 null) */
     stageDexDone: (s) => (stage: Stage): boolean | null => {
       const list = stageDexSpecies(stage.encounters)
@@ -1026,12 +1119,15 @@ export const useGameStore = defineStore('game', {
       }
       if (!this.enemy) {
         // 전투 사이: 다 키운 포켓몬은 도감으로, 회복 비용이 기준 이상이면 센터로, 아니면 턴 소모 없이 아이템 자동 사용
+        // (리그 도전 중에는 자동 센터 귀환을 하지 않음: 센터에 가면 도전 기록이 초기화되므로)
         this.autoSendToDex()
-        if (this.autoCenterForCost()) return
+        if (!this.league && this.autoCenterForCost()) return
         if (this.auto && this.autoUseItem()) return
         if (now < this.nextEncounterAt) return
+        // 리그 도전 중: 다음 트레이너 포켓몬
+        if (this.league) this.sendLeagueMon()
         // 일반 포켓몬을 BOSS_DEFEATS 마리 쓰러뜨리면 다음 조우는 반드시 보스
-        if (this.bossReady(this.currentStageId)) this.challengeBoss()
+        else if (this.bossReady(this.currentStageId)) this.challengeBoss()
         else this.spawn()
         return
       }
@@ -1097,6 +1193,12 @@ export const useGameStore = defineStore('game', {
       delete st.autoHealAt
       this.autoHeal = sanitizeAutoHeal(this.autoHeal)
       if (!Array.isArray(this.perks)) this.perks = []
+      // 포켓몬 리그: 제패 기록 정리, 진행 중인 도전이 데이터와 맞지 않으면 취소
+      if (!Array.isArray(this.leagueCleared)) this.leagueCleared = []
+      const run = this.league
+      const runTrainers = run && leagueOf({ key: run.region })
+      if (run && (!runTrainers || !runTrainers[run.trainer] || !Number.isInteger(run.mon) || run.mon < 0)) this.league = null
+      if (!this.league && this.enemy?.trainer) this.enemy = null
       // 이전 저장 데이터 호환: 전체 조우 기록이 없으면 스테이지별 조우 기록으로 채움
       if (!Array.isArray(this.seen)) this.seen = []
       const seen = new Set(this.seen)
@@ -1233,11 +1335,12 @@ export const useGameStore = defineStore('game', {
 
     moveTo(stageId: string) {
       const target = findStage(stageId)
-      if (!target || !this.canEnter(target.region) || !this.stageUnlocked(stageId) || this.faint) return
+      if (!target || !this.canEnter(target.region) || this.regionLocked(target.region) || !this.stageUnlocked(stageId) || this.faint) return
       if (stageId === this.currentStageId) {
         this.travel = null
         return
       }
+      this.quitLeague('리그를 떠났다. 도전 기록이 초기화되었다.')
       this.endBattleGimmick()
       this.enemy = null
       if (this.canFly) {
@@ -1427,7 +1530,7 @@ export const useGameStore = defineStore('game', {
       if (!e) return null
       const sp = speciesOf(e.species)
       const b: Battler = {
-        name: `${e.boss ? '보스 ' : '야생 '}${sp?.ko ?? e.species}`,
+        name: `${e.trainer ? `${e.trainer.name}의 ` : e.boss ? '보스 ' : '야생 '}${sp?.ko ?? e.species}`,
         species: e.species,
         level: e.level,
         nature: e.nature,
@@ -1463,9 +1566,13 @@ export const useGameStore = defineStore('game', {
       if (!enemy.boss && !p.seen.includes(enemy.species)) p.seen.push(enemy.species)
       if (!this.seen.includes(enemy.species)) this.seen.push(enemy.species)
       const name = speciesOf(enemy.species)?.ko ?? enemy.species
-      log.beginBattle(name, !!enemy.boss)
-      log.push(enemy.boss ? `보스 ${josa(name, '이', '가')} 승부를 걸어왔다!` : `앗! 야생 ${josa(name, '이', '가')} 튀어나왔다!`, 'info')
-      if (enemy.boss) sfx('boss')
+      const tr = enemy.trainer
+      log.beginBattle(tr ? `${tr.name}의 ${name}` : name, !!enemy.boss)
+      if (tr) {
+        if (tr.index === 0) log.push(`${trainerLabel(tr)}${josa(tr.name, '이', '가').slice(tr.name.length)} 승부를 걸어왔다!`, 'info')
+        log.push(`${josa(tr.name, '은', '는')} ${josa(name, '을', '를')} 내보냈다! (${tr.index + 1}/${tr.count})`, 'info')
+      } else log.push(enemy.boss ? `보스 ${josa(name, '이', '가')} 승부를 걸어왔다!` : `앗! 야생 ${josa(name, '이', '가')} 튀어나왔다!`, 'info')
+      if (enemy.boss && (!tr || tr.index === 0)) sfx('boss')
       // 특성 정보: 서로 상대가 가질 수 있는 특성을 후보로 시작
       enemy.intel = { cands: speciesAbilities(enemy.species, !!enemy.boss || this.difficulty === 'hard'), known: false }
       const mine = this.party[0]
@@ -1479,7 +1586,7 @@ export const useGameStore = defineStore('game', {
       }
       // 보스는 등장 연출(BattleScene)이 끝난 뒤 내 기술 선택
       log.pending = null
-      log.wait((enemy.boss && !this.bossIntroSkipped ? BOSS_INTRO_MS : 0) + this.battlePickMs)
+      log.wait((enemy.boss && (!tr || tr.index === 0) && !this.bossIntroSkipped ? BOSS_INTRO_MS : 0) + this.battlePickMs)
     },
     /** 전투 계산 결과(랭크·전투 중 상태·특성 정보)를 저장 */
     saveBattlers(me: Battler, foe: Battler) {
@@ -1851,7 +1958,7 @@ export const useGameStore = defineStore('game', {
       if (!e || !me || !foe || (this.items[ballId] ?? 0) <= 0) return false
       const ballName = dexData.value?.items[ballId]?.ko ?? ballId
       if (e.boss) {
-        log.push('보스 포켓몬은 잡을 수 없다!', 'bad')
+        log.push(e.trainer ? '남의 포켓몬은 잡을 수 없다!' : '보스 포켓몬은 잡을 수 없다!', 'bad')
         return false
       }
       this.takeFromBag(ballId)
@@ -2741,7 +2848,7 @@ export const useGameStore = defineStore('game', {
       const member = this.party[0]!
       const stageId = this.currentStageId
       const name = speciesOf(enemy.species)?.ko ?? enemy.species
-      log.push(`${enemy.boss ? '보스 ' : '야생 '}${josa(name, '은', '는')} 쓰러졌다!`, 'good')
+      log.push(`${enemy.trainer ? `${enemy.trainer.name}의 ` : enemy.boss ? '보스 ' : '야생 '}${josa(name, '은', '는')} 쓰러졌다!`, 'good')
       sfx('faint', turnSfxDelay)
       this.endBattleGimmick()
 
@@ -2756,15 +2863,17 @@ export const useGameStore = defineStore('game', {
       log.push(`상금으로 ${prize.toLocaleString()}원을 받았다!`)
       log.recordReward(expGot, prize)
 
-      // 지니고 있던 도구 획득
-      if (enemy.item) {
+      // 지니고 있던 도구 획득 (트레이너의 포켓몬은 제외)
+      if (enemy.item && !enemy.trainer) {
         this.addToBag(enemy.item)
         const itemName = dexData.value?.items[enemy.item]?.ko ?? enemy.item
         log.push(`${josa(name, '은', '는')} ${josa(itemName, '을', '를')} 지니고 있었다! ${josa(itemName, '을', '를')} 손에 넣었다!`, 'good')
       }
 
       const p = (this.stageProgress[stageId] ??= { seen: [], defeats: 0 })
-      if (enemy.boss) p.defeats = 0
+      if (enemy.trainer) {
+        // 리그: 스테이지 진행도는 그대로
+      } else if (enemy.boss) p.defeats = 0
       else p.defeats++
       this.countDefeat()
       this.addFriendship(member, enemy.boss ? 3 : 1)
@@ -2786,7 +2895,8 @@ export const useGameStore = defineStore('game', {
       this.playerIntel = null
       this.nextEncounterAt = Date.now() + this.searchMs
 
-      if (enemy.boss) this.onBossCleared(stageId)
+      if (enemy.trainer) this.advanceLeague()
+      else if (enemy.boss) this.onBossCleared(stageId)
     },
 
     /** 계정 격파 수 증가 → 기본 기술칸 해금 (파티 전체) */
@@ -3198,7 +3308,119 @@ export const useGameStore = defineStore('game', {
       if (next && this.stageUnlocked(next.id)) {
         log.push(`${next.id} ${ro(next.name)} 이동합니다.`, 'info')
         this.arrive(next.id)
+        return
       }
+      // 지방의 마지막 스테이지까지 끝냄: 리그를 제패했으면 다음 지방으로
+      this.advanceRegion(found.region, dex)
+    },
+
+    /**
+     * 지방을 다 끝냈으면 (모든 스테이지 클리어, 도감 모드면 만날 수 있는 포켓몬도 다 잡음) 다음 지방으로 이동.
+     * 리그를 아직 제패하지 않았으면 안내만
+     */
+    advanceRegion(region: Region, dex: boolean) {
+      const done = leagueOf(region) ? this.leagueReady(region) : this.regionCleared(region)
+      if (!done) return
+      if (dex && !this.regionDexReachableDone(region)) return
+      const log = useBattleLogStore()
+      const i = REGIONS.findIndex((r) => r.id === region.id)
+      const nextRegion = REGIONS.slice(i + 1).find((r) => this.canEnter(r) && regionPlayable(r))
+      if (!nextRegion) return
+      if (this.regionLocked(nextRegion)) {
+        log.push(`${region.title}의 모든 스테이지를 끝냈다! ${ro(nextRegion.name)} 가려면 스테이지 탭에서 다음 지방을 눌러 포켓몬 리그에 도전하자.`, 'info')
+        return
+      }
+      // 아직 클리어하지 않은 가장 앞 스테이지 (모두 클리어했으면 첫 스테이지)
+      const stage =
+        nextRegion.stages.find((st) => !this.clearedStages.includes(st.id) && this.stageUnlocked(st.id)) ?? nextRegion.stages[0]
+      if (!stage) return
+      log.push(`${nextRegion.title}의 ${stage.id} ${ro(stage.name)} 이동합니다.`, 'info')
+      this.arrive(stage.id)
+    },
+
+    // ---------- 포켓몬 리그 ----------
+    /** 리그 도전 시작: 리그 장소(챔피언로드)로 바로 가서 사천왕 1번부터. auto = 자동 전투 켜기/끄기 */
+    startLeague(regionKey: string, auto?: boolean): boolean {
+      const region = REGIONS.find((r) => r.key === regionKey)
+      const trainers = region && leagueOf(region)
+      const stage = region && leagueStage(region)
+      if (!region || !trainers || !stage || this.league || this.faint || !this.party.length || !this.leagueReady(region)) return false
+      if (!this.party.some((m) => m.hp !== 0)) return false
+      const champion = trainers[trainers.length - 1]!
+      this.travel = null
+      this.arrive(stage.id)
+      this.league = { region: regionKey, trainer: 0, mon: 0, variant: pickVariant(champion, this.party[0]?.species) }
+      if (auto !== undefined) this.setAuto(auto)
+      const log = useBattleLogStore()
+      log.divider()
+      log.push(`${region.title} 포켓몬 리그 도전 시작! 사천왕 4명과 챔피언을 연달아 상대한다.`, 'good')
+      this.nextEncounterAt = Date.now() + this.searchMs
+      return true
+    },
+    /** 리그 트레이너의 다음 포켓몬을 내보냄 */
+    sendLeagueMon() {
+      const run = this.league
+      const t = this.leagueTrainer
+      if (!run || !t) {
+        this.league = null
+        return
+      }
+      const team = t.variants[t.champion ? run.variant : 0] ?? t.variants[0]!
+      const m = team[run.mon]
+      if (!m) return
+      this.startBattle(makeLeagueMon(t, m, run.mon, team.length))
+    },
+    /** 리그 트레이너의 포켓몬을 쓰러뜨린 뒤: 다음 포켓몬 → 다음 트레이너 → 제패 */
+    advanceLeague() {
+      const run = this.league
+      const t = this.leagueTrainer
+      if (!run || !t) return
+      const log = useBattleLogStore()
+      const team = t.variants[t.champion ? run.variant : 0] ?? t.variants[0]!
+      run.mon++
+      if (run.mon < team.length) return
+      log.push(`${trainerLabel(t)}에게 승리했다!`, 'good')
+      sfx('clear', turnSfxDelay + 0.5)
+      const trainers = leagueOf({ key: run.region })!
+      run.trainer++
+      run.mon = 0
+      const next = trainers[run.trainer]
+      if (next) {
+        log.push(`다음 상대는 ${trainerLabel(next)}! (${run.trainer + 1}/${trainers.length})`, 'info')
+        return
+      }
+      this.onLeagueWon(run.region)
+    },
+    /** 리그 제패: 다음 지방 해금. 전진 모드(도감 모드는 도감을 다 채웠으면)면 다음 지방으로 */
+    onLeagueWon(regionKey: string) {
+      const log = useBattleLogStore()
+      const region = REGIONS.find((r) => r.key === regionKey)!
+      this.league = null
+      const first = !this.leagueCleared.includes(regionKey)
+      if (first) this.leagueCleared.push(regionKey)
+      log.push(`축하합니다! ${region.title}의 포켓몬 리그를 제패했다!`, 'good')
+      const i = REGIONS.findIndex((r) => r.id === region.id)
+      const nextRegion = REGIONS.slice(i + 1).find((r) => this.canEnter(r) && regionPlayable(r))
+      if (first && nextRegion) log.push(`이제 ${nextRegion.title}에 갈 수 있다!`, 'good')
+      const dex = this.stageMode === 'dex' && this.dexModeReady
+      if (this.stageMode === 'repeat') return
+      if (dex && !this.regionDexReachableDone(region)) {
+        // 도감 모드: 아직 잡을 포켓몬이 남은 스테이지로
+        const target = region.stages.find((st) => this.stageUnlocked(st.id) && this.stageDexReachableDone(st) === false)
+        if (target) {
+          log.push(`${target.id} ${ro(target.name)} 도감을 채우러 갑니다.`, 'info')
+          this.arrive(target.id)
+        }
+        return
+      }
+      this.advanceRegion(region, dex)
+    },
+    /** 진행 중인 리그 도전을 그만둠 (센터·이동). 이유를 로그에 남김 */
+    quitLeague(reason: string) {
+      if (!this.league) return
+      this.league = null
+      if (this.enemy?.trainer) this.enemy = null
+      useBattleLogStore().push(reason, 'bad')
     },
 
     onPlayerFainted() {
@@ -3239,7 +3461,8 @@ export const useGameStore = defineStore('game', {
 
     /** 가장 가까운 마을로 회복하러 감. 돌아갈 곳은 공중날기 여부에 따라 결정 */
     goRecover(ms: number, retreat: boolean) {
-      if (this.enemy?.boss) this.onBossFailed()
+      if (this.enemy?.boss && !this.enemy.trainer) this.onBossFailed()
+      this.quitLeague('포켓몬센터에 가서 리그 도전 기록이 초기화되었다.')
       const lost = findStage(this.currentStageId)
       let town = '포켓몬센터'
       let home = false

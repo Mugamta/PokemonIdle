@@ -97,14 +97,29 @@ const progress = computed(() => game.progressOf(game.currentStageId))
 const cleared = computed(() => game.clearedStages.includes(game.currentStageId))
 const inBoss = computed(() => !!game.enemy?.boss)
 
+// 리그 진행도: 몇 번째 트레이너 / 그 트레이너의 몇 번째 포켓몬
+const leagueProg = computed(() => {
+  const run = game.league
+  const t = game.leagueTrainer
+  if (!run || !t) return ''
+  const n = t.variants[t.champion ? run.variant : 0]?.length ?? 0
+  const at = game.enemy?.trainer ? game.enemy.trainer.index + 1 : Math.min(run.mon + 1, n)
+  return `리그 ${run.trainer + 1}/5 · ${t.title} ${t.name} ${at}/${n}`
+})
+
 // 보스 등장 연출: 새 보스가 나타난 순간에만 재생 (새로고침으로 불러온 보스전은 생략)
-const bossIntro = ref<{ key: number; name: string; level: number } | null>(null)
+// 트레이너는 첫 포켓몬을 내보낼 때만 (트레이너 이름으로)
+const bossIntro = ref<{ key: number; name: string; level: number; band: string; sub: string } | null>(null)
 let introTimer: ReturnType<typeof setTimeout> | undefined
 watch(
   () => game.enemy,
   (e, old) => {
     if (!e?.boss || e === old || game.bossIntroSkipped) return
-    bossIntro.value = { key: Date.now(), name: species(e.species)?.ko ?? e.species, level: e.level }
+    const tr = e.trainer
+    if (tr && tr.index > 0) return
+    bossIntro.value = tr
+      ? { key: Date.now(), name: `${tr.title} ${tr.name}`, level: 0, band: tr.champion ? 'CHAMPION' : 'ELITE FOUR', sub: 'POKéMON LEAGUE' }
+      : { key: Date.now(), name: `보스 ${species(e.species)?.ko ?? e.species}`, level: e.level, band: 'BOSS BATTLE', sub: 'WARNING' }
     clearTimeout(introTimer)
     introTimer = setTimeout(() => (bossIntro.value = null), BOSS_INTRO_MS)
   },
@@ -224,14 +239,16 @@ const foeItem = computed(() => {
     <div v-if="stage?.encounters && !game.faint" class="stage-box">
       <span v-if="cleared" class="clear">클리어</span>
       <span v-if="game.fieldWeather" class="weather-tag" :title="WEATHER_TIPS[game.fieldWeather]">{{ WEATHER_ICONS[game.fieldWeather] }} {{ WEATHER_LABELS[game.fieldWeather] }}</span>
-      <span class="prog">{{ inBoss ? '보스전' : `보스까지 ${Math.min(progress.defeats, BOSS_DEFEATS)}/${BOSS_DEFEATS}` }}</span>
+      <span v-if="leagueProg" class="prog">{{ leagueProg }}</span>
+      <span v-else class="prog">{{ inBoss ? '보스전' : `보스까지 ${Math.min(progress.defeats, BOSS_DEFEATS)}/${BOSS_DEFEATS}` }}</span>
     </div>
 
     <!-- 상대 -->
     <template v-if="foe">
       <div class="box foe-box">
         <div class="line">
-          <span v-if="foe.enemy.boss" class="boss-tag">BOSS</span>
+          <span v-if="foe.enemy.trainer" class="boss-tag" :title="`${foe.enemy.trainer.title} ${foe.enemy.trainer.name}의 포켓몬`">{{ foe.enemy.trainer.name }}</span>
+          <span v-else-if="foe.enemy.boss" class="boss-tag">BOSS</span>
           <span
             v-else
             class="caught-mark"
@@ -331,13 +348,13 @@ const foeItem = computed(() => {
     <!-- 보스 등장 연출 -->
     <div v-if="bossIntro" :key="bossIntro.key" class="boss-intro">
       <div class="flash" />
-      <div class="band top"><span>⚠ BOSS BATTLE ⚠ BOSS BATTLE ⚠ BOSS BATTLE ⚠ BOSS BATTLE ⚠ BOSS BATTLE ⚠</span></div>
+      <div class="band top"><span>{{ `⚠ ${bossIntro.band} `.repeat(5) }}⚠</span></div>
       <div class="title">
-        <small>WARNING</small>
-        <strong>보스 {{ bossIntro.name }}</strong>
-        <span>Lv.{{ bossIntro.level }}</span>
+        <small>{{ bossIntro.sub }}</small>
+        <strong>{{ bossIntro.name }}</strong>
+        <span v-if="bossIntro.level">Lv.{{ bossIntro.level }}</span>
       </div>
-      <div class="band bottom"><span>⚠ BOSS BATTLE ⚠ BOSS BATTLE ⚠ BOSS BATTLE ⚠ BOSS BATTLE ⚠ BOSS BATTLE ⚠</span></div>
+      <div class="band bottom"><span>{{ `⚠ ${bossIntro.band} `.repeat(5) }}⚠</span></div>
     </div>
 
     <!-- 상태 안내 -->
