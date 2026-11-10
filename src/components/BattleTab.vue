@@ -12,7 +12,7 @@ import {
   SHOP_ITEMS,
   TRAIN_GROUP_LABELS,
   TRAIN_ITEMS,
-  type AutoCategory,
+  type AutoUseKey,
   type ItemCategory,
   type TrainGroup,
   type TrainItem,
@@ -155,6 +155,10 @@ const forgotten = computed(() => {
 /** 레벨업으로 배우려는 기술 대기열 (맨 앞만 처리 가능) */
 const pendingList = computed(() => (member.value?.pending ?? []).map((id) => ({ id, info: moveInfo(id) })))
 const heartScales = computed(() => game.items[HEART_SCALE] ?? 0)
+/** 아이템 분류 제목 옆에 보일 자동 사용 토글 (체력 회복은 전투 중·전투 후) */
+const autoKeysOf = (cat: string): AutoUseKey[] =>
+  cat === 'battle' ? [] : cat === 'heal' ? ['heal', 'healAfter'] : [cat as AutoUseKey]
+
 function clickSlot(i: number) {
   const s = moveSlots.value[i]
   if (!s || s.kind === 'locked') return
@@ -764,14 +768,16 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             <small v-if="g.cat === 'ball'">야생 포켓몬에게</small>
             <small v-else-if="g.cat === 'battle'">싸우는 포켓몬에게 · 전투 중에만</small>
             <small v-else-if="g.cat === 'revive'">{{ game.party.some((m) => m.hp === 0) ? `${g.targetName}에게` : '기절한 포켓몬이 없음' }}</small>
-            <label v-if="g.cat !== 'battle' && game.hasPerk(`autoUse:${g.cat}`)" class="auto">
-              <input
-                type="checkbox"
-                :checked="!!game.autoUse[g.cat as AutoCategory]"
-                @change="game.setAutoUse(g.cat as AutoCategory, ($event.target as HTMLInputElement).checked)"
-              />
-              자동 사용
-            </label>
+            <template v-for="k in autoKeysOf(g.cat)" :key="k">
+              <label v-if="game.hasPerk(`autoUse:${k}`)" class="auto">
+                <input
+                  type="checkbox"
+                  :checked="!!game.autoUse[k]"
+                  @change="game.setAutoUse(k, ($event.target as HTMLInputElement).checked)"
+                />
+                {{ k === 'heal' ? '자동 사용 (전투 중)' : k === 'healAfter' ? '자동 사용 (전투 후)' : '자동 사용' }}
+              </label>
+            </template>
           </h4>
           <ul class="rows">
             <li v-for="it in g.items" :key="it.def.id" class="item-row">

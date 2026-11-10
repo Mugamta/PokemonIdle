@@ -13,7 +13,7 @@ import {
   DISPLAY_PERKS,
   SPEED_PERKS,
   STAT_VIEW_PERKS,
-  AUTO_HEAL_THRESHOLDS,
+  AUTO_HEAL_STEPS,
   CATEGORY_LABELS,
   EV_BREAK_PERK,
   EV_STAT_MAX,
@@ -36,6 +36,8 @@ import {
   BOTTLE_CAP_LEVEL,
   VITAMIN_EV,
   type AutoCategory,
+  type AutoHealKey,
+  type AutoUseKey,
   type ChainPerk,
   type EvoGroup,
   type TrainGroup,
@@ -261,9 +263,12 @@ function perkKind(p: Perk) {
 }
 function togglePerk(p: Perk, on: boolean) {
   const { kind, cat } = perkKind(p)
-  if (kind === 'autoUse') game.setAutoUse(cat, on)
+  if (kind === 'autoUse') game.setAutoUse(cat as AutoUseKey, on)
   else game.setAutoBuy(cat, on)
 }
+/** 체력 자동 회복 기준 설정이 있는 기능이면 그 키 */
+const healKeyOf = (p: Perk): AutoHealKey | null =>
+  p.id === 'autoUse:heal' ? 'heal' : p.id === 'autoUse:healAfter' ? 'healAfter' : null
 const itemName = (id: string) => dexData.value?.items[id]?.ko ?? id
 
 /** 판매: 가방에 있고 팔 수 있는 아이템 */
@@ -739,12 +744,24 @@ const slotRows = computed(() =>
               </option>
             </select>
           </div>
-          <div v-if="game.hasPerk(p.id) && p.id === 'autoUse:heal'" class="opt">
+          <div v-if="game.hasPerk(p.id) && healKeyOf(p)" class="opt">
             HP가
-            <select v-model.number="game.autoHealAt">
-              <option v-for="t in AUTO_HEAL_THRESHOLDS" :key="t" :value="t">{{ t }}%</option>
+            <select
+              :value="game.autoHeal[healKeyOf(p)!].start"
+              @change="game.setAutoHeal(healKeyOf(p)!, 'start', Number(($event.target as HTMLSelectElement).value))"
+            >
+              <option v-for="t in AUTO_HEAL_STEPS" :key="t" :value="t">{{ t }}%</option>
             </select>
-            아래로 떨어지면 사용
+            아래로 떨어지면
+            <select
+              :value="game.autoHeal[healKeyOf(p)!].target"
+              @change="game.setAutoHeal(healKeyOf(p)!, 'target', Number(($event.target as HTMLSelectElement).value))"
+            >
+              <option v-for="t in AUTO_HEAL_STEPS.filter((t) => t >= game.autoHeal[healKeyOf(p)!].start)" :key="t" :value="t">
+                {{ t }}%
+              </option>
+            </select>
+            까지 회복
           </div>
         </li>
       </ul>

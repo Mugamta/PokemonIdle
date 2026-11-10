@@ -261,3 +261,54 @@ describe('상대 PP', () => {
     expect(game.enemy?.pp?.tackle).toBeUndefined()
   })
 })
+
+describe('체력 자동 회복 (전투 중·전투 후)', () => {
+  test('이전 저장 데이터: 하나였던 기능을 전투 중·후 둘 다로, 기준도 둘 다에', () => {
+    const game = useGameStore()
+    game.perks = ['autoUse:heal']
+    game.autoUse = { heal: true }
+    ;(game.$state as unknown as Record<string, unknown>).autoHealAt = 75
+    game.validate()
+    expect(game.perks).toContain('autoUse:healAfter')
+    expect(game.autoUse.healAfter).toBe(true)
+    expect(game.autoHeal).toEqual({ heal: { start: 75, target: 100 }, healAfter: { start: 75, target: 100 } })
+    expect('autoHealAt' in game.$state).toBe(false)
+  })
+
+  test('목표는 시작 기준 아래로 내려가지 않음', () => {
+    const game = useGameStore()
+    game.setAutoHeal('heal', 'target', 30)
+    expect(game.autoHeal.heal).toEqual({ start: 30, target: 30 })
+    game.setAutoHeal('heal', 'start', 80)
+    expect(game.autoHeal.heal).toEqual({ start: 80, target: 80 })
+  })
+
+  test('전투 후: 목표까지 돈이 가장 적게 드는 조합을 사서 한꺼번에 씀', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    const m = game.party[0]!
+    const max = maxHpOf({ species: m.species, level: m.level, ivs: m.ivs!, evs: m.evs!, nature: m.nature })
+    m.hp = 1
+    game.perks.push('autoUse:healAfter', 'autoBuy:heal')
+    game.autoUse.healAfter = true
+    game.autoBuy.heal = true
+    game.money = 100000
+    expect(game.autoUseItem()).toBe(true)
+    expect(m.hp ?? max).toBe(max)
+    expect(game.money).toBeLessThan(100000)
+  })
+
+  test('전투 후 기능만 있으면 전투 중에는 쓰지 않음 (기능이 꺼진 쪽은 무시)', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    game.party[0]!.hp = 1
+    game.items.potion = 5
+    game.perks.push('autoUse:heal')
+    game.autoUse.heal = true
+    // 전투 밖: 전투 후 기능이 없으므로 쓰지 않음
+    expect(game.autoUseItem()).toBe(false)
+    expect(game.items.potion).toBe(5)
+  })
+})

@@ -84,12 +84,17 @@ import {
   type TrainItem,
   SPEED_DELAY_MS,
   type SpeedKind,
-  AUTO_HEAL_THRESHOLDS,
+  AUTO_HEAL_STEPS,
+  DEFAULT_AUTO_HEAL,
+  type AutoHealKey,
+  type AutoHealRange,
+  type AutoUseKey,
   type HealOption,
   healAmountOf,
   pickHealInBattle,
   planHealAfterBattle,
   DEFAULT_AUTO_BUY,
+  AUTO_USE_KEYS,
   EVERSTONE_ITEM,
   extraSlotPrice,
   heldKindPrice,
@@ -599,13 +604,13 @@ export const useGameStore = defineStore('game', {
     /** 노력치 한계 돌파 2 구매 횟수 */
     evBreaks: 0,
     /** 분류별 아이템 자동 사용 (편의성 기능 구매 필요) */
-    autoUse: {} as Partial<Record<AutoCategory, boolean>>,
+    autoUse: {} as Partial<Record<AutoUseKey, boolean>>,
     /** 분류별 아이템 자동 구매 (편의성 기능 구매 필요) */
     autoBuy: {} as Partial<Record<AutoCategory, boolean>>,
     /** 분류별 자동 구매 품목 */
     autoBuyItem: { ...DEFAULT_AUTO_BUY } as Record<AutoCategory, string>,
-    /** 체력 자동 사용 기준 (최대 HP 대비 %) */
-    autoHealAt: 50 as (typeof AUTO_HEAL_THRESHOLDS)[number],
+    /** 체력 자동 회복 시작 기준·목표 (전투 중 / 전투 후, 최대 HP 대비 %) */
+    autoHeal: structuredClone(DEFAULT_AUTO_HEAL) as Record<AutoHealKey, AutoHealRange>,
     /** 현재 전투에서 지난 턴 수 (0 = 아직 기술을 쓰지 않음, 아이템 사용 시 턴 소모 판단) */
     battleTurns: 0,
     /** 자동 전투 */
@@ -804,7 +809,19 @@ export const useGameStore = defineStore('game', {
       delete st.autoUseUnlocked
       // 이전 저장 데이터 호환: 보스 자동 도전 설정 시절의 값 정리
       for (const k of ['autoBoss', 'autoBossSuspended', 'bossFailStreak', 'bossFailLimit']) delete st[k]
-      for (const k of Object.keys(this.autoUse)) if (!(k in DEFAULT_AUTO_BUY)) delete (this.autoUse as Record<string, unknown>)[k]
+      for (const k of Object.keys(this.autoUse))
+        if (!AUTO_USE_KEYS.includes(k as AutoUseKey)) delete (this.autoUse as Record<string, unknown>)[k]
+      // 이전 저장 데이터 호환: 체력 회복 자동 사용이 전투 중·후 하나였던 시절 → 전투 후 기능도 줌, 기준을 둘 다에 적용
+      if (typeof st.autoHealAt === 'number') {
+        const start = st.autoHealAt as number
+        this.autoHeal = { heal: { start, target: 100 }, healAfter: { start, target: 100 } }
+        if (this.perks.includes('autoUse:heal') && !this.perks.includes('autoUse:healAfter')) {
+          this.perks.push('autoUse:healAfter')
+          this.autoUse.healAfter = !!this.autoUse.heal
+        }
+      }
+      delete st.autoHealAt
+      this.autoHeal = sanitizeAutoHeal(this.autoHeal)
       if (!Array.isArray(this.perks)) this.perks = []
       // 이전 저장 데이터 호환: 전체 조우 기록이 없으면 스테이지별 조우 기록으로 채움
       if (!Array.isArray(this.seen)) this.seen = []
@@ -1568,15 +1585,17 @@ export const useGameStore = defineStore('game', {
       if (!m || !me || this.faint) return false
       const owned = (cat: ItemCategory) =>
         SHOP_ITEMS.filter((i) => i.category === cat && (this.items[i.id] ?? 0) > 0 && this.itemEffect(i))
-      const on = (cat: AutoCategory) => this.perks.includes(`autoUse:${cat}`) && !!this.autoUse[cat]
+      const on = (cat: AutoUseKey) => this.perks.includes(`autoUse:${cat}`) && !!this.autoUse[cat]
       // 전투 중 상대를 타격할 기술이 하나도 없으면 (PP와 무관하게) 회복약·PP 회복은 쓰지 않음
       const useless = !!this.enemy && this.bestDamageVsFoe(0, false) <= 0
 
-      // 1. 체력: 기준 아래면 최대 HP까지 채움 (자동 구매가 켜져 있으면 없는 아이템은 사서 씀).
-      //    전투 중 = 한 개로 가장 잘 채우는 아이템, 전투 후 = 돈이 가장 적게 드는 조합
+      // 1. 체력: 시작 기준 아래면 목표까지 채움 (자동 구매가 켜져 있으면 없는 아이템은 사서 씀).
+      //    전투 중 = 한 개로 가장 잘 채우는 아이템, 전투 후 = 돈이 가장 적게 드는 조합을 한꺼번에
+      const healKey: AutoHealKey = this.enemy ? 'heal' : 'healAfter'
       const max = maxHpOf(me)
-      if (!useless && on('heal') && (me.hp / max) * 100 < this.autoHealAt) {
-        const need = max - me.hp
+      const range = this.autoHeal[healKey]
+      if (!useless && on(healKey) && (me.hp / max) * 100 < range.start) {
+        const need = Math.ceil((max * range.target) / 100) - me.hp
         const buying = this.perks.includes('autoBuy:heal') && !!this.autoBuy.heal
         const opts: HealOption[] = SHOP_ITEMS.filter((i) => i.category === 'heal' && this.itemEffect(i)).map((i) => ({
           id: i.id,
@@ -1586,8 +1605,18 @@ export const useGameStore = defineStore('game', {
           // 친밀도가 떨어지는 아이템은 사지 않음
           buyable: buying && !i.friendship && this.money >= i.price,
         }))
-        const pick = this.enemy ? pickHealInBattle(opts, need)?.id : planHealAfterBattle(opts, need)[0]
-        if (pick && ((this.items[pick] ?? 0) > 0 || this.buyItem(pick, 1)) && this.useItem(pick)) return true
+        const ready = (id: string) => (this.items[id] ?? 0) > 0 || this.buyItem(id, 1)
+        if (this.enemy) {
+          const pick = pickHealInBattle(opts, need)?.id
+          if (pick && ready(pick) && this.useItem(pick)) return true
+        } else {
+          let used = false
+          for (const id of planHealAfterBattle(opts, need)) {
+            if (!ready(id) || !this.useItem(id)) break
+            used = true
+          }
+          if (used) return true
+        }
       }
       // 2. 상태이상: 고칠 수 있는 가장 싼 아이템
       if (on('status') && m.status) {
@@ -2637,7 +2666,16 @@ export const useGameStore = defineStore('game', {
       if (key) this.spriteChoice[speciesId] = key
       else delete this.spriteChoice[speciesId]
     },
-    setAutoUse(cat: AutoCategory, on: boolean) {
+    /** 체력 자동 회복 기준 바꾸기 (목표는 시작 기준 이상으로 맞춤) */
+    setAutoHeal(key: AutoHealKey, part: keyof AutoHealRange, value: number) {
+      const r = { ...this.autoHeal[key], [part]: value }
+      if (r.target < r.start) {
+        if (part === 'start') r.target = r.start
+        else r.start = r.target
+      }
+      this.autoHeal = sanitizeAutoHeal({ ...this.autoHeal, [key]: r })
+    },
+    setAutoUse(cat: AutoUseKey, on: boolean) {
       if (!this.perks.includes(`autoUse:${cat}`)) return
       this.autoUse[cat] = on
     },
@@ -2652,4 +2690,16 @@ export const useGameStore = defineStore('game', {
 })
 
 /** 전투 계산에 필요한 데이터가 모두 불러와졌는지 */
+/** 체력 자동 회복 기준 보정: 선택지 밖이면 기본값, 목표는 시작 기준 이상 */
+function sanitizeAutoHeal(v: unknown): Record<AutoHealKey, AutoHealRange> {
+  const ok = (n: unknown): n is number => AUTO_HEAL_STEPS.includes(n as number)
+  const src = (v && typeof v === 'object' ? v : {}) as Partial<Record<AutoHealKey, Partial<AutoHealRange>>>
+  const fix = (k: AutoHealKey): AutoHealRange => {
+    const start = ok(src[k]?.start) ? src[k]!.start! : DEFAULT_AUTO_HEAL[k].start
+    const target = ok(src[k]?.target) ? src[k]!.target! : DEFAULT_AUTO_HEAL[k].target
+    return { start, target: Math.max(start, target) }
+  }
+  return { heal: fix('heal'), healAfter: fix('healAfter') }
+}
+
 export const battleReady = () => !!(dexData.value && learnsets.value && battleData.value)

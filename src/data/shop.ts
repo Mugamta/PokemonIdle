@@ -17,6 +17,11 @@ export const CATEGORY_LABELS: Record<ItemCategory, string> = {
 /** 자동 사용·자동 구매 기능이 있는 분류 */
 export type AutoCategory = 'heal' | 'revive' | 'pp' | 'status' | 'ball'
 export const AUTO_CATS: AutoCategory[] = ['pp', 'heal', 'revive', 'status', 'ball']
+/** 자동 사용 기능: 분류별 + 체력 회복은 전투 중(heal)·전투 후(healAfter)로 나뉨 */
+export type AutoUseKey = AutoCategory | 'healAfter'
+export const AUTO_USE_KEYS: AutoUseKey[] = ['pp', 'heal', 'healAfter', 'revive', 'status', 'ball']
+/** 체력 자동 회복 설정이 있는 기능 */
+export type AutoHealKey = 'heal' | 'healAfter'
 
 export interface ShopItem {
   /** 아이템 identifier (items.json 키, 이름·설명은 거기서) */
@@ -369,7 +374,7 @@ export const DEFAULT_AUTO_BUY: Record<AutoCategory, string> = {
 }
 
 /** 편의성 기능 */
-export type ItemPerkId = `${'autoUse' | 'autoBuy'}:${AutoCategory}`
+export type ItemPerkId = `autoUse:${AutoUseKey}` | `autoBuy:${AutoCategory}`
 /** 자동 전투 AI 개선: strong = 가장 강한 기술, smart = 특성까지 고려 (strong 필요) */
 export type AiPerkId = 'ai:strong' | 'ai:smart'
 /** 전투 화면 표시 개선: ratio = 비율, full = 현재/최대와 비율 (ratio 필요) / 상대 기술: list = 기술, pp = 남은 PP (list 필요) */
@@ -397,31 +402,41 @@ export interface Perk {
   desc: string
   price: number
 }
-const AUTO_USE_DESC: Record<AutoCategory, string> = {
+const AUTO_USE_DESC: Record<AutoUseKey, string> = {
   pp: '자동 전투 중 PP가 0인 기술이 생기면 PP 회복 아이템을 씁니다.',
-  heal: '자동 전투 중 HP가 기준 아래로 떨어지면 최대 HP까지 채웁니다. 전투 중에는 한 개로 가장 잘 채우는 아이템을, 전투 후에는 돈이 가장 적게 드는 조합을 씁니다.',
+  heal: '자동 전투 중 HP가 시작 기준 아래로 떨어지면 체력 회복 아이템을 씁니다. 목표 HP를 한 개로 가장 잘 채우는 아이템을 고릅니다. (턴 소모)',
+  healAfter:
+    '자동 전투 중 전투가 끝났을 때 HP가 시작 기준 아래면 목표 HP까지 채웁니다. 돈이 가장 적게 드는 아이템 조합을 고릅니다. (턴 소모 없음)',
   revive: '자동 전투 중 싸우던 포켓몬이 기절하면 기절 회복 아이템을 씁니다. (성스러운분은 쓰지 않음)',
   status: '자동 전투 중 상태이상에 걸리면 회복 아이템을 씁니다.',
   ball: '자동 전투 중 도감에 없는 야생 포켓몬을 만나면 몬스터볼을 던집니다. (가장 잡기 쉬운 볼부터)',
 }
+const AUTO_USE_LABELS: Record<AutoUseKey, string> = {
+  pp: 'PP 회복 아이템 자동 사용',
+  heal: '체력 회복 아이템 자동 사용 (전투 중)',
+  healAfter: '체력 회복 아이템 자동 사용 (전투 후)',
+  revive: '기절 회복 아이템 자동 사용',
+  status: '상태이상 회복 아이템 자동 사용',
+  ball: '몬스터볼 자동 사용 (자동 포획)',
+}
 const AUTO_LABELS: Record<AutoCategory, string> = { pp: 'PP 회복', heal: '체력 회복', revive: '기절 회복', status: '상태이상 회복', ball: '몬스터볼' }
-export const PERKS: Perk[] = AUTO_CATS.flatMap((c) => [
-  {
+export const PERKS: Perk[] = [
+  ...AUTO_USE_KEYS.map((c) => ({
     id: `autoUse:${c}` as ItemPerkId,
-    label: c === 'ball' ? '몬스터볼 자동 사용 (자동 포획)' : `${AUTO_LABELS[c]} 아이템 자동 사용`,
+    label: AUTO_USE_LABELS[c],
     desc: AUTO_USE_DESC[c],
     price: c === 'ball' ? 10000 : 3000,
-  },
-  {
+  })),
+  ...AUTO_CATS.map((c) => ({
     id: `autoBuy:${c}` as ItemPerkId,
     label: `${AUTO_LABELS[c]} 아이템 자동 구매`,
     desc:
       c === 'heal'
-        ? '체력 회복 아이템을 자동 사용할 때 가방에 없는 아이템이 필요하면 돈이 있을 때 사서 씁니다. (친밀도가 떨어지는 아이템은 사지 않음, 자동 사용 필요)'
+        ? '체력 회복 아이템을 자동 사용(전투 중·전투 후)할 때 가방에 없는 아이템이 필요하면 돈이 있을 때 사서 씁니다. (친밀도가 떨어지는 아이템은 사지 않음)'
         : '고른 아이템이 다 떨어지면 돈이 있을 때 1개씩 자동으로 삽니다.',
     price: 5000,
-  },
-])
+  })),
+]
 
 /** 켜고 끄는 단독 편의성 기능 */
 export const BOSS_INTRO_PERK = {
@@ -599,8 +614,17 @@ export const evBreak2Price = (n: number) => 100000 * 2 ** (n - 1)
 /** 능력치 하나의 노력치 한계 (한계 돌파 2 구매 횟수 반영: 252, 504, 756, …) */
 export const evStatCap = (breaks: number) => EV_STAT_MAX * (1 + breaks)
 
-/** 체력 자동 사용 기준 선택지 (최대 HP 대비 %) */
-export const AUTO_HEAL_THRESHOLDS = [25, 50, 75] as const
+/** 체력 자동 회복 시작 기준·목표 선택지 (최대 HP 대비 %) */
+export const AUTO_HEAL_STEPS = Array.from({ length: 20 }, (_, i) => (i + 1) * 5)
+/** 체력 자동 회복 설정: HP가 start% 아래로 떨어지면 target%까지 채움 (target >= start) */
+export interface AutoHealRange {
+  start: number
+  target: number
+}
+export const DEFAULT_AUTO_HEAL: Record<AutoHealKey, AutoHealRange> = {
+  heal: { start: 50, target: 100 },
+  healAfter: { start: 50, target: 100 },
+}
 
 /** 체력 회복 아이템 자동 사용 후보: 가진 개수와 살 수 있는지 (가진 것은 돈이 들지 않음) */
 export interface HealOption {
