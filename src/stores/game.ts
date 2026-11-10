@@ -63,7 +63,7 @@ import {
   type Evolution,
 } from '../data/evolutions'
 import { calcStats } from '../data/natures'
-import { encountersAt, type EncounterSet } from '../data/encounters'
+import { encountersAt, encountersWith, ROD_IDS, type EncounterSet, type RodId, type WaterMethod } from '../data/encounters'
 import { HOME_TOWNS, nearestTown } from '../data/mapGraph'
 import { NATURES } from '../data/natures'
 import type { SpriteDefault } from '../data/sprites'
@@ -129,7 +129,6 @@ import {
   ballMultOf,
   EXP_SHARE_ITEM,
   EXP_SHARE_RATE,
-  FISHING_ROD_ITEM,
   FRIEND_BALL_FRIENDSHIP,
   isMachine,
   isRecord,
@@ -137,6 +136,8 @@ import {
   LUCKY_EGG_MULT,
   LUXURY_BALL,
   MACHO_BRACE,
+  rodItem,
+  ROD_ITEMS,
   MONEY_ITEMS,
   rollCatch,
   SOOTHE_BELL,
@@ -591,9 +592,8 @@ function rollWildItem(species: string, boss: boolean): string | null {
   return null
 }
 
-/** 현재 스테이지·시간대의 출현표에서 출현율 가중치로 한 마리 뽑기 */
-function rollWild(stage: Stage, hidden: boolean): WildPokemon | null {
-  const set = stage.encounters
+/** 출현표(가진 조우 수단을 반영한 것)에서 현재 시간대·출현율 가중치로 한 마리 뽑기 */
+function rollWild(set: EncounterSet | null, hidden: boolean): WildPokemon | null {
   if (!set) return null
   const list = encountersAt(set, phaseAt(Date.now()))
   const total = list.reduce((a, e) => a + e.rate, 0)
@@ -614,8 +614,7 @@ function rollWild(stage: Stage, hidden: boolean): WildPokemon | null {
 }
 
 /** 보스: 스테이지 출현 포켓몬 중 종족값 합계가 가장 높은 포켓몬, 최고 레벨 +2, 개체값 20~31 */
-function makeBoss(stage: Stage): WildPokemon | null {
-  const set = stage.encounters
+function makeBoss(set: EncounterSet | null): WildPokemon | null {
   if (!set) return null
   const lists = 'all' in set ? [set.all] : [set.day, set.night]
   const entries = lists.flat().filter((e) => !e.special)
@@ -653,8 +652,10 @@ export const useGameStore = defineStore('game', {
     /** 학습장치 구매 여부 / 켜짐 (공용 기능) */
     expShareOwned: false,
     expShare: false,
-    /** 낚싯대 구매 여부 (수상 스테이지 이동) */
-    rodOwned: false,
+    /** 가진 낚싯대 (낡은·좋은·대단한낚싯대) */
+    rods: [] as RodId[],
+    /** 수상 스테이지에서 쓰는 낚싯대 ('' = 없음) */
+    rod: '' as RodId | '',
     /** 전투 중인 상대 (이동 중이거나 출현 정보가 없으면 null) */
     enemy: null as WildPokemon | null,
     /** 내 포켓몬의 능력 랭크 (전투마다 초기화) */
@@ -737,9 +738,16 @@ export const useGameStore = defineStore('game', {
     canFly: (s) => s.party.some((m) => m.moves.includes('fly')),
     /** 파도타기를 아는 파티 포켓몬이 있음 */
     canSurf: (s) => s.party.some((m) => m.moves.includes('surf')),
-    /** 수상 스테이지(파도타기·낚시)에 들어갈 수 있음: 파도타기 포켓몬 또는 낚싯대 */
-    waterAccess(): boolean {
-      return this.canSurf || this.rodOwned
+    /** 수상 스테이지에서 쓸 수 있는 조우 방법: 파도타기(파도타기를 아는 파티 포켓몬) + 고른 낚싯대 */
+    waterMethods(): WaterMethod[] {
+      const out: WaterMethod[] = []
+      if (this.canSurf) out.push('surf')
+      if (this.rod) out.push(this.rod)
+      return out
+    },
+    /** 이 스테이지에서 실제로 쓰는 출현표 (수상: 가진 수단만 섞음). 출현 정보가 없거나 쓸 수단이 없으면 null */
+    stageEncounters(): (stage: Stage) => EncounterSet | null {
+      return (stage) => (stage.encounters ? encountersWith(stage.encounters, this.waterMethods) : null)
     },
     /** PP 소모 여부 (PP_START_STAGE 클리어 후) */
     ppActive: (s) => s.clearedStages.includes(PP_START_STAGE),
@@ -817,7 +825,7 @@ export const useGameStore = defineStore('game', {
         const found = findStage(stageId)
         if (!found) return false
         if (stageId === this.currentStageId) return true
-        if (found.stage.kind === 'water' && !this.waterAccess) return false
+        if (this.waterLocked(stageId)) return false
         if (this.clearedStages.includes(stageId)) return true
         const stages = found.region.stages
         for (let j = stages.indexOf(found.stage) - 1; j >= 0; j--) {
@@ -827,9 +835,12 @@ export const useGameStore = defineStore('game', {
         return true
       }
     },
-    /** 수상 스테이지 접근 조건 때문에 잠긴 스테이지 */
+    /** 수상 스테이지 접근 조건(파도타기·낚싯대로 만날 포켓몬이 있어야 함) 때문에 잠긴 스테이지 */
     waterLocked(): (stageId: string) => boolean {
-      return (stageId) => findStage(stageId)?.stage.kind === 'water' && stageId !== this.currentStageId && !this.waterAccess
+      return (stageId) => {
+        const stage = findStage(stageId)?.stage
+        return stage?.kind === 'water' && stageId !== this.currentStageId && !!stage.encounters && !this.stageEncounters(stage)
+      }
     },
     progressOf: (s) => (stageId: string): StageProgress => s.stageProgress[stageId] ?? { seen: [], defeats: 0 },
     /** 보스 등장 조건: 마지막 보스전 이후 일반 포켓몬을 BOSS_DEFEATS 마리 쓰러뜨림 */
@@ -980,6 +991,12 @@ export const useGameStore = defineStore('game', {
       if (!this.perks.includes('autoCenter:pp')) this.autoCenter = false
       if (this.autoCenterPriority !== 'center') this.autoCenterPriority = 'item'
       if (!this.expShareOwned) this.expShare = false
+      // 이전 저장 데이터 호환: 낚싯대가 한 종류(좋은낚싯대)였던 시절
+      if (!Array.isArray(this.rods)) this.rods = []
+      if (st.rodOwned && !this.rods.includes('good-rod')) this.rods.push('good-rod')
+      delete st.rodOwned
+      this.rods = ROD_ITEMS.map((r) => r.id).filter((id) => this.rods.includes(id))
+      if (!this.rod || !this.rods.includes(this.rod)) this.rod = this.rods[this.rods.length - 1] ?? ''
       // 이전 저장 데이터 호환: 박스 시절 → 박스 포켓몬은 도감 기록으로, 포켓몬별 격파 수 → 계정 격파 수
       const oldBox = Array.isArray(st.box) ? (st.box as PartyMember[]) : []
       for (const m of [...this.party, ...oldBox]) migrateHeld(m)
@@ -1345,14 +1362,14 @@ export const useGameStore = defineStore('game', {
     },
     spawn() {
       const stage = findStage(this.currentStageId)?.stage
-      const enemy = stage && rollWild(stage, this.difficulty === 'hard')
+      const enemy = stage && rollWild(this.stageEncounters(stage), this.difficulty === 'hard')
       if (enemy) this.startBattle(enemy)
       else this.nextEncounterAt = Date.now() + 5000
     },
     challengeBoss() {
       const stage = findStage(this.currentStageId)?.stage
       if (!stage || !this.bossReady(stage.id) || this.faint || this.travel || !battleReady()) return
-      const boss = makeBoss(stage)
+      const boss = makeBoss(this.stageEncounters(stage))
       if (boss) this.startBattle(boss)
     },
 
@@ -2317,11 +2334,18 @@ export const useGameStore = defineStore('game', {
     setExpShare(on: boolean) {
       if (this.expShareOwned) this.expShare = on
     },
-    buyRod(): boolean {
-      if (this.rodOwned || this.money < FISHING_ROD_ITEM.price) return false
-      this.money -= FISHING_ROD_ITEM.price
-      this.rodOwned = true
+    /** 낚싯대 구매: 산 낚싯대가 지금 것보다 좋으면 바로 그 낚싯대를 씀 */
+    buyRod(id: RodId): boolean {
+      const item = rodItem(id)
+      if (!item || this.rods.includes(id) || this.money < item.price) return false
+      this.money -= item.price
+      this.rods.push(id)
+      if (!this.rod || ROD_IDS.indexOf(id) > ROD_IDS.indexOf(this.rod)) this.rod = id
       return true
+    },
+    /** 수상 스테이지에서 쓸 낚싯대 고르기 */
+    selectRod(id: RodId) {
+      if (this.rods.includes(id)) this.rod = id
     },
 
     // ---------- 상점 ----------
@@ -2863,7 +2887,7 @@ export const useGameStore = defineStore('game', {
       // 전진 모드: 다음 스테이지로 진입 (반복 모드는 현재 스테이지에서 일반 BOSS_DEFEATS 마리 + 보스 반복)
       // 수상 스테이지에 들어갈 수 없으면 건너뜀
       const i = found.region.stages.indexOf(found.stage)
-      const next = found.region.stages.slice(i + 1).find((st) => st.kind !== 'water' || this.waterAccess)
+      const next = found.region.stages.slice(i + 1).find((st) => st.kind !== 'water' || !!this.stageEncounters(st))
       if (this.stageMode === 'advance' && next && this.stageUnlocked(next.id)) {
         log.push(`${next.id} ${ro(next.name)} 이동합니다.`, 'info')
         this.arrive(next.id)

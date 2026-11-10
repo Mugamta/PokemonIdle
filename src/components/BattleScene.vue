@@ -314,7 +314,13 @@ const foeItem = computed(() => {
     <!-- 상태 안내 -->
     <div v-if="travelTarget" class="notice">→ {{ travelTarget.id }} {{ ro(travelTarget.name) }} 이동 중… {{ travelLeft }}초</div>
     <div v-else-if="mine && (!foe || foeFallen) && !game.faint" class="notice">
-      {{ stage?.encounters ? '야생 포켓몬을 찾는 중…' : '이 스테이지는 출현 정보가 준비 중입니다' }}
+      {{
+        !stage?.encounters
+          ? '이 스테이지는 출현 정보가 준비 중입니다'
+          : game.stageEncounters(stage)
+            ? '야생 포켓몬을 찾는 중…'
+            : '파도타기를 아는 파티 포켓몬이나 이곳에서 쓸 수 있는 낚싯대가 필요합니다'
+      }}
     </div>
     <!-- 좌하단: 최근 전투 평균 보상 · 현재 스테이지 -->
     <div class="bl">

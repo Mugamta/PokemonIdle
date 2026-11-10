@@ -3,6 +3,8 @@
 //
 // 규칙
 // - 육지 스테이지 = 풀숲/동굴(walk) + 박치기 + 바위깨기, 수상 스테이지 "OO (수상)" = 파도타기 + 낚시
+//   수상 스테이지는 방법별 출현표(methods: 파도타기·낡은/좋은/대단한낚싯대)도 함께 저장 (게임에서 가진 수단에 따라 섞음)
+//   all / day·night 는 모든 방법을 합친 전체 출현표 (도감·스테이지 정보용)
 // - 낮/밤 출현표를 따로 만듦. 원작 아침+낮 → 낮, 밤 → 밤. 시간 구분 없는 게임(FRLG)은 낮=밤
 // - 구역(층)·버전별 출현표는 평균내어 하나로 합침 (같은 지방으로 묶은 버전들의 출현표를 섞음). 레벨 차이가 큰 구역은 SPLITS로 별도 스테이지
 // - vg: 출현 데이터를 가져온 게임의 버전 그룹 (야생 포켓몬 기술 배치 기준)
@@ -191,7 +193,12 @@ for (const group of GROUPS) {
     const water = buildStage(rows, WATER_WEIGHTS)
     if (water) {
       const name = `${place} (수상)`
-      stages[name] = { place, kind: 'water', vg: group.vg, ...water }
+      const methods = {}
+      for (const m of Object.keys(WATER_WEIGHTS)) {
+        const t = buildStage(rows, { [m]: 1 })
+        if (t) methods[m] = t
+      }
+      stages[name] = { place, kind: 'water', vg: group.vg, ...water, methods }
       // 육지가 없는 장소(바닷길 등)는 장소 자리에, 있으면 육지 뒤에
       order.push(name)
     }

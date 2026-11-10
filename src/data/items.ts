@@ -2,6 +2,7 @@
 import { dexData } from './dex'
 import { evolutionsOf } from './evolutions'
 import type { Status } from './battle'
+import type { RodId } from './encounters'
 
 // ---------- 지닌 도구 ----------
 export type HeldGroup = 'attack' | 'defense' | 'type' | 'gem' | 'berry' | 'species' | 'bad' | 'training'
@@ -83,8 +84,16 @@ export const MACHO_BRACE = 'macho-brace'
 /** 학습장치: 한 번 사면 켜고 끌 수 있는 공용 기능. 싸우지 않은 파티 포켓몬도 경험치 절반 */
 export const EXP_SHARE_ITEM = { id: 'exp-share', price: 30000 }
 export const EXP_SHARE_RATE = 0.5
-/** 낚싯대: 한 번 사면 수상 스테이지(파도타기·낚시)에 들어갈 수 있음 (파도타기를 아는 파티 포켓몬이 있어도 가능) */
-export const FISHING_ROD_ITEM = { id: 'good-rod', price: 5000 }
+/**
+ * 낚싯대: 한 번 사면 계속 쓰는 공용 기능. 수상 스테이지에서 고른 낚싯대의 출현표로 낚시
+ * (파도타기를 아는 파티 포켓몬이 있으면 파도타기 출현표와 반반 섞음)
+ */
+export const ROD_ITEMS: { id: RodId; price: number; note: string }[] = [
+  { id: 'old-rod', price: 1000, note: '잉어킹처럼 흔한 포켓몬이 주로 낚입니다.' },
+  { id: 'good-rod', price: 5000, note: '조금 더 다양한 포켓몬이 낚입니다.' },
+  { id: 'super-rod', price: 20000, note: '레벨이 높고 귀한 포켓몬이 낚입니다.' },
+]
+export const rodItem = (id: string) => ROD_ITEMS.find((r) => r.id === id)
 
 // ---------- 기술머신 ----------
 /** 기술머신·비전머신·기술레코드 */

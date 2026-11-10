@@ -170,6 +170,64 @@ describe('상점', () => {
   })
 })
 
+describe('낚싯대', () => {
+  // 관동(적·녹) 22번도로 (수상): 파도타기 출현 없음, 낚싯대별 출현표만 있음
+  const waterStage = () => REGIONS[0]!.stages.find((s) => s.name === '22번도로 (수상)')!
+
+  test('낚싯대마다 출현표가 다르고, 고른 낚싯대로만 낚임', () => {
+    const game = useGameStore()
+    game.validate()
+    const stage = waterStage()
+    expect(game.stageEncounters(stage)).toBeNull()
+    expect(game.waterLocked(stage.id)).toBe(true)
+
+    game.money = 100_000
+    expect(game.buyRod('old-rod')).toBe(true)
+    expect(game.rod).toBe('old-rod')
+    expect(game.waterLocked(stage.id)).toBe(false)
+    const old = game.stageEncounters(stage)!
+    expect('all' in old && old.all.map((e) => e.p)).toEqual(['magikarp'])
+
+    expect(game.buyRod('super-rod')).toBe(true)
+    expect(game.rod).toBe('super-rod') // 더 좋은 낚싯대를 사면 바로 씀
+    const sup = game.stageEncounters(stage)!
+    expect('all' in sup && sup.all.map((e) => e.p)).not.toContain('magikarp')
+
+    // 낮은 낚싯대를 나중에 사도 지금 쓰는 낚싯대는 그대로, 직접 고를 수 있음
+    expect(game.buyRod('good-rod')).toBe(true)
+    expect(game.rod).toBe('super-rod')
+    game.selectRod('old-rod')
+    expect(game.rod).toBe('old-rod')
+    expect(game.buyRod('old-rod')).toBe(false)
+  })
+
+  test('파도타기 + 낚싯대 = 두 출현표를 반반 섞음', () => {
+    const game = useGameStore()
+    game.validate()
+    const stage = REGIONS[0]!.stages.find((s) => s.encounters?.methods?.surf && s.encounters.methods['old-rod'])!
+    game.chooseStarter(starter('squirtle', ['surf']))
+    const surf = game.stageEncounters(stage)!
+    game.money = 1000
+    game.buyRod('old-rod')
+    const both = game.stageEncounters(stage)!
+    const sum = (set: typeof both) => ('all' in set ? set.all : set.day).reduce((a, e) => a + e.rate, 0)
+    expect(sum(both)).toBeCloseTo(100, 0)
+    const rateOf = (set: typeof both, p: string) => ('all' in set ? set.all : set.day).find((e) => e.p === p)?.rate ?? 0
+    const top = ('all' in surf ? surf.all : surf.day)[0]!
+    expect(rateOf(both, top.p)).toBeLessThan(top.rate)
+    expect(rateOf(both, 'magikarp')).toBeGreaterThan(0)
+  })
+
+  test('낚싯대가 한 종류였던 저장 데이터 → 좋은낚싯대', () => {
+    const game = useGameStore()
+    game.$patch({ rodOwned: true } as never)
+    game.validate()
+    expect(game.rods).toEqual(['good-rod'])
+    expect(game.rod).toBe('good-rod')
+    expect((game.$state as unknown as Record<string, unknown>).rodOwned).toBeUndefined()
+  })
+})
+
 describe('지닌 도구 여러 개', () => {
   test('종류·개수 한도 안에서만 지니고, 강화상점에서 한도를 늘림', () => {
     const game = useGameStore()

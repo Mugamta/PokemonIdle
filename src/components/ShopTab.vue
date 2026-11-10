@@ -52,7 +52,7 @@ import {
   type ItemCategory,
   type Perk,
 } from '../data/shop'
-import { BALL_MAX_MULT, BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, tmShopList, type HeldGroup } from '../data/items'
+import { BALL_MAX_MULT, BALL_NOTES, EXP_SHARE_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, ROD_ITEMS, tmShopList, type HeldGroup } from '../data/items'
 import ItemIcon from './ItemIcon.vue'
 import QuickUseDialog from './QuickUseDialog.vue'
 import ScrollTabs from './ScrollTabs.vue'
@@ -663,18 +663,25 @@ const slotRows = computed(() =>
     <!-- 편의성 -->
     <section v-else-if="sub === 'perks'" class="card">
       <ul class="rows">
-        <li v-if="cur === 'battle'">
+        <li v-for="r in cur === 'battle' ? ROD_ITEMS : []" :key="r.id">
           <div class="main">
-            <ItemIcon :id="FISHING_ROD_ITEM.id" />
-            <span class="grow"><strong>{{ itemName(FISHING_ROD_ITEM.id) }}</strong></span>
-            <span v-if="game.rodOwned" class="owned">구매함</span>
+            <ItemIcon :id="r.id" />
+            <span class="grow"><strong>{{ itemName(r.id) }}</strong></span>
+            <template v-if="game.rods.includes(r.id)">
+              <span v-if="game.rod === r.id" class="owned">사용 중</span>
+              <button v-else type="button" class="buy" @click="game.selectRod(r.id)">사용</button>
+            </template>
             <template v-else>
-              <span class="price">{{ won(FISHING_ROD_ITEM.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < FISHING_ROD_ITEM.price" @click="game.buyRod()">구매</button>
+              <span class="price">{{ won(r.price) }}</span>
+              <button type="button" class="buy" :disabled="game.money < r.price" @click="game.buyRod(r.id)">구매</button>
             </template>
           </div>
+          <p class="desc item">{{ r.note }}</p>
+        </li>
+        <li v-if="cur === 'battle'">
           <p class="desc item">
-            수상 스테이지(파도타기·낚시 출현)는 파도타기를 아는 파티 포켓몬이 있거나 낚싯대가 있어야 들어갈 수 있습니다. 한 번 사면 계속 쓸 수 있습니다.
+            수상 스테이지는 파도타기를 아는 파티 포켓몬이나 낚싯대가 있어야 들어갈 수 있고, 낚싯대마다 낚이는 포켓몬이 다릅니다.
+            파도타기와 낚싯대를 함께 쓰면 두 출현표를 반반 섞습니다. 낚싯대는 한 번 사면 계속 쓸 수 있고, 가진 낚싯대 중 하나를 골라 씁니다.
           </p>
         </li>
         <li v-for="p in perkList" :key="p.id">

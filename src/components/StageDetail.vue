@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { phaseAt, useNow, type Phase } from '../core/dayNight'
-import { encountersAt, speciesName } from '../data/encounters'
+import { encountersAt, speciesName, type PhasedEntries, type WaterMethod } from '../data/encounters'
 import type { Stage } from '../data/stages'
 import { BOSS_DEFEATS, stageSpecies, TRAVEL_MS, useGameStore } from '../stores/game'
 import PokeSprite from './PokeSprite.vue'
@@ -11,12 +11,28 @@ const props = defineProps<{ stage: Stage }>()
 const game = useGameStore()
 const now = useNow()
 
+// 수상 스테이지: 보고 있는 출현표 ('use' = 지금 가진 수단(파도타기·고른 낚싯대)으로 만나는 출현표, 그 외 = 조우 방법별)
+const METHOD_LABELS: Record<WaterMethod, string> = {
+  surf: '파도타기',
+  'old-rod': '낡은낚싯대',
+  'good-rod': '좋은낚싯대',
+  'super-rod': '대단한낚싯대',
+}
+const viewMethod = ref<'use' | WaterMethod>('use')
+const methodList = computed(
+  () => Object.keys(props.stage.encounters?.methods ?? {}) as WaterMethod[],
+)
+const shownSet = computed<PhasedEntries | null>(() => {
+  const set = props.stage.encounters
+  if (!set) return null
+  if (!set.methods) return set
+  return viewMethod.value === 'use' ? game.stageEncounters(props.stage) : (set.methods[viewMethod.value] ?? null)
+})
+
 // 보고 있는 출현표 (기본: 현재 시간대). 낮/밤이 같은 장소는 탭을 숨김
 const viewPhase = ref<Phase>(phaseAt(now.value))
-const hasPhases = computed(() => !!props.stage.encounters && !('all' in props.stage.encounters))
-const entries = computed(() =>
-  props.stage.encounters ? encountersAt(props.stage.encounters, viewPhase.value) : [],
-)
+const hasPhases = computed(() => !!shownSet.value && !('all' in shownSet.value))
+const entries = computed(() => (shownSet.value ? encountersAt(shownSet.value, viewPhase.value) : []))
 
 const isHere = computed(() => game.currentStageId === props.stage.id)
 const unlocked = computed(() => game.stageUnlocked(props.stage.id))
@@ -32,6 +48,26 @@ const travelLeft = computed(() =>
 
 <template>
   <div class="detail">
+    <div v-if="methodList.length" class="method-tabs">
+      <button type="button" :class="{ active: viewMethod === 'use' }" @click="viewMethod = 'use'">사용 중</button>
+      <button
+        v-for="m in methodList"
+        :key="m"
+        type="button"
+        :class="{ active: viewMethod === m, usable: game.waterMethods.includes(m) }"
+        :title="game.waterMethods.includes(m) ? '지금 쓰는 조우 방법' : '지금 쓰지 않는 조우 방법'"
+        @click="viewMethod = m"
+      >
+        {{ METHOD_LABELS[m] }}
+      </button>
+    </div>
+    <p v-if="methodList.length && viewMethod === 'use'" class="method-note">
+      {{
+        game.waterMethods.length
+          ? `${game.waterMethods.map((m) => METHOD_LABELS[m]).join(' + ')}${game.waterMethods.length > 1 ? ' (반반 섞음)' : ''}`
+          : '파도타기를 아는 파티 포켓몬이나 낚싯대가 없습니다'
+      }}
+    </p>
     <div v-if="hasPhases" class="phase-tabs">
       <button
         v-for="p in ['day', 'night'] as const"
@@ -58,12 +94,14 @@ const travelLeft = computed(() =>
         <span v-if="e.special" class="badge">특수</span>
       </li>
     </ul>
-    <p v-else class="none">출현 정보 준비 중</p>
+    <p v-else class="none">
+      {{ !stage.encounters ? '출현 정보 준비 중' : '지금 가진 수단으로는 만날 수 있는 포켓몬이 없습니다' }}
+    </p>
 
     <div class="actions">
       <button v-if="isHere" type="button" class="move" disabled>현재 위치</button>
       <button v-else-if="game.waterLocked(stage.id)" type="button" class="move" disabled>
-        🔒 파도타기를 아는 파티 포켓몬이나 낚싯대가 있어야 이동 가능
+        🔒 파도타기를 아는 파티 포켓몬이나 이곳에서 쓸 수 있는 낚싯대가 있어야 이동 가능
       </button>
       <button v-else-if="!unlocked" type="button" class="move" disabled>🔒 이전 스테이지 보스를 쓰러뜨리면 해금</button>
       <button v-else-if="game.faint" type="button" class="move" disabled>포켓몬 회복 중…</button>
@@ -98,6 +136,43 @@ const travelLeft = computed(() =>
   padding: 10px 12px 12px;
   border-radius: 8px;
   background: #23232b;
+}
+
+.method-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.method-tabs button {
+  padding: 4px 8px;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: transparent;
+  color: #6a6a76;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.method-tabs button.usable {
+  color: #9fd8ff;
+}
+
+.method-tabs button:first-child {
+  color: #c8c8d0;
+}
+
+.method-tabs button.active {
+  border-color: #ffcb05;
+  color: #fff;
+}
+
+.method-note {
+  margin: 0 0 6px;
+  color: #9a9aa6;
+  font-size: 12px;
 }
 
 .phase-tabs {
