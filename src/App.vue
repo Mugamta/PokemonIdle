@@ -27,6 +27,11 @@ const activeTab = ref<TabId>('battle')
 /** 저장 데이터 불러오기 완료 여부 (스타팅 선택 창 표시 판단용) */
 const loaded = ref(false)
 const activeLabel = computed(() => TABS.find((t) => t.id === activeTab.value)?.label)
+/** 넓게보기: 전투 외 탭에서 상단 영역을 접고 하단 패널을 화면 위까지 늘림 */
+const wide = ref(localStorage.getItem('wide-view') === '1')
+watch(wide, (v) => localStorage.setItem('wide-view', v ? '1' : '0'))
+const canWide = computed(() => activeTab.value !== 'battle')
+const isWide = computed(() => wide.value && canWide.value)
 
 // 배경음악: 포켓몬센터 회복 중 / 보스전 / 그 외
 const music = computed(() => (!loaded.value ? null : game.faint ? 'center' : game.enemy?.boss ? 'boss' : 'field'))
@@ -61,10 +66,23 @@ onUnmounted(() => {
 <template>
   <div class="screen">
     <!-- 상단 영역: 스테이지 탭에서는 지도, 그 외는 전투 화면 -->
-    <section class="top">
+    <!-- 전투 화면은 넓게보기 중에도 언마운트하지 않고 숨기기만 함 -->
+    <section v-show="!isWide" class="top">
       <StageMap v-if="activeTab === 'stage'" />
       <BattleScene v-else />
     </section>
+
+    <!-- 넓게보기 전환 손잡이 (전투 탭 제외) -->
+    <button
+      v-if="canWide"
+      type="button"
+      class="wide-toggle"
+      :aria-pressed="isWide"
+      :title="isWide ? '기본 보기' : '넓게 보기'"
+      @click="wide = !wide"
+    >
+      {{ isWide ? '▼ 기본 보기' : '▲ 넓게 보기' }}
+    </button>
 
     <!-- 하단: 선택된 탭의 내용 -->
     <ScrollPanel class="panel-area">
@@ -104,6 +122,29 @@ onUnmounted(() => {
 
 .panel-area {
   flex: 1 1 50%;
+  min-height: 0;
+}
+
+.wide-toggle {
+  flex: none;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-top: 1px solid #3a3a44;
+  border-bottom: 1px solid #3a3a44;
+  background: #25252c;
+  color: #8a8a96;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.wide-toggle:hover {
+  color: #ffcb05;
+}
+
+.top + .panel-area {
   border-top: 1px solid #3a3a44;
 }
 
