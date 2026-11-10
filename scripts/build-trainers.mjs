@@ -28,7 +28,8 @@ const REPOS = {
   pokegold: ['/constants/', '/data/trainers/', '/maps/*.asm'],
   pokecrystal: ['/constants/', '/data/trainers/', '/maps/*.asm'],
   pokeruby: ['/include/constants/', '/src/data/trainer*', '/src/data/text/trainer_class_names_en.h', '/data/maps/*/scripts.inc', '/data/scripts/'],
-  pokeemerald: ['/include/constants/', '/src/data/trainer*', '/src/data/text/trainer_class_names.h', '/data/maps/*/scripts.inc', '/data/scripts/'],
+  pokeemerald: ['/include/constants/', '/src/data/trainer*', '/src/data/text/trainer_class_names.h', '/data/maps/*/scripts.inc', '/data/scripts/',
+    '/data/maps/*/map.json', '/data/layouts/'], // 맵 오브젝트 위치·지형 충돌 (2인 동시 시선 더블)
   pokefirered: ['/include/constants/', '/src/data/trainer*', '/src/data/text/trainer_class_names.h', '/data/maps/*/scripts.inc', '/data/scripts/', '/src/vs_seeker.c'],
   pokediamond: ['/files/poketool/trainer/', '/include/constants/'],
   pokeplatinum: ['/res/trainers/data/', '/res/text/trainer_class_names.json', '/generated/', '/res/field/maps/'],
@@ -51,7 +52,8 @@ function ensureRepos() {
 const sha = (repo) => execFileSync('git', ['-C', path.join(PRET, repo), 'rev-parse', '--short', 'HEAD']).toString().trim()
 
 // 같은 데이터를 쓰는 버전은 한 파일로 (versions: PokeAPI version 식별자)
-const GEN3_FILES = (trainers, classNames) => ({ trainers, classNames })
+// sightDoubles: 두 트레이너 시야가 겹치면 더블배틀 (에메랄드만. 루비·사파이어, 파이어레드·리프그린은 차례로 싱글배틀)
+const GEN3_FILES = (trainers, classNames, opts = {}) => ({ trainers, classNames, ...opts })
 const BUILDS = [
   { id: 'red-blue', gen: 1, versions: ['red', 'blue'], repo: 'pokered', run: () => gen1('pokered', 'red-blue') },
   { id: 'yellow', gen: 1, versions: ['yellow'], repo: 'pokeyellow', run: () => gen1('pokeyellow', 'yellow') },
@@ -60,7 +62,7 @@ const BUILDS = [
   { id: 'ruby-sapphire', gen: 3, versions: ['ruby', 'sapphire'], repo: 'pokeruby',
     run: () => gen3('pokeruby', 'ruby-sapphire', GEN3_FILES('src/data/trainers_en.h', 'src/data/text/trainer_class_names_en.h')) },
   { id: 'emerald', gen: 3, versions: ['emerald'], repo: 'pokeemerald',
-    run: () => gen3('pokeemerald', 'emerald', GEN3_FILES('src/data/trainers.h', 'src/data/text/trainer_class_names.h')) },
+    run: () => gen3('pokeemerald', 'emerald', GEN3_FILES('src/data/trainers.h', 'src/data/text/trainer_class_names.h', { sightDoubles: true })) },
   { id: 'firered-leafgreen', gen: 3, versions: ['firered', 'leafgreen'], repo: 'pokefirered',
     run: () => gen3('pokefirered', 'firered-leafgreen', GEN3_FILES('src/data/trainers.h', 'src/data/text/trainer_class_names.h')) },
   { id: 'platinum', gen: 4, versions: ['platinum'], repo: 'pokeplatinum', run: () => platinum() },

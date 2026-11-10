@@ -55,7 +55,7 @@
     "file": "ruby-sapphire.json",
     "trainers": 693,
     "unused": 0,
-    "noLocation": 122
+    "noLocation": 117
   },
   {
     "version": "emerald",
@@ -66,7 +66,7 @@
     "file": "emerald.json",
     "trainers": 853,
     "unused": 1,
-    "noLocation": 31
+    "noLocation": 21
   },
   {
     "version": "firered-leafgreen",

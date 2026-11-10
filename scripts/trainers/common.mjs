@@ -10,6 +10,7 @@ export const PRET = path.join(ROOT, '.cache', 'pret')
 const CSV_DIR = path.join(ROOT, '.cache', 'csv')
 
 export const read = (repo, file) => readFile(path.join(PRET, repo, file), 'utf8')
+export const readBin = (repo, file) => readFile(path.join(PRET, repo, file))
 export const list = (repo, dir) => readdir(path.join(PRET, repo, dir))
 
 function parseCsv(text) {

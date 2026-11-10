@@ -3,7 +3,9 @@
 // - src/data/trainer_parties.h  : 파티 (개체값 배율, 레벨, 종, 지닌 도구, 기술)
 // - src/data/text/trainer_class_names*.h : 클래스 이름
 // - data/maps/*/scripts.inc     : trainerbattle 로 등장 장소
-import { read, list, speciesId, moveId, itemId, defaultMoves, titleCase, mapLabel, ivFromScale, compact } from './common.mjs'
+// - data/maps/*/map.json, data/layouts/*/map.bin : 시야가 겹치는 트레이너 쌍 (에메랄드 2인 동시 시선 더블)
+import { read, readBin, list, speciesId, moveId, itemId, defaultMoves, titleCase, mapLabel, ivFromScale, compact } from './common.mjs'
+import { facingDirs, sightPairs, applyPairs, applyScriptedPair } from './sight.mjs'
 
 /** `#define X n` 또는 enum { X, Y, ... } 에서 prefix로 시작하는 상수 값 */
 function constants(src, prefix) {
@@ -32,6 +34,46 @@ function blocks(body) {
     else if (body[i] === '}' && --depth === 0) out.push(body.slice(start + 1, i))
   }
   return out
+}
+
+/**
+ * 에메랄드: 맵 오브젝트(data/maps/X/map.json)와 지형(data/layouts/X/map.bin)으로 시야가 겹치는 트레이너 쌍을 찾음
+ * map.bin 은 칸마다 u16 (하위 10비트 메타타일, 10~11비트 충돌, 12~15비트 높이)
+ */
+async function sightDoubles(repo, mapDirs, labelTrainer, byConst) {
+  const { layouts } = JSON.parse(await read(repo, 'data/layouts/layouts.json'))
+  const layoutOf = new Map(layouts.filter((l) => l.id).map((l) => [l.id, l]))
+  for (const dir of mapDirs) {
+    let map
+    try { map = JSON.parse(await read(repo, `data/maps/${dir}/map.json`)) } catch { continue }
+    const events = (map.object_events ?? []).filter((o) => o.x != null)
+    if (!events.some((o) => labelTrainer.has(o.script) && o.trainer_type !== 'TRAINER_TYPE_NONE')) continue
+    const layout = layoutOf.get(map.layout)
+    let passable
+    if (layout) {
+      const bin = await readBin(repo, layout.blockdata_filepath)
+      passable = (x, y, elevation) => {
+        if (x < 0 || y < 0 || x >= layout.width || y >= layout.height) return false
+        const v = bin.readUInt16LE((y * layout.width + x) * 2)
+        if ((v >> 10) & 3) return false
+        const h = v >> 12 // 높이 불일치 (IsElevationMismatchAt)
+        return !(elevation && h && h !== 15 && h !== elevation)
+      }
+    }
+    const objects = events.map((o) => {
+      const c = labelTrainer.get(o.script)
+      const sees = c && (o.trainer_type === 'TRAINER_TYPE_NORMAL' || o.trainer_type === 'TRAINER_TYPE_BURIED')
+      return {
+        trainer: sees ? c : undefined,
+        double: sees && !!byConst.get(c)?.double,
+        x: o.x, y: o.y, elevation: Number(o.elevation) || 0,
+        dirs: o.trainer_type === 'TRAINER_TYPE_BURIED' ? undefined : facingDirs(o.movement_type),
+        range: Number(o.trainer_sight_or_berry_tree_id) || 0,
+        blocks: !/ITEM_BALL|BERRY_TREE/.test(o.graphics_id),
+      }
+    })
+    applyPairs(byConst, sightPairs(objects, passable))
+  }
 }
 
 const field = (s, name) => s.match(new RegExp(`\\.${name}\\s*=\\s*([^,\\n]+)`))?.[1]?.trim()
@@ -101,19 +143,26 @@ export async function gen3(repo, versionGroup, files) {
   const mapDirs = new Set(await list(repo, 'data/maps'))
   const sources = [...mapDirs].map((d) => [d, `data/maps/${d}/scripts.inc`])
   for (const f of await list(repo, 'data/scripts')) if (f.endsWith('.inc')) sources.push([null, `data/scripts/${f}`])
+  const labelTrainer = new Map() // 스크립트 라벨 → 트레이너 상수 (맵 오브젝트의 script 와 연결)
   for (const [dir, file] of sources) {
     let src
     try { src = await read(repo, file) } catch { continue }
     let label = ''
+    const setAB = {} // 멀티배틀: TRAINER_BATTLE_SET_TRAINER_A/B 로 상대 둘을 정함 (에메랄드 바위섬 우주센터)
     for (const line of src.split('\n')) {
       let m
       if ((m = line.match(/^(\w+)::?/))) { label = m[1]; continue }
-      if (!(m = line.match(/trainerbattle\w*\s+(TRAINER_\w+)/))) continue
+      const ab = line.match(/trainerbattle\s+TRAINER_BATTLE_SET_TRAINER_([AB]),\s*(TRAINER_\w+)/)
+      if (ab) setAB[ab[1]] = ab[2]
+      if (!(m = line.match(/trainerbattle\w*\s+(?:TRAINER_BATTLE_\w+,\s*)?(TRAINER_\w+)/))) continue
+      if (!labelTrainer.has(label)) labelTrainer.set(label, m[1])
       const where = dir ?? [...mapDirs].find((d) => label.startsWith(d + '_EventScript'))
       const t = byConst.get(m[1])
       if (t && where && !t.locations.includes(mapLabel(where))) t.locations.push(mapLabel(where))
     }
+    if (setAB.A && setAB.B) applyScriptedPair(byConst, setAB.A, setAB.B)
   }
+  if (files.sightDoubles) await sightDoubles(repo, mapDirs, labelTrainer, byConst)
   // 파이어레드·리프그린 VS 시커 재대결표: 같은 행의 트레이너는 첫 대결과 같은 장소
   const vs = await read(repo, 'src/vs_seeker.c').catch(() => '')
   for (const row of vs.matchAll(/\{\s*\{([^}]*)\}/g)) {
