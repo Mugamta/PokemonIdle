@@ -322,7 +322,7 @@ describe('체력·PP 자동 사용에 합쳐진 자동 구매', () => {
     expect(game.perks).toEqual(['autoBuy:ball'])
     expect(game.money).toBe(10000)
     expect(Object.keys(game.autoBuy)).not.toContain('heal')
-    expect(Object.keys(game.autoBuyItem).sort()).toEqual(['ball', 'revive', 'status'])
+    expect(Object.keys(game.autoBuyItem).sort()).toEqual(['ball', 'status'])
   })
 
   test('PP: 가방에 없으면 가장 싼 아이템을 사서 씀', () => {
@@ -338,5 +338,87 @@ describe('체력·PP 자동 사용에 합쳐진 자동 구매', () => {
     expect(game.autoUseItem()).toBe(true)
     expect(game.money).toBe(10000 - 300) // 과사열매
     expect(m.pp.scratch).toBeGreaterThan(0)
+  })
+})
+
+describe('기절 회복 자동 사용·구매 (전투 중·전투 후)', () => {
+  const party3 = (game: ReturnType<typeof useGameStore>) => {
+    game.validate()
+    game.chooseStarter(starter())
+    game.party.push(starter('bulbasaur'), starter('squirtle'))
+  }
+
+  test('이전 저장 데이터: 전투 후 기능도 주고, 고른 품목을 살 아이템으로, 자동 구매는 환불', () => {
+    const game = useGameStore()
+    ;(game.perks as string[]).push('autoUse:revive', 'autoBuy:revive')
+    game.autoUse.revive = true
+    ;(game.autoBuyItem as Record<string, string>).revive = 'max-revive'
+    game.money = 0
+    game.validate()
+    expect(game.perks).toEqual(['autoUse:revive', 'autoUse:reviveAfter'])
+    expect(game.autoUse.reviveAfter).toBe(true)
+    expect(game.autoRevive.revive.item).toBe('max-revive')
+    expect(game.autoRevive.reviveAfter.item).toBe('max-revive')
+    expect(game.money).toBe(5000)
+  })
+
+  test('새 저장 데이터: 전투 중 기능만 사면 전투 후 기능은 생기지 않음', () => {
+    const game = useGameStore()
+    game.validate()
+    game.perks.push('autoUse:revive', 'autoUse:heal')
+    game.validate()
+    expect(game.perks).toEqual(['autoUse:revive', 'autoUse:heal'])
+  })
+
+  test('살 아이템으로 성스러운분은 고를 수 없음', () => {
+    const game = useGameStore()
+    game.setAutoRevive('revive', { item: 'sacred-ash' })
+    expect(game.autoRevive.revive.item).toBe('revive')
+    game.setAutoRevive('revive', { item: 'max-revive' })
+    expect(game.autoRevive.revive.item).toBe('max-revive')
+  })
+
+  test('전투 후: 기절한 파티 포켓몬마다 가진 것 먼저, 없으면 고른 아이템을 사서', () => {
+    const game = useGameStore()
+    party3(game)
+    game.party[1]!.hp = 0
+    game.party[2]!.hp = 0
+    game.items['max-revive'] = 1
+    game.perks.push('autoUse:reviveAfter')
+    game.autoUse.reviveAfter = true
+    game.money = 10000
+    expect(game.autoUseItem()).toBe(true)
+    expect(game.party[1]!.hp).not.toBe(0)
+    expect(game.party[2]!.hp).not.toBe(0)
+    expect(game.items['max-revive'] ?? 0).toBe(0)
+    expect(game.money).toBe(10000 - 2000) // 기절 회복 1개 구매
+  })
+
+  test('전투 후: 기절한 수가 기준 이상이면 성스러운분을 사서 모두 살림', () => {
+    const game = useGameStore()
+    party3(game)
+    game.party[1]!.hp = 0
+    game.party[2]!.hp = 0
+    game.perks.push('autoUse:reviveAfter')
+    game.autoUse.reviveAfter = true
+    game.setAutoRevive('reviveAfter', { ashAt: 2 })
+    game.money = 60000
+    expect(game.autoUseItem()).toBe(true)
+    expect(game.party.every((m) => m.hp !== 0)).toBe(true)
+    expect(game.money).toBe(10000)
+  })
+
+  test('기준 미만이면 성스러운분을 쓰지 않음', () => {
+    const game = useGameStore()
+    party3(game)
+    game.party[1]!.hp = 0
+    game.items['sacred-ash'] = 1
+    game.perks.push('autoUse:reviveAfter')
+    game.autoUse.reviveAfter = true
+    game.setAutoRevive('reviveAfter', { ashAt: 2 })
+    game.money = 10000
+    expect(game.autoUseItem()).toBe(true)
+    expect(game.items['sacred-ash']).toBe(1)
+    expect(game.money).toBe(8000)
   })
 })

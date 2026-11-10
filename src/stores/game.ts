@@ -98,6 +98,12 @@ import {
   AUTO_BUY_CATS,
   AUTO_BUY_PRICE,
   type AutoBuyCategory,
+  type AutoReviveKey,
+  type AutoReviveCfg,
+  DEFAULT_AUTO_REVIVE,
+  AUTO_ASH_STEPS,
+  SACRED_ASH,
+  isAutoReviveItem,
   EVERSTONE_ITEM,
   extraSlotPrice,
   heldKindPrice,
@@ -613,6 +619,8 @@ export const useGameStore = defineStore('game', {
     autoBuyItem: { ...DEFAULT_AUTO_BUY } as Record<AutoBuyCategory, string>,
     /** 체력 자동 회복 시작 기준·목표 (전투 중 / 전투 후, 최대 HP 대비 %) */
     autoHeal: structuredClone(DEFAULT_AUTO_HEAL) as Record<AutoHealKey, AutoHealRange>,
+    /** 기절 회복 자동 사용 설정 (전투 중 / 전투 후): 살 아이템, 성스러운분 기준 */
+    autoRevive: structuredClone(DEFAULT_AUTO_REVIVE) as Record<AutoReviveKey, AutoReviveCfg>,
     /** 현재 전투에서 지난 턴 수 (0 = 아직 기술을 쓰지 않음, 아이템 사용 시 턴 소모 판단) */
     battleTurns: 0,
     /** 자동 전투 */
@@ -814,7 +822,8 @@ export const useGameStore = defineStore('game', {
       for (const k of Object.keys(this.autoUse))
         if (!AUTO_USE_KEYS.includes(k as AutoUseKey)) delete (this.autoUse as Record<string, unknown>)[k]
       // 이전 저장 데이터 호환: 체력 회복 자동 사용이 전투 중·후 하나였던 시절 → 전투 후 기능도 줌, 기준을 둘 다에 적용
-      if (typeof st.autoHealAt === 'number') {
+      const legacyHeal = typeof st.autoHealAt === 'number'
+      if (legacyHeal) {
         const start = st.autoHealAt as number
         this.autoHeal = { heal: { start, target: 100 }, healAfter: { start, target: 100 } }
         if (this.perks.includes('autoUse:heal') && !this.perks.includes('autoUse:healAfter')) {
@@ -832,22 +841,27 @@ export const useGameStore = defineStore('game', {
       if (seen.size !== this.seen.length) this.seen = [...seen]
       if (!Number.isInteger(this.evBreaks) || this.evBreaks < 0) this.evBreaks = 0
       // 이전 저장 데이터 호환: 회복·기절 회복이 한 분류였던 시절 → 기절 회복 자동 사용·자동 구매를 따로 나눔
-      if (this.perks.includes('autoUse:heal') && !this.perks.includes('autoUse:revive')) {
+      if (legacyHeal && this.perks.includes('autoUse:heal') && !this.perks.includes('autoUse:revive')) {
         this.perks.push('autoUse:revive')
         this.autoUse.revive = !!this.autoUse.heal
       }
       const oldBuyItem = (this.autoBuyItem ?? {}) as Record<string, string>
       const oldBuyOn = this.autoBuy as Record<string, boolean | undefined>
       const oldHealBuy = shopItem(oldBuyItem.heal ?? '')
-      if (oldHealBuy?.category === 'revive') {
-        this.autoBuyItem.revive = oldHealBuy.id
-        if ((this.perks as string[]).includes('autoBuy:heal') && !this.perks.includes('autoBuy:revive')) {
-          this.perks.push('autoBuy:revive')
-          this.autoBuy.revive = !!oldBuyOn.heal
+      if (oldHealBuy?.category === 'revive') oldBuyItem.revive = oldHealBuy.id
+      // 이전 저장 데이터 호환: 기절 회복 자동 구매가 따로 있던 시절 (자동 구매 품목에 기절 회복이 있음)
+      // → 전투 후 기능도 주고, 고른 품목을 살 아이템으로
+      if ('revive' in oldBuyItem) {
+        const item = isAutoReviveItem(oldBuyItem.revive!) ? oldBuyItem.revive! : DEFAULT_AUTO_REVIVE.revive.item
+        this.autoRevive = { revive: { item, ashAt: 0 }, reviveAfter: { item, ashAt: 0 } }
+        if (this.perks.includes('autoUse:revive') && !this.perks.includes('autoUse:reviveAfter')) {
+          this.perks.push('autoUse:reviveAfter')
+          this.autoUse.reviveAfter = !!this.autoUse.revive
         }
       }
-      // 이전 저장 데이터 호환: 체력·PP 자동 구매가 따로 있던 시절 → 자동 사용에 합쳐졌으므로 산 값을 돌려줌
-      for (const old of ['autoBuy:heal', 'autoBuy:pp']) {
+      this.autoRevive = sanitizeAutoRevive(this.autoRevive)
+      // 이전 저장 데이터 호환: 체력·PP·기절 회복 자동 구매가 따로 있던 시절 → 자동 사용에 합쳐졌으므로 산 값을 돌려줌
+      for (const old of ['autoBuy:heal', 'autoBuy:pp', 'autoBuy:revive']) {
         const i = (this.perks as string[]).indexOf(old)
         if (i < 0) continue
         this.perks.splice(i, 1)
@@ -1597,6 +1611,8 @@ export const useGameStore = defineStore('game', {
       const m = this.party[0]
       const me = this.playerBattler()
       if (!m || !me || this.faint) return false
+      // 0. 전투 후: 기절한 파티 포켓몬 살리기
+      if (!this.enemy && this.autoReviveRun('reviveAfter', false)) return true
       const owned = (cat: ItemCategory) =>
         SHOP_ITEMS.filter((i) => i.category === cat && (this.items[i.id] ?? 0) > 0 && this.itemEffect(i))
       const on = (cat: AutoUseKey) => this.perks.includes(`autoUse:${cat}`) && !!this.autoUse[cat]
@@ -1656,6 +1672,35 @@ export const useGameStore = defineStore('game', {
         if (pick && this.useItem(pick.id)) return true
       }
       return false
+    },
+
+    /** 기절 회복 아이템을 target 에게 씀 (가방에 없으면 삼). 썼으면 true */
+    autoReviveUse(id: string, target: number): boolean {
+      const def = shopItem(id)
+      const effect = def && this.itemEffect(def, target)
+      if (!effect || (!(this.items[id] ?? 0) && !this.buyItem(id, 1))) return false
+      this.takeFromBag(id)
+      useBattleLogStore().push(`${josa(dexData.value?.items[id]?.ko ?? id, '을', '를')} 사용했다! ${effect()}`, 'info')
+      return true
+    },
+    /**
+     * 기절 회복 자동 사용 (편의성 기능, 턴 소모 없음). 기절한 파티 포켓몬이 기준 이상이면 성스러운분,
+     * 아니면 한 마리씩: 가방에 있는 것 중 가장 싼 것 (성스러운분 제외) → 고른 아이템을 사서.
+     * leadOnly = 싸우는 포켓몬만 살림 (전투 중). 하나라도 썼으면 true
+     */
+    autoReviveRun(key: AutoReviveKey, leadOnly: boolean): boolean {
+      if (!this.perks.includes(`autoUse:${key}`) || !this.autoUse[key]) return false
+      const fainted = this.party.flatMap((m, i) => (m.hp === 0 ? [i] : []))
+      if (!fainted.length || (leadOnly && fainted[0] !== 0)) return false
+      const cfg = this.autoRevive[key]
+      if (cfg.ashAt > 0 && fainted.length >= cfg.ashAt && this.autoReviveUse(SACRED_ASH, fainted[0]!)) return true
+      let used = false
+      for (const t of leadOnly ? [0] : fainted) {
+        const owned = SHOP_ITEMS.filter((i) => isAutoReviveItem(i.id) && (this.items[i.id] ?? 0) > 0).sort((a, b) => a.price - b.price)[0]
+        if (!this.autoReviveUse(owned?.id ?? cfg.item, t)) break
+        used = true
+      }
+      return used
     },
 
     /**
@@ -2587,19 +2632,11 @@ export const useGameStore = defineStore('game', {
       member.status = null
       member.sleep = undefined
       member.toxic = undefined
-      // 자동 사용(기절 회복): 기절 회복 아이템이 있으면 바로 사용
-      if (this.auto && this.perks.includes('autoUse:revive') && this.autoUse.revive) {
-        const revive = SHOP_ITEMS.filter((i) => i.revive != null && !i.party && (this.items[i.id] ?? 0) > 0).sort(
-          (a, b) => a.price - b.price,
-        )[0]
-        const effect = revive && this.itemEffect(revive, 0)
-        if (revive && effect) {
-          this.takeFromBag(revive.id)
-          log.push(`${josa(dexData.value?.items[revive.id]?.ko ?? revive.id, '을', '를')} 사용했다! ${effect()}`, 'info')
-          this.playerStages = {}
-          this.playerVol = {}
-          return
-        }
+      // 자동 사용(기절 회복): 바로 살림 (전투 중이면 싸우던 포켓몬만, 전투 밖이면 기절한 파티 전원)
+      if (this.auto && this.autoReviveRun(this.enemy ? 'revive' : 'reviveAfter', !!this.enemy) && member.hp !== 0) {
+        this.playerStages = {}
+        this.playerVol = {}
+        return
       }
       // 싸울 수 있는 파티 포켓몬이 있으면 교체
       const next = this.party.findIndex((m, i) => i > 0 && m.hp !== 0)
@@ -2695,6 +2732,10 @@ export const useGameStore = defineStore('game', {
       }
       this.autoHeal = sanitizeAutoHeal({ ...this.autoHeal, [key]: r })
     },
+    /** 기절 회복 자동 사용 설정 바꾸기 */
+    setAutoRevive(key: AutoReviveKey, cfg: Partial<AutoReviveCfg>) {
+      this.autoRevive = sanitizeAutoRevive({ ...this.autoRevive, [key]: { ...this.autoRevive[key], ...cfg } })
+    },
     setAutoUse(cat: AutoUseKey, on: boolean) {
       if (!this.perks.includes(`autoUse:${cat}`)) return
       this.autoUse[cat] = on
@@ -2711,6 +2752,16 @@ export const useGameStore = defineStore('game', {
 
 /** 전투 계산에 필요한 데이터가 모두 불러와졌는지 */
 /** 체력 자동 회복 기준 보정: 선택지 밖이면 기본값, 목표는 시작 기준 이상 */
+/** 기절 회복 자동 사용 설정 보정: 성스러운분·없는 아이템이면 기본값, 기준은 선택지 안 */
+function sanitizeAutoRevive(v: unknown): Record<AutoReviveKey, AutoReviveCfg> {
+  const src = (v && typeof v === 'object' ? v : {}) as Partial<Record<AutoReviveKey, Partial<AutoReviveCfg>>>
+  const fix = (k: AutoReviveKey): AutoReviveCfg => ({
+    item: isAutoReviveItem(src[k]?.item ?? '') ? src[k]!.item! : DEFAULT_AUTO_REVIVE[k].item,
+    ashAt: AUTO_ASH_STEPS.includes(src[k]?.ashAt as (typeof AUTO_ASH_STEPS)[number]) ? src[k]!.ashAt! : 0,
+  })
+  return { revive: fix('revive'), reviveAfter: fix('reviveAfter') }
+}
+
 function sanitizeAutoHeal(v: unknown): Record<AutoHealKey, AutoHealRange> {
   const ok = (n: unknown): n is number => AUTO_HEAL_STEPS.includes(n as number)
   const src = (v && typeof v === 'object' ? v : {}) as Partial<Record<AutoHealKey, Partial<AutoHealRange>>>

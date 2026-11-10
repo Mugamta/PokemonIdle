@@ -16,14 +16,16 @@ export const CATEGORY_LABELS: Record<ItemCategory, string> = {
 }
 /** 자동 사용·자동 구매 기능이 있는 분류 */
 export type AutoCategory = 'heal' | 'revive' | 'pp' | 'status' | 'ball'
-/** 자동 사용 기능: 분류별 + 체력 회복은 전투 중(heal)·전투 후(healAfter)로 나뉨 */
-export type AutoUseKey = AutoCategory | 'healAfter'
-export const AUTO_USE_KEYS: AutoUseKey[] = ['pp', 'heal', 'healAfter', 'revive', 'status', 'ball']
-/** 자동 구매 기능이 따로 있는 분류 (체력·PP 회복은 자동 사용이 필요할 때 사서 씀) */
-export type AutoBuyCategory = 'revive' | 'status' | 'ball'
-export const AUTO_BUY_CATS: AutoBuyCategory[] = ['revive', 'status', 'ball']
+/** 자동 사용 기능: 분류별 + 체력·기절 회복은 전투 중(heal·revive)·전투 후(healAfter·reviveAfter)로 나뉨 */
+export type AutoUseKey = AutoCategory | 'healAfter' | 'reviveAfter'
+export const AUTO_USE_KEYS: AutoUseKey[] = ['pp', 'heal', 'healAfter', 'revive', 'reviveAfter', 'status', 'ball']
+/** 자동 구매 기능이 따로 있는 분류 (체력·PP·기절 회복은 자동 사용이 필요할 때 사서 씀) */
+export type AutoBuyCategory = 'status' | 'ball'
+export const AUTO_BUY_CATS: AutoBuyCategory[] = ['status', 'ball']
 /** 체력 자동 회복 설정이 있는 기능 */
 export type AutoHealKey = 'heal' | 'healAfter'
+/** 기절 회복 자동 사용 설정이 있는 기능 */
+export type AutoReviveKey = 'revive' | 'reviveAfter'
 
 export interface ShopItem {
   /** 아이템 identifier (items.json 키, 이름·설명은 거기서) */
@@ -368,7 +370,6 @@ export function sellPrice(id: string): number {
 
 /** 자동 구매 기본 품목 */
 export const DEFAULT_AUTO_BUY: Record<AutoBuyCategory, string> = {
-  revive: 'revive',
   status: 'full-heal',
   ball: 'poke-ball',
 }
@@ -402,14 +403,17 @@ export interface Perk {
   desc: string
   price: number
 }
-/** 자동 구매 기능 가격 (체력·PP 자동 구매가 따로 있던 시절에 산 것은 이 값을 돌려줌) */
+/** 자동 구매 기능 가격 (체력·PP·기절 회복 자동 구매가 따로 있던 시절에 산 것은 이 값을 돌려줌) */
 export const AUTO_BUY_PRICE = 5000
 const AUTO_USE_DESC: Record<AutoUseKey, string> = {
   pp: '자동 전투 중 PP가 0인 기술이 생기면 PP 회복 아이템을 씁니다. 가방에 없으면 돈이 있을 때 가장 싼 아이템을 사서 씁니다. (0인 기술이 2개 이상이면 전체 회복 아이템)',
   heal: '자동 전투 중 HP가 시작 기준 아래로 떨어지면 목표 HP를 한 개로 가장 잘 채우는 아이템을 씁니다. 가방에 없으면 돈이 있을 때 사서 씁니다. (턴 소모, 친밀도가 떨어지는 아이템은 사지 않음)',
   healAfter:
     '자동 전투 중 전투가 끝났을 때 HP가 시작 기준 아래면 돈이 가장 적게 드는 아이템 조합으로 목표 HP까지 채웁니다. 가방에 없으면 돈이 있을 때 사서 씁니다. (턴 소모 없음, 친밀도가 떨어지는 아이템은 사지 않음)',
-  revive: '자동 전투 중 싸우던 포켓몬이 기절하면 기절 회복 아이템을 씁니다. (성스러운분은 쓰지 않음)',
+  revive:
+    '자동 전투 중 싸우던 포켓몬이 기절하면 바로 기절 회복 아이템을 씁니다. 가방에 있는 것 중 가장 싼 것을 쓰고, 없으면 고른 아이템을 사서 씁니다. 기절한 파티 포켓몬이 기준 이상이면 성스러운분으로 모두 살립니다.',
+  reviveAfter:
+    '자동 전투 중 전투가 끝났을 때 기절한 파티 포켓몬을 모두 살립니다. 가방에 있는 것 중 가장 싼 것을 쓰고, 없으면 고른 아이템을 사서 씁니다. 기절한 포켓몬이 기준 이상이면 성스러운분으로 모두 살립니다.',
   status: '자동 전투 중 상태이상에 걸리면 회복 아이템을 씁니다.',
   ball: '자동 전투 중 도감에 없는 야생 포켓몬을 만나면 몬스터볼을 던집니다. (가장 잡기 쉬운 볼부터)',
 }
@@ -417,11 +421,12 @@ const AUTO_USE_LABELS: Record<AutoUseKey, string> = {
   pp: 'PP 회복 아이템 자동 사용·구매',
   heal: '체력 회복 아이템 자동 사용·구매 (전투 중)',
   healAfter: '체력 회복 아이템 자동 사용·구매 (전투 후)',
-  revive: '기절 회복 아이템 자동 사용',
+  revive: '기절 회복 아이템 자동 사용·구매 (전투 중)',
+  reviveAfter: '기절 회복 아이템 자동 사용·구매 (전투 후)',
   status: '상태이상 회복 아이템 자동 사용',
   ball: '몬스터볼 자동 사용 (자동 포획)',
 }
-const AUTO_BUY_LABELS: Record<AutoBuyCategory, string> = { revive: '기절 회복', status: '상태이상 회복', ball: '몬스터볼' }
+const AUTO_BUY_LABELS: Record<AutoBuyCategory, string> = { status: '상태이상 회복', ball: '몬스터볼' }
 export const PERKS: Perk[] = [
   ...AUTO_USE_KEYS.map((c) => ({
     id: `autoUse:${c}` as ItemPerkId,
@@ -623,6 +628,25 @@ export interface AutoHealRange {
 export const DEFAULT_AUTO_HEAL: Record<AutoHealKey, AutoHealRange> = {
   heal: { start: 50, target: 100 },
   healAfter: { start: 50, target: 100 },
+}
+
+/** 파티 전원을 살리는 기절 회복 아이템 (자동 사용은 따로 정한 기준일 때만) */
+export const SACRED_ASH = 'sacred-ash'
+/** 기절 회복 자동 사용 설정: item = 가방에 없을 때 살 아이템, ashAt = 기절한 포켓몬이 이만큼 이상이면 성스러운분 (0 = 안 씀) */
+export interface AutoReviveCfg {
+  item: string
+  ashAt: number
+}
+/** 성스러운분 기준 선택지 (기절한 포켓몬 수, 0 = 안 씀) */
+export const AUTO_ASH_STEPS = [0, 2, 3, 4, 5, 6] as const
+export const DEFAULT_AUTO_REVIVE: Record<AutoReviveKey, AutoReviveCfg> = {
+  revive: { item: 'revive', ashAt: 0 },
+  reviveAfter: { item: 'revive', ashAt: 0 },
+}
+/** 기절 회복 자동 사용으로 살 수 있는 아이템 (성스러운분 제외) */
+export const isAutoReviveItem = (id: string) => {
+  const i = SHOP_ITEMS.find((x) => x.id === id)
+  return !!i && i.category === 'revive' && !i.party
 }
 
 /** 체력 회복 아이템 자동 사용 후보: 가진 개수와 살 수 있는지 (가진 것은 돈이 들지 않음) */

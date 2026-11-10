@@ -157,7 +157,7 @@ const pendingList = computed(() => (member.value?.pending ?? []).map((id) => ({ 
 const heartScales = computed(() => game.items[HEART_SCALE] ?? 0)
 /** 아이템 분류 제목 옆에 보일 자동 사용 토글 (체력 회복은 전투 중·전투 후) */
 const autoKeysOf = (cat: string): AutoUseKey[] =>
-  cat === 'battle' ? [] : cat === 'heal' ? ['heal', 'healAfter'] : [cat as AutoUseKey]
+  cat === 'battle' ? [] : cat === 'heal' ? ['heal', 'healAfter'] : cat === 'revive' ? ['revive', 'reviveAfter'] : [cat as AutoUseKey]
 
 function clickSlot(i: number) {
   const s = moveSlots.value[i]
@@ -775,7 +775,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                   :checked="!!game.autoUse[k]"
                   @change="game.setAutoUse(k, ($event.target as HTMLInputElement).checked)"
                 />
-                {{ k === 'heal' ? '자동 사용 (전투 중)' : k === 'healAfter' ? '자동 사용 (전투 후)' : '자동 사용' }}
+                {{ k === 'heal' || k === 'revive' ? '자동 사용 (전투 중)' : k === 'healAfter' || k === 'reviveAfter' ? '자동 사용 (전투 후)' : '자동 사용' }}
               </label>
             </template>
           </h4>

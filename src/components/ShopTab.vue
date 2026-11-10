@@ -14,6 +14,10 @@ import {
   SPEED_PERKS,
   STAT_VIEW_PERKS,
   AUTO_HEAL_STEPS,
+  AUTO_ASH_STEPS,
+  SACRED_ASH,
+  isAutoReviveItem,
+  type AutoReviveKey,
   CATEGORY_LABELS,
   EV_BREAK_PERK,
   EV_STAT_MAX,
@@ -266,6 +270,10 @@ function togglePerk(p: Perk, on: boolean) {
   if (kind === 'autoUse') game.setAutoUse(cat as AutoUseKey, on)
   else game.setAutoBuy(cat, on)
 }
+/** 기절 회복 자동 사용 설정이 있는 기능이면 그 키 */
+const reviveKeyOf = (p: Perk): AutoReviveKey | null =>
+  p.id === 'autoUse:revive' ? 'revive' : p.id === 'autoUse:reviveAfter' ? 'reviveAfter' : null
+const reviveItems = SHOP_ITEMS.filter((i) => isAutoReviveItem(i.id))
 /** 체력 자동 회복 기준 설정이 있는 기능이면 그 키 */
 const healKeyOf = (p: Perk): AutoHealKey | null =>
   p.id === 'autoUse:heal' ? 'heal' : p.id === 'autoUse:healAfter' ? 'healAfter' : null
@@ -763,6 +771,26 @@ const slotRows = computed(() =>
             </select>
             까지 회복
           </div>
+          <template v-if="game.hasPerk(p.id) && reviveKeyOf(p)">
+            <div class="opt">
+              가방에 없으면 살 아이템
+              <select
+                :value="game.autoRevive[reviveKeyOf(p)!].item"
+                @change="game.setAutoRevive(reviveKeyOf(p)!, { item: ($event.target as HTMLSelectElement).value })"
+              >
+                <option v-for="it in reviveItems" :key="it.id" :value="it.id">{{ itemName(it.id) }} ({{ won(it.price) }})</option>
+              </select>
+            </div>
+            <div class="opt">
+              {{ itemName(SACRED_ASH) }}
+              <select
+                :value="game.autoRevive[reviveKeyOf(p)!].ashAt"
+                @change="game.setAutoRevive(reviveKeyOf(p)!, { ashAt: Number(($event.target as HTMLSelectElement).value) })"
+              >
+                <option v-for="n in AUTO_ASH_STEPS" :key="n" :value="n">{{ n ? `기절 ${n}마리 이상이면 사용·구매` : '쓰지 않음' }}</option>
+              </select>
+            </div>
+          </template>
         </li>
       </ul>
     </section>
