@@ -811,6 +811,46 @@ export const useGameStore = defineStore('game', {
       return (id: string): 'full' | 'sprite' | 'hidden' =>
         caught.has(id) || reveal ? 'full' : seen.has(id) ? 'sprite' : 'hidden'
     },
+    /**
+     * 도감 완성: 도감 기록 + 파티 포켓몬으로 성별(성비상 가능한 것 전부)·성격 전부·특성 전부(숨겨진 특성 포함)·
+     * 모든 능력치의 개체값 0~31·친밀도 0~최대를 모두 가지고 있음
+     */
+    dexComplete: (s) => (id: string): boolean => {
+      const sp = speciesOf(id)
+      if (!sp) return false
+      const r = s.dexRecords[id]
+      const members = s.party.filter((m) => m.species === id)
+      if (!r && !members.length) return false
+      const normalCount = new Set(sp.abilities.filter((a) => !a[1]).map((a) => a[0])).size
+      const genders = new Set<Gender>(r?.genders ?? [])
+      const natures = new Set(r?.natures ?? [])
+      const abilities = new Set(r?.abilities ?? [])
+      const ivMin = Array.from({ length: 6 }, (_, i) => r?.ivMin[i] ?? Infinity)
+      const ivMax = Array.from({ length: 6 }, (_, i) => r?.ivMax[i] ?? -Infinity)
+      let fMin = r?.friendshipMin ?? Infinity
+      let fMax = r?.friendshipMax ?? -Infinity
+      for (const m of members) {
+        if (m.gender) genders.add(m.gender)
+        natures.add(m.nature)
+        abilities.add(m.hiddenAbility ? HIDDEN_ABILITY_SLOT : normalCount ? (m.abilitySlot ?? 0) % normalCount : (m.abilitySlot ?? 0))
+        for (let i = 0; i < 6; i++) {
+          const iv = m.ivs?.[i] ?? 0
+          ivMin[i] = Math.min(ivMin[i]!, iv)
+          ivMax[i] = Math.max(ivMax[i]!, iv)
+        }
+        const f = friendshipOf(m)
+        fMin = Math.min(fMin, f)
+        fMax = Math.max(fMax, f)
+      }
+      const rate = genderRate(id)
+      const needGenders: Gender[] = rate == null || rate < 0 ? [] : rate === 0 ? ['M'] : rate === 8 ? ['F'] : ['M', 'F']
+      if (!needGenders.every((g) => genders.has(g))) return false
+      if (!Object.keys(NATURES).every((n) => natures.has(n))) return false
+      for (let i = 0; i < normalCount; i++) if (!abilities.has(i)) return false
+      if (sp.abilities.some((a) => a[1]) && !abilities.has(HIDDEN_ABILITY_SLOT)) return false
+      if (!ivMin.every((v) => v <= 0) || !ivMax.every((v) => v >= 31)) return false
+      return fMin <= 0 && fMax >= FRIENDSHIP_MAX
+    },
     /** 능력치 하나의 노력치 한계 */
     evStatCap: (s) => evStatCap(s.perks.includes('evBreak:1') ? s.evBreaks : 0),
     /** 노력치 합계 한계 (한계 돌파 1이면 없음) */

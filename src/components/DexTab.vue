@@ -17,12 +17,13 @@ const scrollTop = ref(0)
 const listEl = ref<HTMLElement>()
 /** 포켓몬 도감 / 도구 도감 */
 const mode = ref<'pokemon' | 'items'>('pokemon')
-/** 목록 필터: 전체 / 조우(포획 포함) / 포획 */
-const filter = ref<'all' | 'seen' | 'caught'>('all')
+/** 목록 필터: 전체 / 조우(포획 포함) / 포획 / 완성 */
+const filter = ref<'all' | 'seen' | 'caught' | 'complete'>('all')
 const FILTERS = [
   { key: 'all', label: '전체' },
   { key: 'seen', label: '조우' },
   { key: 'caught', label: '포획' },
+  { key: 'complete', label: '완성' },
 ] as const
 
 /** 전국도감은 두 번째 지방에 도달한 뒤에 받음 */
@@ -76,6 +77,7 @@ const filtered = computed(() => {
   let list = scoped.value
   if (filter.value === 'seen') list = list.filter(({ p }) => seenSet.value.has(p.id))
   else if (filter.value === 'caught') list = list.filter(({ p }) => caughtSet.value.has(p.id))
+  else if (filter.value === 'complete') list = list.filter(({ p }) => completeSet.value.has(p.id))
   const q = query.value.trim()
   if (!q) return list
   const n = Number(q)
@@ -86,6 +88,9 @@ const filtered = computed(() => {
 })
 const seenCount = computed(() => scoped.value.filter(({ p }) => seenSet.value.has(p.id)).length)
 const caughtCount = computed(() => scoped.value.filter(({ p }) => caughtSet.value.has(p.id)).length)
+/** 도감 완성 포켓몬 (성별·성격·특성·개체값·친밀도의 모든 범위를 가짐) */
+const completeSet = computed(() => new Set(game.caught.filter((id) => game.dexComplete(id))))
+const completeCount = computed(() => scoped.value.filter(({ p }) => completeSet.value.has(p.id)).length)
 const pad = computed(() => (activeScope.value === 'national' ? 4 : 3))
 
 type Row = { p: DexEntry; no: number }
@@ -166,7 +171,7 @@ async function back() {
         </select>
       </div>
       <input v-model="query" class="search" type="search" placeholder="이름 또는 번호 검색" />
-      <span class="count">조우 {{ seenCount }} · 포획 {{ caughtCount }} / {{ scoped.length }}</span>
+      <span class="count">조우 {{ seenCount }} · 포획 {{ caughtCount }} · 완성 {{ completeCount }} / {{ scoped.length }}</span>
       <div class="filters">
         <button
           v-for="f in FILTERS"
@@ -213,7 +218,7 @@ async function back() {
       </li>
     </ul>
     <p v-if="!filtered.length" class="msg">
-      {{ query.trim() ? '검색 결과가 없습니다.' : filter === 'caught' ? '아직 포획한 포켓몬이 없습니다.' : '아직 조우한 포켓몬이 없습니다.' }}
+      {{ query.trim() ? '검색 결과가 없습니다.' : filter === 'caught' ? '아직 포획한 포켓몬이 없습니다.' : filter === 'complete' ? '아직 완성한 포켓몬이 없습니다.' : '아직 조우한 포켓몬이 없습니다.' }}
     </p>
     </template>
   </div>
