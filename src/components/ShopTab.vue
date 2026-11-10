@@ -796,8 +796,8 @@ const slotRows = computed(() =>
                     <span class="price">{{ won(it.price) }}</span>
                   </span>
                   <span class="line muted">
-                    <span class="grow">{{ BALL_NOTES[it.id] }}</span>
-                    <span>{{ ballNowText(it.id) }}</span>
+                    <span class="grow clip" :title="BALL_NOTES[it.id]">{{ BALL_NOTES[it.id] }}</span>
+                    <span class="now">{{ ballNowText(it.id) }}</span>
                   </span>
                 </span>
               </li>
@@ -1124,6 +1124,15 @@ const slotRows = computed(() =>
 .ball-cands .line {
   display: flex;
   gap: 6px;
+  white-space: nowrap;
+}
+.ball-cands .clip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ball-cands .now {
+  flex-shrink: 0;
 }
 .ball-cands li > .grow {
   min-width: 0;
