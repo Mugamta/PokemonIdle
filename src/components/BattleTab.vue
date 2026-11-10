@@ -25,6 +25,7 @@ import { josa } from '../core/battle'
 import { findStage } from '../data/stages'
 import { useStageViewStore } from '../stores/stageView'
 import BattleControls from './BattleControls.vue'
+import HScroll from './HScroll.vue'
 import StageDetail from './StageDetail.vue'
 import StageMap from './StageMap.vue'
 import ItemIcon from './ItemIcon.vue'
@@ -309,7 +310,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
       <template>
         <p v-if="!game.party.length" class="msg">파티에 포켓몬이 없습니다.</p>
         <template v-else>
-          <div class="members">
+          <HScroll class="members" :active="memberIndex">
             <button
               v-for="(m, i) in game.party"
               :key="i"
@@ -322,7 +323,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
               <ItemIcon v-for="id in Object.keys(heldOf(m))" :key="id" :id="id" :size="16" />
               <span v-if="m.pending?.length" class="pending-badge" :title="`배우려는 기술 ${m.pending.length}개`">새 기술 {{ m.pending.length }}</span>
             </button>
-          </div>
+          </HScroll>
 
           <section v-if="sub === 'stats' && stats" class="card">
             <div class="card-head">
@@ -813,9 +814,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 }
 
 .members {
-  display: flex;
   gap: 6px;
-  overflow-x: auto;
   margin-bottom: 10px;
 }
 

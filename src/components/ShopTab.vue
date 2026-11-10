@@ -52,6 +52,7 @@ import { BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, HELD_GROUP_LABELS, HELD_I
 import ItemIcon from './ItemIcon.vue'
 import QuickUseDialog from './QuickUseDialog.vue'
 import ScrollTabs from './ScrollTabs.vue'
+import HScroll from './HScroll.vue'
 import ShopRow from './ShopRow.vue'
 import { afterBuy } from './quickUse'
 import {
@@ -340,11 +341,11 @@ const slotRows = computed(() =>
   <div class="shop">
     <QuickUseDialog />
     <div class="tabs-head">
-      <nav class="sub-tabs">
+      <HScroll class="sub-tabs" :active="curGroup.id">
         <button v-for="g in groups" :key="g.id" type="button" :class="{ active: curGroup.id === g.id }" @click="group = g.id">
           {{ g.label }}
         </button>
-      </nav>
+      </HScroll>
       <!-- 상단 탭 안의 작은 탭 (분류) -->
       <ScrollTabs v-if="miniTabs" :items="miniTabs" :model-value="curEntry.key" @update:model-value="picked[curGroup.id] = $event" />
     </div>
@@ -902,17 +903,13 @@ const slotRows = computed(() =>
 
 
 .sub-tabs {
-  display: flex;
-  overflow-x: auto;
-  scrollbar-width: none;
   background: #1e1e24;
   border-bottom: 1px solid #3a3a44;
 }
 
 .sub-tabs button {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 0 6px;
+  flex: 1 0 auto;
+  padding: 0 10px;
   white-space: nowrap;
   height: 42px;
   border: none;

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 전투 탭 > 배틀: 특수 기능 버튼, 기술 버튼(수동 전투)과 전투 로그
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import HScroll from './HScroll.vue'
 import { moveData, typeEffect, type MoveData } from '../core/battle'
 import { GIMMICK_INFO, GIMMICKS, maxMove, maxMoveFx, zEligible, zMove, type Gimmick } from '../core/gimmicks'
 import { dexData, TYPE_COLORS } from '../data/dex'
@@ -226,7 +227,7 @@ watch(
     <p class="status">{{ status }}</p>
 
     <div class="log-wrap">
-      <div class="log-tabs">
+      <HScroll class="log-tabs" :active="log.current?.id">
         <button
           v-for="b in hideLog ? [] : log.battles"
           :key="b.id"
@@ -238,7 +239,7 @@ watch(
         >
           {{ b.label }}
         </button>
-      </div>
+      </HScroll>
       <div ref="logEl" class="log">
         <p v-if="hideLog" class="empty">자동 전투 중에는 로그를 표시하지 않습니다. 자동 전투를 끄면 최근 전투 기록을 확인할 수 있습니다.</p>
         <p v-else-if="!log.current?.lines.length" class="empty">전투 기록이 여기에 표시됩니다.</p>
@@ -460,16 +461,10 @@ watch(
 
 /* 전투 기록이 없어도 탭 줄 높이를 유지 */
 .log-tabs {
+  --hs-arrow-size: 16px;
   flex: none;
-  display: flex;
   height: 20px;
   gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.log-tabs::-webkit-scrollbar {
-  display: none;
 }
 
 .log-tab {

@@ -35,6 +35,7 @@ import { maxHpOf, ro } from '../core/battle'
 import { BALL_NOTES, catchChance, isMachine, isRecord } from '../data/items'
 import ItemIcon from './ItemIcon.vue'
 import ScrollTabs from './ScrollTabs.vue'
+import HScroll from './HScroll.vue'
 
 const game = useGameStore()
 onMounted(() => loadDex().catch(() => {}))
@@ -313,7 +314,7 @@ function sell(id: string, n: number) {
       <template v-if="needsTarget">
         <p v-if="cat === 'use'" class="turn-note">{{ turnNote }}</p>
         <p v-if="!game.party.length" class="msg">파티에 포켓몬이 없습니다.</p>
-        <div v-else class="members">
+        <HScroll v-else class="members" :active="itemTarget">
           <button
             v-for="(m, i) in game.party"
             :key="i"
@@ -324,7 +325,7 @@ function sell(id: string, n: number) {
             <span v-if="i === 0" class="lead-mark" title="싸우는 포켓몬">★</span>
             {{ species(m.species)?.ko ?? m.species }} <small>{{ hpText(m) }}</small>
           </button>
-        </div>
+        </HScroll>
         <p v-if="targetMember && cat === 'train'" class="item-text train-info">{{ trainInfo }}</p>
       </template>
 
@@ -675,9 +676,8 @@ function sell(id: string, n: number) {
 }
 
 .members {
-  display: flex;
+  --hs-bg: #2a2a33;
   gap: 6px;
-  overflow-x: auto;
   margin-bottom: 10px;
 }
 
