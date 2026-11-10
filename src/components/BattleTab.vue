@@ -1566,7 +1566,6 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 .formula {
   margin: 8px 0 0;
   font-size: 12px;
-  overflow-x: auto;
 }
 .formula p {
   margin: 0 0 4px;
@@ -1579,7 +1578,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 }
 .ftable th,
 .ftable td {
-  padding: 2px 3px;
+  padding: 2px 2px;
   text-align: right;
 }
 .ftable th {
@@ -1605,6 +1604,12 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 .ftable tr.fhead td {
   color: #8a8a96;
   font-weight: 400;
+  vertical-align: bottom;
+}
+/* 설명 줄은 공백에서 줄바꿈해 표가 패널 폭을 넘지 않게 (가로 스크롤 없음) */
+.ftable tr.fhead td {
+  white-space: normal;
+  word-break: keep-all;
 }
 .ftable tr.fhead:last-child th,
 .ftable tr.fhead:last-child td {
