@@ -81,8 +81,7 @@ const GROUPS: { id: string; label: string; kind: 'item' | 'upgrade'; subs: Sub[]
   { id: 'evo', label: '진화·변신', kind: 'item', subs: ['evo', 'gimmick'] },
   { id: 'train', label: '육성', kind: 'item', subs: ['train'] },
   { id: 'sell', label: '판매', kind: 'item', subs: ['sell'] },
-  { id: 'growth', label: '육성 강화', kind: 'upgrade', subs: ['growth'] },
-  { id: 'perks', label: '편의성', kind: 'upgrade', subs: ['perks'] },
+  { id: 'boost', label: '육성·편의성', kind: 'upgrade', subs: ['growth', 'perks'] },
   { id: 'slots', label: '칸 추가', kind: 'upgrade', subs: ['slots', 'heldSlots'] },
 ]
 const game = useGameStore()
