@@ -4,6 +4,7 @@ import { battler, loadAllData } from './helpers'
 import {
   chooseMove,
   damageOf,
+  endOfTurnBenefits,
   expAtLevel,
   expectedDamage,
   expGain,
@@ -330,4 +331,28 @@ test('화염볼: 얼어 있어도 녹이고 공격', () => {
   } finally {
     vi.restoreAllMocks()
   }
+})
+
+describe('판정 강화: 전투가 끝난 턴의 이로운 턴 종료 효과', () => {
+  test('먹다남은음식은 회복하고, 화상 데미지는 받지 않음', () => {
+    const b = battler('snorlax', 50, ['tackle'], { held: { leftovers: 1 }, status: 'brn' })
+    const max = maxHpOf(b)
+    b.hp = 100
+    const lines = endOfTurnBenefits(b, full(battler('pikachu', 50, ['tackle'])))
+    expect(b.hp).toBe(100 + Math.floor(max / 16))
+    expect(b.status).toBe('brn')
+    expect(lines.length).toBe(1)
+  })
+  test('독 상태의 일반 포켓몬은 아무 일도 없음', () => {
+    const b = battler('snorlax', 50, ['tackle'], { status: 'psn' })
+    b.hp = 100
+    expect(endOfTurnBenefits(b, full(battler('pikachu', 50, ['tackle'])))).toEqual([])
+    expect(b.hp).toBe(100)
+  })
+  test('독 타입이 아니면 검은오물로 회복하지 않음 (데미지도 없음)', () => {
+    const b = battler('snorlax', 50, ['tackle'], { held: { 'black-sludge': 1 } })
+    b.hp = 100
+    endOfTurnBenefits(b, full(battler('pikachu', 50, ['tackle'])))
+    expect(b.hp).toBe(100)
+  })
 })

@@ -7,6 +7,7 @@ import {
   AUTO_CENTER_PERK,
   BOSS_INTRO_PERK,
   DEX_REVEAL_PERK,
+  END_HEAL_PERK,
   AI_PERKS,
   CHAIN_PERKS,
   DISPLAY_PERKS,
@@ -62,7 +63,7 @@ import { GIMMICK_INFO, TERA_SHARD_COST, teraShardType, Z_CRYSTALS, type Gimmick 
 import { regionOfGimmick } from '../data/stages'
 import { josa } from '../core/battle'
 
-type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'perks' | 'slots' | 'heldSlots' | 'sell'
+type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'judge' | 'perks' | 'slots' | 'heldSlots' | 'sell'
 /** 하단 탭: 도구상점(item) / 강화상점(upgrade) */
 const props = defineProps<{ kind: 'item' | 'upgrade'; wide?: boolean }>()
 const SUB_LABELS: Record<Sub, string> = {
@@ -75,6 +76,7 @@ const SUB_LABELS: Record<Sub, string> = {
   train: '육성',
   gimmick: '특수 기능',
   growth: '육성 강화',
+  judge: '판정 강화',
   perks: '편의성',
   slots: '기술칸',
   heldSlots: '도구칸',
@@ -89,6 +91,7 @@ const GROUPS: { id: string; label: string; kind: 'item' | 'upgrade'; subs: Sub[]
   { id: 'train', label: '육성', kind: 'item', subs: ['train'] },
   { id: 'sell', label: '판매', kind: 'item', subs: ['sell'] },
   { id: 'growth', label: '육성 강화', kind: 'upgrade', subs: ['growth'] },
+  { id: 'judge', label: '판정 강화', kind: 'upgrade', subs: ['judge'] },
   { id: 'perks', label: '편의성', kind: 'upgrade', subs: ['perks'] },
   { id: 'slots', label: '칸 추가', kind: 'upgrade', subs: ['slots', 'heldSlots'] },
 ]
@@ -516,6 +519,24 @@ const slotRows = computed(() =>
         </ul>
       </section>
     </template>
+    <!-- 판정 강화 -->
+    <section v-else-if="sub === 'judge'" class="card">
+      <ul class="rows">
+        <li>
+          <div class="main">
+            <span class="grow"><strong>{{ END_HEAL_PERK.label }}</strong></span>
+            <span v-if="game.hasPerk(END_HEAL_PERK.id)" class="owned">구매함</span>
+            <template v-else>
+              <span class="price">{{ won(END_HEAL_PERK.price) }}</span>
+              <button type="button" class="buy" :disabled="game.money < END_HEAL_PERK.price" @click="game.buyPerk(END_HEAL_PERK.id)">
+                구매
+              </button>
+            </template>
+          </div>
+          <p class="desc">{{ END_HEAL_PERK.desc }}</p>
+        </li>
+      </ul>
+    </section>
     <!-- 육성 아이템 -->
     <template v-else-if="sub === 'train'">
       <section v-for="g in trainGroups.filter((x) => x.g === cur)" :key="g.g" class="card">

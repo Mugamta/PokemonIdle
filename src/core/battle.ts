@@ -1563,6 +1563,31 @@ function entryEffect(b: Battler, foe: Battler, log: string[]) {
     }
 }
 
+/** 상대를 쓰러뜨려 전투가 끝난 턴의 턴 종료 효과 중 이로운 것만 (판정 강화) */
+export function endOfTurnBenefits(b: Battler, foe: Battler): string[] {
+  const log: string[] = []
+  if (b.hp <= 0) return log
+  const max = maxHpOf(b)
+  const a = ab(b, foe)
+  if (a === 'poison-heal' && (b.status === 'psn' || b.status === 'tox') && b.hp < max) {
+    announce(b, log)
+    heal(b, Math.floor(max / 8))
+    log.push(`${josa(b.name, '은', '는')} 독으로 체력을 회복했다!`)
+  }
+  for (const item of itemsOf(b, foe)) {
+    if (item !== 'leftovers' && !(item === 'black-sludge' && typesOf(b).includes('poison'))) continue
+    if (b.hp >= max) break
+    heal(b, Math.floor((max * b.held![item]!) / 16))
+    log.push(`${josa(b.name, '은', '는')} ${ro(itemKo(item))} 조금 회복했다!`)
+  }
+  if (a === 'shed-skin' && b.status && Math.random() < 1 / 3) {
+    announce(b, log)
+    log.push(`${b.name}의 ${STATUS_LABELS[b.status]} 상태가 나았다!`)
+    cureStatus(b)
+  }
+  return log
+}
+
 /** 전투가 끝났을 때 (이긴 쪽). 자연회복·재생력 */
 export function onBattleEnd(b: Battler, foe: Battler): string[] {
   const log: string[] = []

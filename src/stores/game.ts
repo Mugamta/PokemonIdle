@@ -5,6 +5,7 @@ import {
   cureStatus,
   DIFFICULTY_AI,
   onBattleEnd,
+  endOfTurnBenefits,
   onEntry,
   expAtLevel,
   expectedDamage,
@@ -71,6 +72,7 @@ import {
   type AutoCenterPriority,
   BOSS_INTRO_PERK,
   DEX_REVEAL_PERK,
+  END_HEAL_PERK,
   BOTTLE_CAP_LEVEL,
   CHAIN_PERKS,
   EV_TOTAL_MAX,
@@ -1990,7 +1992,7 @@ export const useGameStore = defineStore('game', {
     },
     buyPerk(id: PerkId): boolean {
       const chain = CHAIN_PERKS.find((p) => p.id === id)
-      const perk = chain ?? [...PERKS, BOSS_INTRO_PERK, AUTO_CENTER_PERK, DEX_REVEAL_PERK].find((p) => p.id === id)
+      const perk = chain ?? [...PERKS, BOSS_INTRO_PERK, AUTO_CENTER_PERK, DEX_REVEAL_PERK, END_HEAL_PERK].find((p) => p.id === id)
       if (!perk || this.perks.includes(id) || this.money < perk.price) return false
       if (chain?.requires && !this.perks.includes(chain.requires)) return false
       this.money -= perk.price
@@ -2004,7 +2006,7 @@ export const useGameStore = defineStore('game', {
         this.autoCenter = true
         return true
       }
-      if (id === 'dex:reveal') return true
+      if (id === 'dex:reveal' || id === END_HEAL_PERK.id) return true
       // 사면 바로 켬
       const [kind, cat] = id.split(':') as ['autoUse' | 'autoBuy', AutoCategory]
       this[kind][cat] = true
@@ -2104,11 +2106,11 @@ export const useGameStore = defineStore('game', {
       this.countDefeat()
       this.addFriendship(member, enemy.boss ? 3 : 1)
 
-      // 전투 종료 시 특성 (자연회복·재생력)
+      // 전투 종료 시 특성 (자연회복·재생력). 판정 강화: 그 전에 이로운 턴 종료 효과
       const me = this.playerBattler()
       const foe = this.enemyBattler()
       if (me && foe) {
-        const lines = onBattleEnd(me, foe)
+        const lines = [...(this.perks.includes('judge:endHeal') ? endOfTurnBenefits(me, foe) : []), ...onBattleEnd(me, foe)]
         for (const line of lines) log.push(line)
         if (lines.length) {
           member.hp = me.hp >= maxHpOf(me) ? null : me.hp

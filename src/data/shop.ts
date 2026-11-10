@@ -388,7 +388,9 @@ export type ChainPerkId = AiPerkId | DisplayPerkId | SpeedPerkId | StatViewPerkI
 /** 보스 등장 연출 생략 (켜고 끌 수 있음) */
 export type ToggleUtilPerkId = 'bossIntro:skip' | 'autoCenter:pp'
 export type DexPerkId = 'dex:reveal'
-export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId | DexPerkId
+/** 판정 강화: 원래 게임 규칙보다 유리하게 판정하는 기능 */
+export type JudgePerkId = 'judge:endHeal'
+export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId | DexPerkId | JudgePerkId
 export interface Perk {
   id: PerkId
   label: string
@@ -443,6 +445,16 @@ export const DEX_REVEAL_PERK = {
   label: '도감 정보 공개',
   desc: '조우하지 않은 포켓몬을 포함해, 포획하지 않은 모든 포켓몬의 도감 정보(도트·타입·종족값·특성·출현 장소·기술)를 볼 수 있습니다.',
   price: 50000,
+}
+
+/** 판정 강화: 상대를 쓰러뜨려 전투가 끝난 턴에도 이로운 턴 종료 효과(회복·상태이상 치유)가 발동 */
+export const END_HEAL_PERK = {
+  id: 'judge:endHeal' as JudgePerkId,
+  label: '턴 종료 회복 판정',
+  desc:
+    '원래는 상대를 쓰러뜨려 전투가 끝나면 그 턴의 턴 종료 효과가 발동하지 않지만, 이로운 효과만 발동하게 합니다. ' +
+    '(먹다남은음식·검은오물(독 타입)·포이즌힐 회복, 탈피의 상태이상 치유. 화상·독 데미지 등 해로운 효과는 발동하지 않음)',
+  price: 20000,
 }
 
 /** 자동 전투 AI 개선 (차례대로 구매) */
