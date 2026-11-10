@@ -1,0 +1,118 @@
+[
+  {
+    "version": "red-blue",
+    "gen": 1,
+    "versions": [
+      "red",
+      "blue"
+    ],
+    "file": "red-blue.json",
+    "trainers": 352,
+    "unused": 39,
+    "noLocation": 3
+  },
+  {
+    "version": "yellow",
+    "gen": 1,
+    "versions": [
+      "yellow"
+    ],
+    "file": "yellow.json",
+    "trainers": 343,
+    "unused": 53,
+    "noLocation": 0
+  },
+  {
+    "version": "gold-silver",
+    "gen": 2,
+    "versions": [
+      "gold",
+      "silver"
+    ],
+    "file": "gold-silver.json",
+    "trainers": 494,
+    "unused": 1,
+    "noLocation": 50
+  },
+  {
+    "version": "crystal",
+    "gen": 2,
+    "versions": [
+      "crystal"
+    ],
+    "file": "crystal.json",
+    "trainers": 540,
+    "unused": 1,
+    "noLocation": 61
+  },
+  {
+    "version": "ruby-sapphire",
+    "gen": 3,
+    "versions": [
+      "ruby",
+      "sapphire"
+    ],
+    "file": "ruby-sapphire.json",
+    "trainers": 693,
+    "unused": 0,
+    "noLocation": 122
+  },
+  {
+    "version": "emerald",
+    "gen": 3,
+    "versions": [
+      "emerald"
+    ],
+    "file": "emerald.json",
+    "trainers": 853,
+    "unused": 1,
+    "noLocation": 31
+  },
+  {
+    "version": "firered-leafgreen",
+    "gen": 3,
+    "versions": [
+      "firered",
+      "leafgreen"
+    ],
+    "file": "firered-leafgreen.json",
+    "trainers": 639,
+    "unused": 0,
+    "noLocation": 34
+  },
+  {
+    "version": "platinum",
+    "gen": 4,
+    "versions": [
+      "platinum"
+    ],
+    "file": "platinum.json",
+    "trainers": 735,
+    "unused": 192,
+    "noLocation": 48
+  },
+  {
+    "version": "diamond-pearl",
+    "gen": 4,
+    "versions": [
+      "diamond",
+      "pearl"
+    ],
+    "file": "diamond-pearl.json",
+    "trainers": 745,
+    "unused": 104,
+    "noLocation": 244
+  },
+  {
+    "version": "heartgold-soulsilver",
+    "gen": 4,
+    "versions": [
+      "heartgold",
+      "soulsilver"
+    ],
+    "file": "heartgold-soulsilver.json",
+    "trainers": 667,
+    "unused": 70,
+    "noLocation": 26
+  }
+]
