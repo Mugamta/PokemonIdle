@@ -730,6 +730,33 @@ describe('전투 후 파티 전체 회복·자동 센터 귀환', () => {
   })
 })
 
+describe('도감 자동 보내기', () => {
+  test('1번 칸을 뺀 최종 진화체 + 친밀도 최대 포켓몬만 전투 사이에 도감으로 보냄', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter({ ...starter('charizard'), friendship: 255 })
+    game.party.push(
+      { ...starter('blastoise'), friendship: 255 },
+      { ...starter('venusaur'), friendship: 254 },
+      { ...starter('charmeleon'), friendship: 255 },
+      { ...starter('pikachu'), friendship: 255, held: { leftovers: 1 } },
+    )
+    game.money = 100000
+    expect(game.buyPerk('autoDex:send')).toBe(true)
+    expect(game.autoDex).toBe(true)
+    // 피카츄는 라이츄로 진화할 수 있으므로 남음, 1번 칸 리자몽도 남음
+    expect(game.party.map((m) => m.species)).toEqual(['charizard', 'venusaur', 'charmeleon', 'pikachu'])
+    expect(game.dexRecords.blastoise?.friendshipMax).toBe(255)
+    game.party[1]!.friendship = 255
+    game.autoDex = false
+    expect(game.autoSendToDex()).toBe(0)
+    game.autoDex = true
+    game.enemy = null
+    run(game, 200)
+    expect(game.party.map((m) => m.species)).toEqual(['charizard', 'charmeleon', 'pikachu'])
+  })
+})
+
 describe('도감 완성 후 전진', () => {
   test('몬스터볼 자동 사용을 산 뒤에만 살 수 있고, 꺼져 있으면 쓸 수 없음', () => {
     const game = useGameStore()

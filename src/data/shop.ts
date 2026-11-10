@@ -386,7 +386,7 @@ export type EvBreakPerkId = 'evBreak:1'
 /** 차례대로 사는 기능 (먼저 사야 하는 기능이 있을 수 있음) */
 export type ChainPerkId = AiPerkId | DisplayPerkId | SpeedPerkId | StatViewPerkId | EvBreakPerkId
 /** 보스 등장 연출 생략 (켜고 끌 수 있음) */
-export type ToggleUtilPerkId = 'bossIntro:skip' | 'autoCenter:cost'
+export type ToggleUtilPerkId = 'bossIntro:skip' | 'autoCenter:cost' | 'autoDex:send'
 /** 전투 후 파티 전체 회복: 싸우는 포켓몬 말고 다른 파티 포켓몬에게도 자동 사용 (체력 / 상태이상 / PP) */
 export type PartyUseKey = 'healAfter' | 'status' | 'pp'
 export const PARTY_USE_KEYS: PartyUseKey[] = ['healAfter', 'status', 'pp']
@@ -490,6 +490,14 @@ export const DEX_ADVANCE_PERK = {
   requires: 'autoUse:ball' as ItemPerkId,
   label: '도감 완성 후 전진',
   desc: "전투 화면의 전진·반복 옆에 '도감' 모드가 생깁니다. 보스를 쓰러뜨렸을 때 스테이지 출현 포켓몬을 아직 다 잡지 못했으면 반복처럼 현재 스테이지에 머물고, 모두 잡았으면 전진처럼 다음 스테이지로 이동합니다. 사면 바로 '도감' 모드로 바뀝니다. 몬스터볼 자동 사용을 사서 켜 두어야 쓸 수 있고, 꺼져 있으면 전진처럼 동작합니다.",
+  price: 10000,
+}
+
+/** 도감 자동 보내기: 1번 칸을 뺀 파티 포켓몬 중 최종 진화체이면서 친밀도가 최대인 포켓몬을 전투 사이에 도감으로 보냄 */
+export const AUTO_DEX_PERK = {
+  id: 'autoDex:send' as ToggleUtilPerkId,
+  label: '도감 자동 보내기',
+  desc: '전투 사이에, 1번 칸(싸우는 포켓몬)을 뺀 파티 포켓몬 중 더 진화하지 않는 최종 진화체이면서 친밀도가 최대(255)인 포켓몬을 자동으로 도감으로 보냅니다. 성격·특성·개체값·노력치·레벨·친밀도·기술이 도감 기록에 합쳐지고, 지닌 도구는 가방으로 돌아갑니다. 사면 켜지며, 이곳에서 켜고 끌 수 있습니다.',
   price: 10000,
 }
 

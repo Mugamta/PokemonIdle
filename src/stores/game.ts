@@ -58,6 +58,7 @@ import { battleData, STATUS_LABELS, type StageKey, type Status } from '../data/b
 import { dexData, learnMethods, learnsets, STAT_LABELS } from '../data/dex'
 import { SHARD_ITEM, tutorSource, type ShardColor, type TutorCost, type TutorSource } from '../data/tutors'
 import {
+  evolutions,
   evolutionsOf,
   FRIENDSHIP_EVOLVE,
   FRIENDSHIP_MAX,
@@ -71,6 +72,7 @@ import { NATURES } from '../data/natures'
 import type { SpriteDefault } from '../data/sprites'
 import {
   AUTO_CENTER_PERK,
+  AUTO_DEX_PERK,
   DEX_ADVANCE_PERK,
   AUTO_CENTER_COST_STEPS,
   DEFAULT_AUTO_CENTER_COST,
@@ -777,6 +779,8 @@ export const useGameStore = defineStore('game', {
     autoCenter: false,
     /** 자동 센터 귀환 기준 금액: 전투 후 파티 회복에 드는 돈이 이 이상이면 센터로 */
     autoCenterCost: DEFAULT_AUTO_CENTER_COST,
+    /** 도감 자동 보내기 켜짐 (상점 기능 'autoDex:send' 구매 필요) */
+    autoDex: false,
     /** 전투 후 파티 전체 회복 켜짐 (상점 기능 'partyUse:*' 구매 필요) */
     partyUse: {} as Partial<Record<PartyUseKey, boolean>>,
     /** 변함없는돌 구매 여부 (공용 기능) */
@@ -1021,7 +1025,8 @@ export const useGameStore = defineStore('game', {
         return
       }
       if (!this.enemy) {
-        // 전투 사이: 회복 비용이 기준 이상이면 센터로, 아니면 턴 소모 없이 아이템 자동 사용
+        // 전투 사이: 다 키운 포켓몬은 도감으로, 회복 비용이 기준 이상이면 센터로, 아니면 턴 소모 없이 아이템 자동 사용
+        this.autoSendToDex()
         if (this.autoCenterForCost()) return
         if (this.auto && this.autoUseItem()) return
         if (now < this.nextEncounterAt) return
@@ -1146,6 +1151,7 @@ export const useGameStore = defineStore('game', {
       }
       delete st.autoCenterPriority
       if (!this.perks.includes(AUTO_CENTER_PERK.id)) this.autoCenter = false
+      if (!this.perks.includes(AUTO_DEX_PERK.id)) this.autoDex = false
       if (!AUTO_CENTER_COST_STEPS.includes(this.autoCenterCost)) this.autoCenterCost = DEFAULT_AUTO_CENTER_COST
       if (!this.partyUse || typeof this.partyUse !== 'object') this.partyUse = {}
       for (const k of PARTY_USE_KEYS) if (!this.perks.includes(`partyUse:${k}`)) delete this.partyUse[k]
@@ -2297,6 +2303,23 @@ export const useGameStore = defineStore('game', {
       if (index === 0) this.switchLead(0)
       return true
     },
+    /**
+     * 도감 자동 보내기: 1번 칸을 뺀 파티 포켓몬 중 최종 진화체(더 진화하지 않음)이면서 친밀도가 최대인 포켓몬을 도감으로 보냄.
+     * 보낸 마릿수 반환
+     */
+    autoSendToDex(): number {
+      if (!this.autoDex || !this.perks.includes(AUTO_DEX_PERK.id) || this.faint || !evolutions.value) return 0
+      let sent = 0
+      for (let i = this.party.length - 1; i >= 1; i--) {
+        const m = this.party[i]!
+        if (evolutionsOf(m.species).length || friendshipOf(m) < FRIENDSHIP_MAX) continue
+        const name = speciesOf(m.species)?.ko ?? m.species
+        if (!this.sendToDex(i)) continue
+        useBattleLogStore().push(`${josa(name, '은', '는')} 다 자라서 도감으로 보냈다.`, 'info')
+        sent++
+      }
+      return sent
+    },
     /** 파티에서 빠진 포켓몬을 도감 기록에 합침 (지닌 도구는 가방으로) */
     sendToDexMember(m: PartyMember) {
       this.takeHeldFrom(m)
@@ -2618,7 +2641,7 @@ export const useGameStore = defineStore('game', {
       const chain = CHAIN_PERKS.find((p) => p.id === id)
       const perk =
         chain ??
-        [...PERKS, ...PARTY_USE_PERKS, BOSS_INTRO_PERK, AUTO_CENTER_PERK, DEX_ADVANCE_PERK, DEX_REVEAL_PERK, END_HEAL_PERK].find(
+        [...PERKS, ...PARTY_USE_PERKS, BOSS_INTRO_PERK, AUTO_CENTER_PERK, AUTO_DEX_PERK, DEX_ADVANCE_PERK, DEX_REVEAL_PERK, END_HEAL_PERK].find(
           (p) => p.id === id,
         )
       if (!perk || this.perks.includes(id) || this.money < perk.price) return false
@@ -2632,6 +2655,11 @@ export const useGameStore = defineStore('game', {
       }
       if (id === AUTO_CENTER_PERK.id) {
         this.autoCenter = true
+        return true
+      }
+      if (id === AUTO_DEX_PERK.id) {
+        this.autoDex = true
+        this.autoSendToDex()
         return true
       }
       if (id.startsWith('partyUse:')) {

@@ -9,6 +9,7 @@ import {
   PARTY_USE_PERKS,
   type PartyUseKey,
   type PartyUsePerkId,
+  AUTO_DEX_PERK,
   BOSS_INTRO_PERK,
   DEX_ADVANCE_PERK,
   DEX_REVEAL_PERK,
@@ -760,6 +761,22 @@ const slotRows = computed(() =>
           <p v-if="!game.hasPerk(DEX_ADVANCE_PERK.id) && !game.perkRequirementsMet(DEX_ADVANCE_PERK.id)" class="desc">
             몬스터볼 자동 사용(자동 사용 탭)을 먼저 구매해야 합니다.
           </p>
+        </li>
+        <li v-if="cur === 'battle'">
+          <div class="main">
+            <span class="grow"><strong>{{ AUTO_DEX_PERK.label }}</strong></span>
+            <label v-if="game.hasPerk(AUTO_DEX_PERK.id)" class="toggle">
+              <input v-model="game.autoDex" type="checkbox" />
+              켜기
+            </label>
+            <template v-else>
+              <span class="price">{{ won(AUTO_DEX_PERK.price) }}</span>
+              <button type="button" class="buy" :disabled="game.money < AUTO_DEX_PERK.price" @click="game.buyPerk(AUTO_DEX_PERK.id)">
+                구매
+              </button>
+            </template>
+          </div>
+          <p class="desc">{{ AUTO_DEX_PERK.desc }}</p>
         </li>
         <li v-if="cur === 'info'">
           <div class="main">
