@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import BattleScene from './components/BattleScene.vue'
 import BattleTab from './components/BattleTab.vue'
 import DexTab from './components/DexTab.vue'
+import ItemTab from './components/ItemTab.vue'
 import SettingsTab from './components/SettingsTab.vue'
 import ScrollPanel from './components/ScrollPanel.vue'
 import ShopTab from './components/ShopTab.vue'
@@ -90,6 +91,7 @@ onUnmounted(() => {
       <StageTab v-if="activeTab === 'stage'" />
       <DexTab v-else-if="activeTab === 'dex'" />
       <BattleTab v-else-if="activeTab === 'battle'" />
+      <ItemTab v-else-if="activeTab === 'items'" />
       <SettingsTab v-else-if="activeTab === 'settings'" />
       <ShopTab v-else-if="activeTab === 'shop'" key="shop" kind="item" :wide="isWide" />
       <ShopTab v-else-if="activeTab === 'upgrade'" key="upgrade" kind="upgrade" :wide="isWide" />

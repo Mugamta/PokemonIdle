@@ -8,6 +8,7 @@ import {
   BOSS_INTRO_PERK,
   DEX_REVEAL_PERK,
   END_HEAL_PERK,
+  SLOT_HELD_PERK,
   AI_PERKS,
   CHAIN_PERKS,
   DISPLAY_PERKS,
@@ -34,7 +35,6 @@ import {
   gimmickShopItems,
   PERKS,
   SHOP_ITEMS,
-  sellPrice,
   TRAIN_GROUP_LABELS,
   TRAIN_ITEMS,
   BOTTLE_CAP_LEVEL,
@@ -51,6 +51,7 @@ import {
 import { BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, tmShopList, type HeldGroup } from '../data/items'
 import ItemIcon from './ItemIcon.vue'
 import QuickUseDialog from './QuickUseDialog.vue'
+import ScrollTabs from './ScrollTabs.vue'
 import ShopRow from './ShopRow.vue'
 import { afterBuy } from './quickUse'
 import {
@@ -61,22 +62,24 @@ import {
   HELD_STACK_MAX,
   heldKindsOf,
   heldStackOf,
+  PARTY_MAX,
   PP_START_STAGE,
   SLOT_DEFEATS,
   useGameStore,
 } from '../stores/game'
 import { GIMMICK_INFO, TERA_SHARD_COST, teraShardType, Z_CRYSTALS, type Gimmick } from '../core/gimmicks'
 import { regionOfGimmick } from '../data/stages'
-import { josa } from '../core/battle'
+import { isConsumableItem, josa } from '../core/battle'
 
-type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'judge' | 'perks' | 'slots' | 'heldSlots' | 'sell'
+type Sub = 'items' | 'ball' | 'battle' | 'held' | 'heldUse' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'judge' | 'perks' | 'slots' | 'heldSlots'
 /** 하단 탭: 도구상점(item) / 강화상점(upgrade) */
 const props = defineProps<{ kind: 'item' | 'upgrade'; wide?: boolean }>()
 const SUB_LABELS: Record<Sub, string> = {
   items: '회복',
   ball: '볼',
   battle: '배틀',
-  held: '지닌 도구',
+  held: '지속형 도구',
+  heldUse: '소모성 도구',
   tm: '기술머신',
   evo: '진화',
   train: '육성',
@@ -86,16 +89,15 @@ const SUB_LABELS: Record<Sub, string> = {
   perks: '편의성',
   slots: '기술칸',
   heldSlots: '도구칸',
-  sell: '판매',
 }
 /** 상단 탭: 비슷한 기능(Sub)을 묶은 것. 묶인 Sub의 분류는 아래 작은 탭으로 나옴 */
 const GROUPS: { id: string; label: string; kind: 'item' | 'upgrade'; subs: Sub[] }[] = [
   { id: 'consumable', label: '소모품', kind: 'item', subs: ['items', 'ball', 'battle'] },
-  { id: 'held', label: '지닌 도구', kind: 'item', subs: ['held'] },
+  { id: 'held', label: '지속형 도구', kind: 'item', subs: ['held'] },
+  { id: 'heldUse', label: '소모성 도구', kind: 'item', subs: ['heldUse'] },
   { id: 'tm', label: '기술머신', kind: 'item', subs: ['tm'] },
   { id: 'evo', label: '진화·변신', kind: 'item', subs: ['evo', 'gimmick'] },
   { id: 'train', label: '육성', kind: 'item', subs: ['train'] },
-  { id: 'sell', label: '판매', kind: 'item', subs: ['sell'] },
   { id: 'growth', label: '육성 강화', kind: 'upgrade', subs: ['growth'] },
   { id: 'judge', label: '판정 강화', kind: 'upgrade', subs: ['judge'] },
   { id: 'perks', label: '편의성', kind: 'upgrade', subs: ['perks'] },
@@ -107,6 +109,21 @@ onMounted(() => {
   loadLearnsets().catch(() => {})
 })
 
+/** 지닌 도구 분류 (작은 탭 이름) */
+const HELD_MINI: { id: HeldGroup; label: string }[] = [
+  { id: 'attack', label: '공격·속도' },
+  { id: 'defense', label: '방어·회복' },
+  { id: 'type', label: '타입 강화' },
+  { id: 'gem', label: '주얼' },
+  { id: 'berry', label: '나무열매' },
+  { id: 'species', label: '전용 도구' },
+  { id: 'bad', label: '불리한 효과' },
+  { id: 'training', label: '경험치·돈' },
+]
+/** 지속형(false)·소모성(true) 지닌 도구 중 그 분류에 파는 도구가 있는 것만 */
+function heldMini(use: boolean) {
+  return HELD_MINI.filter((m) => HELD_ITEMS.some((i) => i.group === m.id && isConsumableItem(i.id) === use))
+}
 /** 상단 탭 아래의 작은 탭 (분류) */
 const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
   items: [
@@ -115,16 +132,8 @@ const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
     { id: 'pp', label: 'PP' },
     { id: 'status', label: '상태이상' },
   ],
-  held: [
-    { id: 'attack', label: '공격·속도' },
-    { id: 'defense', label: '방어·회복' },
-    { id: 'type', label: '타입 강화' },
-    { id: 'gem', label: '주얼' },
-    { id: 'berry', label: '나무열매' },
-    { id: 'species', label: '전용 도구' },
-    { id: 'bad', label: '불리한 효과' },
-    { id: 'training', label: '경험치·돈' },
-  ],
+  held: heldMini(false),
+  heldUse: heldMini(true),
   evo: [
     { id: 'stone', label: '진화의 돌' },
     { id: 'trade', label: '통신교환' },
@@ -179,7 +188,10 @@ const balls = SHOP_ITEMS.filter((i) => i.category === 'ball')
 const battleItems = SHOP_ITEMS.filter((i) => i.category === 'battle')
 
 const HELD_GROUPS = Object.keys(HELD_GROUP_LABELS) as HeldGroup[]
-const heldGroups = HELD_GROUPS.map((g) => ({ g, items: HELD_ITEMS.filter((i) => i.group === g) }))
+const heldGroups = computed(() => {
+  const use = sub.value === 'heldUse'
+  return HELD_GROUPS.map((g) => ({ g, items: HELD_ITEMS.filter((i) => i.group === g && isConsumableItem(i.id) === use) }))
+})
 
 // 기술머신: 검색 + 파티가 배울 수 있는 것만
 const tmQuery = ref('')
@@ -279,18 +291,11 @@ const healKeyOf = (p: Perk): AutoHealKey | null =>
   p.id === 'autoUse:heal' ? 'heal' : p.id === 'autoUse:healAfter' ? 'healAfter' : null
 const itemName = (id: string) => dexData.value?.items[id]?.ko ?? id
 
-/** 판매: 가방에 있고 팔 수 있는 아이템 */
-const sellRows = computed(() =>
-  Object.entries(game.items)
-    .filter(([id, n]) => n > 0 && sellPrice(id) > 0)
-    .map(([id, n]) => ({ id, n, price: sellPrice(id), name: itemName(id) }))
-    .sort((a, b) => a.name.localeCompare(b.name)),
-)
-function sell(id: string, n: number) {
-  if (n > 1 && !confirm(`${itemName(id)} ${n}개를 ${won(sellPrice(id) * n)}에 팔까요?`)) return
-  game.sellItem(id, n)
-}
 
+/** 파티 슬롯 도구 조건: 도구 종류·같은 도구 개수를 모두 최대로 늘린 파티 포켓몬 수 */
+const slotHeldProgress = computed(
+  () => game.party.filter((m) => heldKindsOf(m) >= HELD_KINDS_MAX && heldStackOf(m) >= HELD_STACK_MAX).length,
+)
 /** 지닌 도구 칸: 포켓몬별 도구 종류 수·같은 도구 개수 늘리기 */
 const heldSlotRows = computed(() =>
   game.party.map((m, i) => {
@@ -341,11 +346,7 @@ const slotRows = computed(() =>
         </button>
       </nav>
       <!-- 상단 탭 안의 작은 탭 (분류) -->
-      <nav v-if="miniTabs" class="mini-tabs">
-        <button v-for="m in miniTabs" :key="m.key" type="button" :class="{ active: curEntry.key === m.key }" @click="picked[curGroup.id] = m.key">
-          {{ m.label }}
-        </button>
-      </nav>
+      <ScrollTabs v-if="miniTabs" :items="miniTabs" :model-value="curEntry.key" @update:model-value="picked[curGroup.id] = $event" />
     </div>
 
     <!-- 넓게보기에서는 전투 화면(소지금 표시)이 가려지므로 여기서 보여 줌 -->
@@ -378,7 +379,7 @@ const slotRows = computed(() =>
         </ul>
       </section>
       <p class="note">
-        전투 탭 → 아이템에서 야생 포켓몬에게 던집니다 (한 턴 소모). 보스는 잡을 수 없습니다. HP가 적을수록, 잠듦·얼음(2.5배)이나
+        도구 탭 → 사용에서 야생 포켓몬에게 던집니다 (한 턴 소모). 보스는 잡을 수 없습니다. HP가 적을수록, 잠듦·얼음(2.5배)이나
         마비·독·화상(1.5배) 상태일수록 잘 잡힙니다. 잡은 포켓몬은 도감에 기록되고, 파티(최대 6마리)에 자리가 있으면 파티에 들어갑니다.
       </p>
     </template>
@@ -394,7 +395,7 @@ const slotRows = computed(() =>
     </template>
 
     <!-- 지닌 도구 -->
-    <template v-else-if="sub === 'held'">
+    <template v-else-if="sub === 'held' || sub === 'heldUse'">
       <section v-for="g in heldGroups.filter((x) => x.g === cur)" :key="g.g" class="card">
         <h4 class="sec">{{ HELD_GROUP_LABELS[g.g] }}</h4>
         <ul class="rows">
@@ -402,8 +403,12 @@ const slotRows = computed(() =>
         </ul>
       </section>
       <p class="note">
-        전투 탭 → 아이템 → 지닌 도구에서 파티 포켓몬에게 지니게 합니다. 열매·주얼·기합의띠처럼 한 번 쓰면 사라지는 도구는 다음 전투가
-        시작될 때 가방에 같은 도구가 있으면 자동으로 다시 지닙니다. 날씨·필드·교체에 관련된 도구는 이 게임에서 효과가 없어 팔지 않습니다.
+        도구 탭 → 지닌 도구에서 파티 포켓몬에게 지니게 합니다.
+        <template v-if="sub === 'heldUse'">
+          열매·주얼·기합의띠처럼 한 번 쓰면 사라지는 도구로, 다음 전투가 시작될 때 가방에 같은 도구가 있으면 자동으로 다시 지닙니다.
+        </template>
+        <template v-else>지니고 있는 동안 효과가 계속되며 써도 사라지지 않습니다.</template>
+        날씨·필드·교체에 관련된 도구는 이 게임에서 효과가 없어 팔지 않습니다.
       </p>
     </template>
 
@@ -431,7 +436,7 @@ const slotRows = computed(() =>
         </ul>
       </section>
       <p class="note">
-        전투 탭 → 아이템 → 기술머신에서 가르칩니다. 기술머신은 한 번 사면 몇 번이든 쓸 수 있고, 기술레코드는 쓰면 사라집니다.
+        도구 탭 → 기술머신에서 가르칩니다. 기술머신은 한 번 사면 몇 번이든 쓸 수 있고, 기술레코드는 쓰면 사라집니다.
       </p>
     </template>
     <!-- 특수 기능 (메가스톤·Z크리스탈·테라피스) -->
@@ -456,9 +461,9 @@ const slotRows = computed(() =>
       </section>
       <p class="note">
         {{ GIMMICK_INFO[gimmickCur].desc }}
-        <template v-if="gimmickCur === 'mega'">메가스톤은 전투 탭 → 아이템 → 지닌 도구에서 지니게 합니다. 쓰는 포켓몬 이름이 밝게 표시되면 도감에 있는 포켓몬입니다.</template>
+        <template v-if="gimmickCur === 'mega'">메가스톤은 도구 탭 → 지닌 도구에서 지니게 합니다. 쓰는 포켓몬 이름이 밝게 표시되면 도감에 있는 포켓몬입니다.</template>
         <template v-else-if="gimmickCur === 'z'">Z크리스탈을 지니게 한 뒤 전투 화면의 Z기술 버튼을 누르고 같은 타입 공격기를 고릅니다. (전용 Z크리스탈은 팔지 않습니다)</template>
-        <template v-else>테라피스 {{ TERA_SHARD_COST }}개로 전투 탭 → 아이템에서 그 타입으로 테라스탈 타입을 바꿉니다.</template>
+        <template v-else>테라피스 {{ TERA_SHARD_COST }}개로 도구 탭 → 테라스탈에서 그 타입으로 테라스탈 타입을 바꿉니다.</template>
         다이맥스는 아이템 없이 쓸 수 있습니다. 특수 기능은 한 전투에 네 가지 중 하나를 한 번만 쓸 수 있습니다.
       </p>
     </template>
@@ -559,7 +564,7 @@ const slotRows = computed(() =>
         </ul>
       </section>
       <p class="note">
-        육성 아이템은 전투 탭 → 아이템에서 파티 포켓몬을 골라 사용하며, 턴을 소모하지 않습니다. 영양제는 1개에 노력치
+        육성 아이템은 도구 탭 → 육성에서 파티 포켓몬을 골라 사용하며, 턴을 소모하지 않습니다. 영양제는 1개에 노력치
         {{ VITAMIN_EV }}, 깃털은 1, 열매는 {{ VITAMIN_EV }}씩 내립니다 (능력치 하나 {{ game.evStatCap }}<template v-if="Number.isFinite(game.evTotalCap)">, 합계 {{ EV_TOTAL_MAX }}</template>까지). 병뚜껑은 레벨
         {{ BOTTLE_CAP_LEVEL }} 이상인 포켓몬에게만 쓸 수 있습니다. 하트비늘은 전투 탭 → 기술에서 잊은 기술을 되살릴 때 1개씩 씁니다.
       </p>
@@ -625,7 +630,7 @@ const slotRows = computed(() =>
           </li>
         </ul>
       </section>
-      <p class="note">진화 아이템은 전투 탭 → 아이템에서 사용합니다.</p>
+      <p class="note">진화 아이템은 도구 탭 → 진화에서 사용합니다.</p>
     </template>
 
     <!-- 편의성 -->
@@ -857,26 +862,32 @@ const slotRows = computed(() =>
           </div>
         </li>
       </ul>
+      <ul class="rows">
+        <li>
+          <div class="main">
+            <span class="grow"><strong>{{ SLOT_HELD_PERK.label }}</strong></span>
+            <span v-if="game.slotHeldActive" class="owned">적용 중</span>
+            <template v-else-if="game.slotHeldReady">
+              <template v-if="game.hasPerk(SLOT_HELD_PERK.id)">
+                <button type="button" class="buy" @click="game.buySlotHeld()">다시 적용</button>
+              </template>
+              <template v-else>
+                <span class="price">{{ won(SLOT_HELD_PERK.price) }}</span>
+                <button type="button" class="buy" :disabled="game.money < SLOT_HELD_PERK.price" @click="game.buySlotHeld()">구매</button>
+              </template>
+            </template>
+            <span v-else class="muted">조건 미달</span>
+          </div>
+          <p class="desc">{{ SLOT_HELD_PERK.desc(HELD_KINDS_MAX, HELD_STACK_MAX) }}</p>
+          <p v-if="!game.slotHeldActive" class="desc">
+            조건: 파티 {{ PARTY_MAX }}마리 모두 도구 {{ HELD_KINDS_MAX }}종류·같은 도구 {{ HELD_STACK_MAX }}개 (총 {{ PARTY_MAX * HELD_KINDS_MAX * HELD_STACK_MAX }}개)까지 지닐 수 있음
+            <small class="muted">· 지금 {{ slotHeldProgress }}/{{ PARTY_MAX }}마리</small>
+            <template v-if="game.hasPerk(SLOT_HELD_PERK.id)"><br />지닐 수 있는 도구 최대치가 바뀌어 효과가 꺼졌습니다. 새 조건을 채우면 돈을 내지 않고 다시 적용할 수 있습니다.</template>
+          </p>
+        </li>
+      </ul>
     </section>
 
-    <!-- 판매 -->
-    <template v-else-if="sub === 'sell'">
-      <section class="card">
-        <p v-if="!sellRows.length" class="msg">팔 수 있는 아이템이 없습니다. 야생 포켓몬이 지니고 있던 도구(금구슬 등)는 비싸게 팔 수 있습니다.</p>
-        <ul v-else class="rows">
-          <li v-for="r in sellRows" :key="r.id">
-            <div class="main">
-              <ItemIcon :id="r.id" lazy />
-              <span class="grow">{{ r.name }} <span class="muted">보유 {{ r.n }}</span></span>
-              <span class="price">{{ won(r.price) }}</span>
-              <button type="button" class="buy" @click="sell(r.id, 1)">1개</button>
-              <button v-if="r.n > 1" type="button" class="buy" @click="sell(r.id, r.n)">모두</button>
-            </div>
-          </li>
-        </ul>
-      </section>
-      <p class="note">원작 가격의 절반에 팝니다. (상점에서 산 가격보다 원작 가격이 비싸면 상점 가격의 절반)</p>
-    </template>
   </div>
 </template>
 
@@ -889,33 +900,6 @@ const slotRows = computed(() =>
   background: #1e1e24;
 }
 
-.mini-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px;
-  border-bottom: 1px solid #3a3a44;
-}
-
-.mini-tabs button {
-  flex: 0 0 auto;
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid #3a3a44;
-  border-radius: 999px;
-  background: #26262e;
-  color: #9a9aa6;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.mini-tabs button.active {
-  border-color: #ffcb05;
-  background: #ffcb05;
-  color: #1e1e24;
-  font-weight: 700;
-}
 
 .sub-tabs {
   display: flex;

@@ -396,7 +396,9 @@ export type ToggleUtilPerkId = 'bossIntro:skip' | 'autoCenter:pp'
 export type DexPerkId = 'dex:reveal'
 /** 판정 강화: 원래 게임 규칙보다 유리하게 판정하는 기능 */
 export type JudgePerkId = 'judge:endHeal'
-export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId | DexPerkId | JudgePerkId
+/** 지닌 도구를 포켓몬이 아닌 파티 슬롯에 묶음 */
+export type SlotHeldPerkId = 'heldSlot:bind'
+export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId | DexPerkId | JudgePerkId | SlotHeldPerkId
 export interface Perk {
   id: PerkId
   label: string
@@ -736,6 +738,21 @@ export function planHealAfterBattle(opts: HealOption[], need: number): string[] 
 
 /** 상점에서 여는 추가 기술칸 가격 (n번째 추가 칸) */
 export const extraSlotPrice = (n: number) => 10000 * n
+/**
+ * 파티 슬롯 도구: 지닌 도구가 포켓몬이 아닌 파티 슬롯에 묶임.
+ * 파티 6마리가 모두 도구 종류·같은 도구 개수를 최대로 늘렸을 때 살 수 있고,
+ * 최대치(종류×개수)가 바뀌면 효과가 꺼져 새 최대치로 조건을 다시 채워야 함
+ */
+export const SLOT_HELD_PERK = {
+  id: 'heldSlot:bind' as SlotHeldPerkId,
+  label: '파티 슬롯 도구',
+  desc: (kinds: number, stack: number) =>
+    `지닌 도구를 포켓몬이 아닌 파티 슬롯에 장착합니다. 슬롯마다 도구를 ${kinds}종류, 같은 도구 ${stack}개까지 고를 수 있고, ` +
+    '슬롯의 포켓몬을 바꾸면(싸우는 포켓몬 교체·도감으로 보내기·불러오기·포획) 새로 들어온 포켓몬이 그 슬롯의 도구를 그대로 지닙니다. ' +
+    '비어 있는 슬롯의 도구도 그대로 남습니다. 새로 들어온 포켓몬이 원래 지니고 있던 도구는 가방에 들어갑니다.',
+  price: 1000000,
+}
+
 /** 지닐 수 있는 도구 종류 n번째 추가 가격 (포켓몬별) */
 export const heldKindPrice = (n: number) => 20000 * n
 /** 같은 도구를 지닐 수 있는 개수 n번째 추가 가격 (포켓몬별) */

@@ -195,6 +195,74 @@ describe('지닌 도구 여러 개', () => {
     expect(game.dexRecords.charmander!.heldStack).toBe(1)
   })
 
+  test('파티 슬롯 도구: 파티 6마리 모두 최대일 때 사고, 도구가 슬롯을 따라감', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    const maxed = (sp: string): PartyMember => ({ ...starter(sp), heldKinds: 5, heldStack: 2, held: {}, hp: null })
+    for (const sp of ['squirtle', 'bulbasaur', 'pidgey', 'rattata']) game.party.push(maxed(sp))
+    game.money = 2_000_000
+    expect(game.slotHeldReady).toBe(false) // 5마리
+    game.party.push(maxed('caterpie'))
+    expect(game.slotHeldReady).toBe(false) // 스타팅이 최대가 아님
+    Object.assign(game.party[0]!, { heldKinds: 5, heldStack: 2 })
+    expect(game.slotHeldReady).toBe(true)
+    expect(game.buySlotHeld()).toBe(true)
+    expect(game.slotHeldActive).toBe(true)
+    expect(game.money).toBe(1_000_000)
+    game.items = { leftovers: 3, 'choice-band': 1 }
+    expect(game.giveHeld(0, 'leftovers')).toBe(true)
+    expect(game.giveHeld(1, 'choice-band')).toBe(true)
+    // 맨 앞 교체: 도구는 슬롯에 남음
+    expect(game.setLead(1)).toBe(true)
+    expect(game.party[0]!.species).toBe('squirtle')
+    expect(game.party[0]!.held).toEqual({ leftovers: 1 })
+    expect(game.party[1]!.held).toEqual({ 'choice-band': 1 })
+    // 도감으로 보내면 뒤 포켓몬이 앞으로 당겨져 그 슬롯의 도구를 지니고, 빈 슬롯(6번)에 도구가 남음
+    expect(game.giveHeld(5, 'leftovers')).toBe(true)
+    game.party[2]!.held = { leftovers: 1 }
+    game.items.leftovers = 0
+    expect(game.sendToDex(2)).toBe(true)
+    expect(game.party.map((m) => m.held)).toEqual([{ leftovers: 1 }, { 'choice-band': 1 }, { leftovers: 1 }, {}, {}])
+    expect(game.slotHeldSpare[5]?.held).toEqual({ leftovers: 1 })
+    expect(game.items.leftovers).toBe(0)
+    // 새 포켓몬이 들어오면 빈 슬롯의 도구를 지님 (원래 지닌 도구는 가방으로)
+    game.recordToDex({ ...starter('bulbasaur') })
+    game.dexRecords.bulbasaur!.heldKinds = 0
+    const r = game.dexRecords.bulbasaur!
+    expect(
+      game.summonFromDex('bulbasaur', {
+        nature: r.natures[0]!,
+        ability: r.abilities[0]!,
+        level: 5,
+        friendship: r.friendshipMin,
+        ivs: r.ivMin,
+        evs: r.evMin,
+        moves: [],
+      }),
+    ).toBe(true)
+    expect(game.party[5]!.held).toEqual({ leftovers: 1 })
+    expect(game.slotHeldSpare[5]).toBeFalsy()
+    // 슬롯 한도는 들어온 포켓몬과 무관하게 최대
+    game.items = { 'choice-band': 1 }
+    expect(game.giveHeld(5, 'choice-band')).toBe(true)
+  })
+
+  test('파티 슬롯 도구: 최대치가 바뀐 저장 데이터면 효과가 꺼지고 넘치는 도구는 가방으로', () => {
+    const game = useGameStore()
+    game.$patch({
+      party: [{ ...starter(), held: { leftovers: 2, 'choice-band': 1 } }],
+      perks: ['heldSlot:bind'],
+      slotHeldCap: '5x3',
+      slotHeldSpare: [null, { held: { 'life-orb': 1 } }],
+    })
+    game.validate()
+    expect(game.slotHeldActive).toBe(false)
+    expect(game.party[0]!.held).toEqual({ leftovers: 1 })
+    expect(game.items).toEqual({ leftovers: 1, 'choice-band': 1, 'life-orb': 1 })
+    expect(game.slotHeldSpare.every((s) => !s)).toBe(true)
+  })
+
   test('써서 사라진 도구는 가방에 있는 만큼 다시 지님', () => {
     const game = useGameStore()
     game.validate()
