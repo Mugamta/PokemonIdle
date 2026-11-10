@@ -71,8 +71,12 @@ import type { SpriteDefault } from '../data/sprites'
 import {
   AUTO_CENTER_PERK,
   DEX_ADVANCE_PERK,
-  AUTO_CENTER_PP_RATIO,
-  type AutoCenterPriority,
+  AUTO_CENTER_COST_STEPS,
+  DEFAULT_AUTO_CENTER_COST,
+  OLD_AUTO_CENTER_PP_PRICE,
+  PARTY_USE_KEYS,
+  PARTY_USE_PERKS,
+  type PartyUseKey,
   BOSS_INTRO_PERK,
   DEX_REVEAL_PERK,
   END_HEAL_PERK,
@@ -766,10 +770,12 @@ export const useGameStore = defineStore('game', {
     autoGimmick: 'always' as AutoGimmick,
     /** 보스 등장 연출 생략 켜짐 (상점 기능 'bossIntro:skip' 구매 필요) */
     skipBossIntro: false,
-    /** PP 자동 센터 귀환 켜짐 (상점 기능 'autoCenter:pp' 구매 필요) */
+    /** 자동 센터 귀환 켜짐 (상점 기능 'autoCenter:cost' 구매 필요) */
     autoCenter: false,
-    /** PP가 바닥났을 때 우선할 것: item = PP 회복 아이템(자동 사용이 켜져 있고 아이템이 있으면), center = 센터 귀환 */
-    autoCenterPriority: 'item' as AutoCenterPriority,
+    /** 자동 센터 귀환 기준 금액: 전투 후 파티 회복에 드는 돈이 이 이상이면 센터로 */
+    autoCenterCost: DEFAULT_AUTO_CENTER_COST,
+    /** 전투 후 파티 전체 회복 켜짐 (상점 기능 'partyUse:*' 구매 필요) */
+    partyUse: {} as Partial<Record<PartyUseKey, boolean>>,
     /** 변함없는돌 구매 여부 (공용 기능) */
     everstoneOwned: false,
     /** 변함없는돌 켜짐: 레벨업 진화를 막음 */
@@ -801,6 +807,21 @@ export const useGameStore = defineStore('game', {
     /** PP 소모 여부 (PP_START_STAGE 클리어 후) */
     ppActive: (s) => s.clearedStages.includes(PP_START_STAGE),
     hasPerk: (s) => (id: PerkId) => s.perks.includes(id),
+    /** 먼저 사야 하는 기능을 모두 샀는지 */
+    perkRequirementsMet: (s) => (id: PerkId): boolean => {
+      const chainReq = CHAIN_PERKS.find((p) => p.id === id)?.requires
+      const partyReq = PARTY_USE_PERKS.find((p) => p.id === id)?.requires
+      const req: PerkId[] =
+        id === AUTO_CENTER_PERK.id
+          ? AUTO_CENTER_PERK.requires
+          : id === DEX_ADVANCE_PERK.id
+            ? [DEX_ADVANCE_PERK.requires]
+            : ([chainReq, partyReq].filter(Boolean) as PerkId[])
+      return req.every((r) => s.perks.includes(r))
+    },
+    /** 도감 모드를 쓸 수 있는지: 도감 완성 후 전진 + 몬스터볼 자동 사용을 사서 켜 둠 */
+    dexModeReady: (s) =>
+      s.perks.includes(DEX_ADVANCE_PERK.id) && s.perks.includes(DEX_ADVANCE_PERK.requires) && !!s.autoUse.ball,
     /** 계정 전체 격파 수로 열린 기본 기술칸 수 (1~4) */
     baseSlots: (s) => baseSlotsAt(s.totalDefeats),
     /** 이 포켓몬이 사용할 수 있는 기술칸 수 (1~8) */
@@ -975,10 +996,9 @@ export const useGameStore = defineStore('game', {
         return
       }
       if (!this.enemy) {
-        // 전투 사이: PP가 바닥났으면 센터로 (센터 우선이면 아이템보다 먼저), 턴 소모 없이 아이템 자동 사용
-        if (this.autoCenterPriority === 'center' && this.autoCenterForPp()) return
+        // 전투 사이: 회복 비용이 기준 이상이면 센터로, 아니면 턴 소모 없이 아이템 자동 사용
+        if (this.autoCenterForCost()) return
         if (this.auto && this.autoUseItem()) return
-        if (this.autoCenterForPp()) return
         if (now < this.nextEncounterAt) return
         // 일반 포켓몬을 BOSS_DEFEATS 마리 쓰러뜨리면 다음 조우는 반드시 보스
         if (this.bossReady(this.currentStageId)) this.challengeBoss()
@@ -1093,8 +1113,17 @@ export const useGameStore = defineStore('game', {
       if (!this.enemy) this.endBattleGimmick()
       if (!this.everstoneOwned) this.everstone = false
       if (!this.perks.includes('bossIntro:skip')) this.skipBossIntro = false
-      if (!this.perks.includes('autoCenter:pp')) this.autoCenter = false
-      if (this.autoCenterPriority !== 'center') this.autoCenterPriority = 'item'
+      // 이전 저장 데이터 호환: PP 자동 센터 귀환은 자동 센터 귀환(회복 비용 기준)으로 대체됨 → 산 값을 돌려줌
+      const oldCenter = (this.perks as string[]).indexOf('autoCenter:pp')
+      if (oldCenter >= 0) {
+        this.perks.splice(oldCenter, 1)
+        this.money += OLD_AUTO_CENTER_PP_PRICE
+      }
+      delete st.autoCenterPriority
+      if (!this.perks.includes(AUTO_CENTER_PERK.id)) this.autoCenter = false
+      if (!AUTO_CENTER_COST_STEPS.includes(this.autoCenterCost)) this.autoCenterCost = DEFAULT_AUTO_CENTER_COST
+      if (!this.partyUse || typeof this.partyUse !== 'object') this.partyUse = {}
+      for (const k of PARTY_USE_KEYS) if (!this.perks.includes(`partyUse:${k}`)) delete this.partyUse[k]
       if (!this.expShareOwned) this.expShare = false
       // 이전 저장 데이터 호환: 낚싯대가 한 종류(좋은낚싯대)였던 시절
       if (!Array.isArray(this.rods)) this.rods = []
@@ -1857,51 +1886,36 @@ export const useGameStore = defineStore('game', {
 
       // 가방에 없으면 사서 씀 (자동 사용에 포함된 자동 구매)
       const ready = (id: string) => (this.items[id] ?? 0) > 0 || this.buyItem(id, 1)
+      // 계획한 아이템을 차례로 씀 (하나라도 썼으면 true)
+      const run = (ids: string[], target: number) => {
+        let used = false
+        for (const id of ids) {
+          if (!ready(id) || !this.useItem(id, target)) break
+          used = true
+        }
+        return used
+      }
       // 1. 체력: 시작 기준 아래면 목표까지 채움 (없는 아이템은 사서 씀).
       //    전투 중 = 한 개로 가장 잘 채우는 아이템, 전투 후 = 돈이 가장 적게 드는 조합을 한꺼번에
-      const healKey: AutoHealKey = this.enemy ? 'heal' : 'healAfter'
-      const max = maxHpOf(me)
-      const range = this.autoHeal[healKey]
-      if (!useless && on(healKey) && (me.hp / max) * 100 < range.start) {
-        const need = Math.ceil((max * range.target) / 100) - me.hp
-        const opts: HealOption[] = SHOP_ITEMS.filter((i) => i.category === 'heal' && this.itemEffect(i)).map((i) => ({
-          id: i.id,
-          amount: healAmountOf(i, max),
-          price: i.price,
-          owned: this.items[i.id] ?? 0,
-          // 친밀도가 떨어지는 아이템은 사지 않음
-          buyable: !i.friendship && this.money >= i.price,
-        }))
-        if (this.enemy) {
-          const pick = pickHealInBattle(opts, need)?.id
+      if (this.enemy) {
+        const max = maxHpOf(me)
+        const range = this.autoHeal.heal
+        if (!useless && on('heal') && (me.hp / max) * 100 < range.start) {
+          const need = Math.ceil((max * range.target) / 100) - me.hp
+          const pick = pickHealInBattle(this.healOptions(0, this.items, this.money), need)?.id
           if (pick && ready(pick) && this.useItem(pick)) return true
-        } else {
-          let used = false
-          for (const id of planHealAfterBattle(opts, need)) {
-            if (!ready(id) || !this.useItem(id)) break
-            used = true
-          }
-          if (used) return true
         }
-      }
+      } else if (on('healAfter') && run(this.recoverPlan(0, 'healAfter', this.items, this.money), 0)) return true
       // 2. 상태이상: 고칠 수 있는 아이템 중 돈이 가장 적게 드는 것 (가진 것은 공짜, 없으면 사서 씀)
-      if (on('status') && m.status) {
-        const pick = pickCheapestItem(
-          SHOP_ITEMS.filter((i) => i.category === 'status' && this.itemEffect(i)).map((i) => ({
-            id: i.id,
-            price: i.price,
-            owned: this.items[i.id] ?? 0,
-            // 친밀도가 떨어지는 아이템은 사지 않음
-            buyable: !i.friendship && this.money >= i.price,
-          })),
-        )
-        if (pick && ready(pick) && this.useItem(pick)) return true
-      }
+      if (on('status') && run(this.recoverPlan(0, 'status', this.items, this.money), 0)) return true
       // 3. PP: PP가 0인 기술이 있으면. 2개 이상이면 전체 회복 아이템 우선 (없으면 가장 싼 것을 사서 씀)
-      if (!useless && on('pp') && this.ppActive) {
-        const empty = m.moves.filter((id) => ppOf(m, id) === 0).length
-        const pick = empty ? this.autoPpPick(empty >= 2 ? 'all' : 'one') : null
-        if (pick && ready(pick.id) && this.useItem(pick.id)) return true
+      if (!useless && on('pp') && run(this.recoverPlan(0, 'pp', this.items, this.money), 0)) return true
+      // 3-1. 전투 후 파티 전체 회복: 다른 파티 포켓몬도 (체력 → 상태이상 → PP)
+      if (!this.enemy) {
+        for (const key of PARTY_USE_KEYS) {
+          if (!this.partyOn(key)) continue
+          for (let t = 1; t < this.party.length; t++) if (run(this.recoverPlan(t, key, this.items, this.money), t)) return true
+        }
       }
       // 4. 몬스터볼: 도감에 없는 야생 포켓몬이면 보정 배율이 기준 이상인 볼 중 가성비가 가장 좋은 것
       //    (가진 것은 공짜, 없으면 사서 씀. 마스터볼·파크볼은 쓰지 않음)
@@ -1911,6 +1925,78 @@ export const useGameStore = defineStore('game', {
         if (pick && ready(pick) && this.useItem(pick)) return true
       }
       return false
+    },
+
+    /** 전투 후 파티 전체 회복이 켜져 있는지 (기본 자동 사용 + 파티 전체 기능 모두 구매·켜짐) */
+    partyOn(key: PartyUseKey): boolean {
+      return (
+        this.perks.includes(`autoUse:${key}`) && !!this.autoUse[key] && this.perks.includes(`partyUse:${key}`) && !!this.partyUse[key]
+      )
+    },
+    /** 체력 회복 아이템 후보 (target 기준 회복량). bag = 가진 개수, money = 쓸 수 있는 돈 */
+    healOptions(target: number, bag: Partial<Record<string, number>>, money: number): HealOption[] {
+      const m = this.party[target]
+      if (!m) return []
+      const max = this.memberMaxHp(m)
+      return SHOP_ITEMS.filter((i) => i.category === 'heal' && this.itemEffect(i, target)).map((i) => ({
+        id: i.id,
+        amount: healAmountOf(i, max),
+        price: i.price,
+        owned: bag[i.id] ?? 0,
+        // 친밀도가 떨어지는 아이템은 사지 않음
+        buyable: !i.friendship && money >= i.price,
+      }))
+    },
+    /**
+     * 자동 사용으로 target 포켓몬에게 쓸 아이템 목록 (전투 후 체력 / 상태이상 / PP). 쓸 게 없으면 빈 목록.
+     * bag = 가진 개수, money = 쓸 수 있는 돈 (자동 센터 귀환 비용 계산은 사본과 무한대로 부름). 기절한 포켓몬은 제외
+     */
+    recoverPlan(target: number, key: PartyUseKey, bag: Partial<Record<string, number>>, money: number): string[] {
+      const m = this.party[target]
+      if (!m || m.hp === 0) return []
+      if (key === 'healAfter') {
+        const max = this.memberMaxHp(m)
+        const hp = m.hp ?? max
+        const range = this.autoHeal.healAfter
+        if ((hp / max) * 100 >= range.start) return []
+        return planHealAfterBattle(this.healOptions(target, bag, money), Math.ceil((max * range.target) / 100) - hp)
+      }
+      if (key === 'status') {
+        if (!m.status) return []
+        const pick = pickCheapestItem(
+          SHOP_ITEMS.filter((i) => i.category === 'status' && this.itemEffect(i, target)).map((i) => ({
+            id: i.id,
+            price: i.price,
+            owned: bag[i.id] ?? 0,
+            // 친밀도가 떨어지는 아이템은 사지 않음
+            buyable: !i.friendship && money >= i.price,
+          })),
+        )
+        return pick ? [pick] : []
+      }
+      if (!this.ppActive) return []
+      const empty = m.moves.filter((id) => ppOf(m, id) === 0).length
+      const pick = empty ? this.autoPpPick(empty >= 2 ? 'all' : 'one', target, bag, money) : null
+      return pick ? [pick.id] : []
+    },
+    /**
+     * 전투 후 파티 전체를 자동 사용 아이템으로 회복하는 데 드는 돈 (가방에 있는 것은 공짜, 켜져 있는 기능만, 기절한 포켓몬 제외).
+     * 싸우는 포켓몬은 기본 자동 사용, 다른 포켓몬은 파티 전체 회복이 켜져 있을 때 계산
+     */
+    recoverCost(): number {
+      const bag: Partial<Record<string, number>> = { ...this.items }
+      let cost = 0
+      for (const key of PARTY_USE_KEYS) {
+        if (!this.perks.includes(`autoUse:${key}`) || !this.autoUse[key]) continue
+        const n = this.partyOn(key) ? this.party.length : 1
+        for (let t = 0; t < n; t++) {
+          for (const id of this.recoverPlan(t, key, bag, Infinity)) {
+            if ((bag[id] ?? 0) > 0) bag[id]! -= 1
+            else cost += shopItem(id)?.price ?? 0
+          }
+        }
+      }
+      return cost
     },
 
     /** 몬스터볼 자동 사용 후보 (지금 상대 기준 배율·포획률). 잡을 수 있는 야생 포켓몬과 싸우는 중이 아니면 null */
@@ -1961,32 +2047,33 @@ export const useGameStore = defineStore('game', {
      * PP 자동 사용할 아이템: 가진 것 중 원하는 종류(한 기술/전체) → 살 수 있는 원하는 종류 중 가장 싼 것
      * → 가진 다른 종류 → 살 수 있는 다른 종류 중 가장 싼 것. 없으면 null
      */
-    autoPpPick(prefer: 'one' | 'all'): ShopItem | null {
-      const list = SHOP_ITEMS.filter((i) => i.category === 'pp' && this.itemEffect(i))
-      const owned = list.filter((i) => (this.items[i.id] ?? 0) > 0)
-      const buyable = list.filter((i) => this.money >= i.price).sort((a, b) => a.price - b.price)
+    autoPpPick(
+      prefer: 'one' | 'all',
+      target = 0,
+      bagArg?: Partial<Record<string, number>>,
+      moneyArg?: number,
+    ): ShopItem | null {
+      const bag = bagArg ?? this.items
+      const money = moneyArg ?? this.money
+      const list = SHOP_ITEMS.filter((i) => i.category === 'pp' && this.itemEffect(i, target))
+      const owned = list.filter((i) => (bag[i.id] ?? 0) > 0)
+      const buyable = list.filter((i) => money >= i.price).sort((a, b) => a.price - b.price)
       const is = (i: ShopItem) => i.pp?.target === prefer
       return owned.find(is) ?? buyable.find(is) ?? owned[0] ?? buyable[0] ?? null
     },
 
     /**
-     * PP 자동 센터 귀환 (편의성 기능, 자동 전투 중 전투 사이에만):
-     * 싸우는 포켓몬의 모든 기술 PP가 AUTO_CENTER_PP_RATIO 미만이면 회복하러 감.
-     * 아이템 우선이면, PP 회복 아이템 자동 사용이 켜져 있고 쓸 수 있는 아이템이 있을 때는 가지 않음. 갔으면 true
+     * 자동 센터 귀환 (편의성 기능, 자동 전투 중 전투 사이에만):
+     * 파티 전체를 자동 사용 아이템으로 회복하는 데 드는 돈이 기준 금액 이상이거나 가진 돈보다 많으면 센터로. 갔으면 true
      */
-    autoCenterForPp(): boolean {
-      if (!this.auto || !this.autoCenter || !this.perks.includes('autoCenter:pp') || !this.ppActive) return false
+    autoCenterForCost(): boolean {
+      if (!this.auto || !this.autoCenter || !this.perks.includes(AUTO_CENTER_PERK.id)) return false
       if (this.faint || this.travel || this.enemy) return false
       const m = this.party[0]
       if (!m || m.hp === 0) return false
-      const moves = m.moves
-        .map((id) => ({ left: ppOf(m, id), max: maxPpOf(id, m) }))
-        .filter((x): x is { left: number; max: number } => x.left != null && x.max != null && x.max > 0)
-      if (!moves.length || moves.some((x) => x.left >= x.max * AUTO_CENTER_PP_RATIO)) return false
-      // 아이템 우선: 가진 아이템이 있거나 살 수 있으면 자동 사용에 맡김
-      if (this.autoCenterPriority === 'item' && this.perks.includes('autoUse:pp') && this.autoUse.pp && this.autoPpPick('one'))
-        return false
-      useBattleLogStore().push('PP가 얼마 남지 않아 회복하러 돌아갔다.', 'info')
+      const cost = this.recoverCost()
+      if (cost <= 0 || (cost < this.autoCenterCost && cost <= this.money)) return false
+      useBattleLogStore().push(`회복에 ${cost.toLocaleString()}원이 들어 포켓몬센터로 회복하러 돌아갔다.`, 'info')
       this.goRecover(RETREAT_MS, true)
       return true
     },
@@ -2491,9 +2578,13 @@ export const useGameStore = defineStore('game', {
     },
     buyPerk(id: PerkId): boolean {
       const chain = CHAIN_PERKS.find((p) => p.id === id)
-      const perk = chain ?? [...PERKS, BOSS_INTRO_PERK, AUTO_CENTER_PERK, DEX_ADVANCE_PERK, DEX_REVEAL_PERK, END_HEAL_PERK].find((p) => p.id === id)
+      const perk =
+        chain ??
+        [...PERKS, ...PARTY_USE_PERKS, BOSS_INTRO_PERK, AUTO_CENTER_PERK, DEX_ADVANCE_PERK, DEX_REVEAL_PERK, END_HEAL_PERK].find(
+          (p) => p.id === id,
+        )
       if (!perk || this.perks.includes(id) || this.money < perk.price) return false
-      if (chain?.requires && !this.perks.includes(chain.requires)) return false
+      if (!this.perkRequirementsMet(id)) return false
       this.money -= perk.price
       this.perks.push(id)
       if (chain) return true
@@ -2501,8 +2592,12 @@ export const useGameStore = defineStore('game', {
         this.skipBossIntro = true
         return true
       }
-      if (id === 'autoCenter:pp') {
+      if (id === AUTO_CENTER_PERK.id) {
         this.autoCenter = true
+        return true
+      }
+      if (id.startsWith('partyUse:')) {
+        this.partyUse[id.split(':')[1] as PartyUseKey] = true
         return true
       }
       if (id === DEX_ADVANCE_PERK.id) {
@@ -3013,7 +3108,7 @@ export const useGameStore = defineStore('game', {
       // 수상 스테이지에 들어갈 수 없으면 건너뜀
       const i = found.region.stages.indexOf(found.stage)
       const next = found.region.stages.slice(i + 1).find((st) => st.kind !== 'water' || !!this.stageEncounters(st))
-      const advance = this.stageMode === 'advance' || (this.stageMode === 'dex' && this.stageDexDone(found.stage) !== false)
+      const advance = this.stageMode === 'advance' || (this.stageMode === 'dex' && (!this.dexModeReady || this.stageDexDone(found.stage) !== false))
       if (advance && next && this.stageUnlocked(next.id)) {
         log.push(`${next.id} ${ro(next.name)} 이동합니다.`, 'info')
         this.arrive(next.id)
@@ -3135,6 +3230,10 @@ export const useGameStore = defineStore('game', {
     /** 기절 회복 자동 사용 설정 바꾸기 */
     setAutoRevive(key: AutoReviveKey, cfg: Partial<AutoReviveCfg>) {
       this.autoRevive = sanitizeAutoRevive({ ...this.autoRevive, [key]: { ...this.autoRevive[key], ...cfg } })
+    },
+    setPartyUse(key: PartyUseKey, on: boolean) {
+      if (!this.perks.includes(`partyUse:${key}`)) return
+      this.partyUse[key] = on
     },
     setAutoUse(cat: AutoUseKey, on: boolean) {
       if (!this.perks.includes(`autoUse:${cat}`)) return

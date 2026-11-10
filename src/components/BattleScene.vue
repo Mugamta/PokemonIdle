@@ -192,8 +192,13 @@ const foeItem = computed(() => {
         <button
           v-if="game.hasPerk('stageMode:dex')"
           type="button"
-          :class="{ active: game.stageMode === 'dex' }"
-          title="출현 포켓몬을 모두 잡을 때까지 반복하다가, 다 잡으면 보스를 쓰러뜨린 뒤 다음 스테이지로 전진"
+          :class="{ active: game.stageMode === 'dex', off: !game.dexModeReady }"
+          :disabled="!game.dexModeReady"
+          :title="
+            game.dexModeReady
+              ? '출현 포켓몬을 모두 잡을 때까지 반복하다가, 다 잡으면 보스를 쓰러뜨린 뒤 다음 스테이지로 전진'
+              : '몬스터볼 자동 사용을 켜야 쓸 수 있습니다 (꺼져 있으면 전진처럼 동작)'
+          "
           @click="game.setStageMode('dex')"
         >
           도감
@@ -933,6 +938,12 @@ const foeItem = computed(() => {
   background: #3ddc6a;
   color: #10301a;
   font-weight: 700;
+}
+
+/* 도감 모드: 몬스터볼 자동 사용이 꺼져 있으면 흐리게 (전진처럼 동작) */
+.mode-toggle button.off {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* 스테이지 진행도 */

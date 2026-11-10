@@ -386,7 +386,11 @@ export type EvBreakPerkId = 'evBreak:1'
 /** 차례대로 사는 기능 (먼저 사야 하는 기능이 있을 수 있음) */
 export type ChainPerkId = AiPerkId | DisplayPerkId | SpeedPerkId | StatViewPerkId | EvBreakPerkId
 /** 보스 등장 연출 생략 (켜고 끌 수 있음) */
-export type ToggleUtilPerkId = 'bossIntro:skip' | 'autoCenter:pp'
+export type ToggleUtilPerkId = 'bossIntro:skip' | 'autoCenter:cost'
+/** 전투 후 파티 전체 회복: 싸우는 포켓몬 말고 다른 파티 포켓몬에게도 자동 사용 (체력 / 상태이상 / PP) */
+export type PartyUseKey = 'healAfter' | 'status' | 'pp'
+export const PARTY_USE_KEYS: PartyUseKey[] = ['healAfter', 'status', 'pp']
+export type PartyUsePerkId = `partyUse:${PartyUseKey}`
 /** 도감 완성 후 전진 (전투 화면의 전진·반복 옆에 '도감' 모드가 생김) */
 export type StageModePerkId = 'stageMode:dex'
 export type DexPerkId = 'dex:reveal'
@@ -394,7 +398,7 @@ export type DexPerkId = 'dex:reveal'
 export type JudgePerkId = 'judge:endHeal'
 /** 지닌 도구를 포켓몬이 아닌 파티 슬롯에 묶음 */
 export type SlotHeldPerkId = 'heldSlot:bind'
-export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId | StageModePerkId | DexPerkId | JudgePerkId | SlotHeldPerkId
+export type PerkId = ItemPerkId | ChainPerkId | ToggleUtilPerkId | StageModePerkId | PartyUsePerkId | DexPerkId | JudgePerkId | SlotHeldPerkId
 export interface Perk {
   id: PerkId
   label: string
@@ -442,22 +446,50 @@ export const BOSS_INTRO_PERK = {
   price: 3000,
 }
 
-/** PP 자동 센터 귀환: 싸우는 포켓몬의 모든 기술 PP가 이 비율 미만이면 회복하러 감 */
-export const AUTO_CENTER_PP_RATIO = 0.1
-/** PP가 바닥났을 때 PP 회복 아이템과 센터 귀환 중 무엇을 먼저 쓸지 */
-export type AutoCenterPriority = 'item' | 'center'
+/** 전투 후 파티 전체 회복 기능 (각 자동 사용 기능을 산 뒤에 살 수 있음) */
+export const PARTY_USE_PERKS: (Perk & { id: PartyUsePerkId; requires: ItemPerkId })[] = [
+  {
+    id: 'partyUse:healAfter',
+    requires: 'autoUse:healAfter',
+    label: '파티 전체 체력 회복 (전투 후)',
+    desc: '전투 후 체력 회복 자동 사용을 싸우는 포켓몬뿐 아니라 다른 파티 포켓몬에게도 씁니다. (같은 HP 기준, 기절한 포켓몬 제외)',
+    price: 5000,
+  },
+  {
+    id: 'partyUse:status',
+    requires: 'autoUse:status',
+    label: '파티 전체 상태이상 회복 (전투 후)',
+    desc: '전투 후 다른 파티 포켓몬의 상태이상도 고칩니다. (기절한 포켓몬 제외)',
+    price: 5000,
+  },
+  {
+    id: 'partyUse:pp',
+    requires: 'autoUse:pp',
+    label: '파티 전체 PP 회복 (전투 후)',
+    desc: '전투 후 다른 파티 포켓몬에게 PP가 0인 기술이 있으면 PP 회복 아이템을 씁니다. (기절한 포켓몬 제외)',
+    price: 5000,
+  },
+]
+
+/** 이전 'PP 자동 센터 귀환' 가격 (대체되어 산 값을 돌려줌) */
+export const OLD_AUTO_CENTER_PP_PRICE = 5000
+/** 자동 센터 귀환 기준 금액 선택지 */
+export const AUTO_CENTER_COST_STEPS = [500, 1000, 2000, 3000, 5000, 10000, 20000, 50000]
+export const DEFAULT_AUTO_CENTER_COST = 3000
 export const AUTO_CENTER_PERK = {
-  id: 'autoCenter:pp' as ToggleUtilPerkId,
-  label: 'PP 자동 센터 귀환',
-  desc: '자동 전투 중 전투가 끝났을 때 싸우는 포켓몬의 모든 기술 PP가 10% 미만이면 자동으로 포켓몬센터에 다녀옵니다. (보스전 진행도는 유지)',
-  price: 5000,
+  id: 'autoCenter:cost' as ToggleUtilPerkId,
+  requires: PARTY_USE_PERKS.map((p) => p.id),
+  label: '자동 센터 귀환',
+  desc: '자동 전투 중 전투가 끝났을 때, 파티 전체의 체력·상태이상·PP를 자동 사용 아이템으로 회복하는 데 드는 돈(가방에 있는 아이템은 공짜)이 기준 금액 이상이거나 가진 돈보다 많으면, 아이템을 사서 쓰는 대신 포켓몬센터에 다녀옵니다. (켜져 있는 자동 사용 기능만 계산, 기절한 포켓몬 제외, 보스전 진행도는 유지)',
+  price: 10000,
 }
 
 /** 도감 완성 후 전진: 스테이지 출현 포켓몬을 모두 잡을 때까지 반복하다가, 다 잡으면 다음 스테이지로 전진 */
 export const DEX_ADVANCE_PERK = {
   id: 'stageMode:dex' as StageModePerkId,
+  requires: 'autoUse:ball' as ItemPerkId,
   label: '도감 완성 후 전진',
-  desc: "전투 화면의 전진·반복 옆에 '도감' 모드가 생깁니다. 보스를 쓰러뜨렸을 때 스테이지 출현 포켓몬을 아직 다 잡지 못했으면 반복처럼 현재 스테이지에 머물고, 모두 잡았으면 전진처럼 다음 스테이지로 이동합니다. 사면 바로 '도감' 모드로 바뀝니다.",
+  desc: "전투 화면의 전진·반복 옆에 '도감' 모드가 생깁니다. 보스를 쓰러뜨렸을 때 스테이지 출현 포켓몬을 아직 다 잡지 못했으면 반복처럼 현재 스테이지에 머물고, 모두 잡았으면 전진처럼 다음 스테이지로 이동합니다. 사면 바로 '도감' 모드로 바뀝니다. 몬스터볼 자동 사용을 사서 켜 두어야 쓸 수 있고, 꺼져 있으면 전진처럼 동작합니다.",
   price: 10000,
 }
 

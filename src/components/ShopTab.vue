@@ -5,6 +5,10 @@ import { dexData, loadDex, loadLearnsets, TYPE_COLORS } from '../data/dex'
 import { evoItemUsage } from '../data/evolutions'
 import {
   AUTO_CENTER_PERK,
+  AUTO_CENTER_COST_STEPS,
+  PARTY_USE_PERKS,
+  type PartyUseKey,
+  type PartyUsePerkId,
   BOSS_INTRO_PERK,
   DEX_ADVANCE_PERK,
   DEX_REVEAL_PERK,
@@ -280,6 +284,7 @@ const evBreak2 = computed(() => ({
 }))
 
 const autoKeyOf = (p: Perk) => p.id.split(':')[1] as AutoUseKey
+const partyKeyOf = (id: PartyUsePerkId) => id.split(':')[1] as PartyUseKey
 /** 기절 회복 자동 사용 설정이 있는 기능이면 그 키 */
 const reviveKeyOf = (p: Perk): AutoReviveKey | null =>
   p.id === 'autoUse:revive' ? 'revive' : p.id === 'autoUse:reviveAfter' ? 'reviveAfter' : null
@@ -741,37 +746,19 @@ const slotRows = computed(() =>
             <span v-if="game.hasPerk(DEX_ADVANCE_PERK.id)" class="owned">구매함</span>
             <template v-else>
               <span class="price">{{ won(DEX_ADVANCE_PERK.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < DEX_ADVANCE_PERK.price" @click="game.buyPerk(DEX_ADVANCE_PERK.id)">
+              <button
+                type="button"
+                class="buy"
+                :disabled="game.money < DEX_ADVANCE_PERK.price || !game.perkRequirementsMet(DEX_ADVANCE_PERK.id)"
+                @click="game.buyPerk(DEX_ADVANCE_PERK.id)"
+              >
                 구매
               </button>
             </template>
           </div>
           <p class="desc">{{ DEX_ADVANCE_PERK.desc }}</p>
-        </li>
-        <li v-if="cur === 'battle'">
-          <div class="main">
-            <span class="grow"><strong>{{ AUTO_CENTER_PERK.label }}</strong></span>
-            <label v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="toggle">
-              <input v-model="game.autoCenter" type="checkbox" />
-              켜기
-            </label>
-            <template v-else>
-              <span class="price">{{ won(AUTO_CENTER_PERK.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < AUTO_CENTER_PERK.price" @click="game.buyPerk(AUTO_CENTER_PERK.id)">
-                구매
-              </button>
-            </template>
-          </div>
-          <p class="desc">{{ AUTO_CENTER_PERK.desc }}</p>
-          <div v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="opt">
-            PP가 바닥나면
-            <select v-model="game.autoCenterPriority">
-              <option value="item">PP 회복 아이템 우선</option>
-              <option value="center">센터 귀환 우선</option>
-            </select>
-          </div>
-          <p v-if="game.hasPerk(AUTO_CENTER_PERK.id) && game.autoCenterPriority === 'item'" class="desc">
-            PP 회복 아이템 자동 사용이 켜져 있고 쓸 수 있는 PP 회복 아이템이 있으면 아이템을 쓰고, 없을 때만 센터에 다녀옵니다.
+          <p v-if="!game.hasPerk(DEX_ADVANCE_PERK.id) && !game.perkRequirementsMet(DEX_ADVANCE_PERK.id)" class="desc">
+            몬스터볼 자동 사용(자동 사용 탭)을 먼저 구매해야 합니다.
           </p>
         </li>
         <li v-if="cur === 'info'">
@@ -876,6 +863,57 @@ const slotRows = computed(() =>
               </select>
             </div>
           </template>
+          <!-- 전투 후 파티 전체 회복 (기본 기능을 산 뒤에) -->
+          <template v-for="pp in PARTY_USE_PERKS.filter((x) => x.requires === p.id && game.hasPerk(p.id))" :key="pp.id">
+            <div class="main sub-perk">
+              <span class="grow"><strong>{{ pp.label }}</strong></span>
+              <label v-if="game.hasPerk(pp.id)" class="toggle">
+                <input
+                  type="checkbox"
+                  :checked="!!game.partyUse[partyKeyOf(pp.id)]"
+                  @change="game.setPartyUse(partyKeyOf(pp.id), ($event.target as HTMLInputElement).checked)"
+                />
+                켜기
+              </label>
+              <template v-else>
+                <span class="price">{{ won(pp.price) }}</span>
+                <button type="button" class="buy" :disabled="game.money < pp.price" @click="game.buyPerk(pp.id)">구매</button>
+              </template>
+            </div>
+            <p class="desc">{{ pp.desc }}</p>
+          </template>
+        </li>
+        <li v-if="cur === 'autoUse'">
+          <div class="main">
+            <span class="grow"><strong>{{ AUTO_CENTER_PERK.label }}</strong></span>
+            <label v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="toggle">
+              <input v-model="game.autoCenter" type="checkbox" />
+              켜기
+            </label>
+            <template v-else>
+              <span class="price">{{ won(AUTO_CENTER_PERK.price) }}</span>
+              <button
+                type="button"
+                class="buy"
+                :disabled="game.money < AUTO_CENTER_PERK.price || !game.perkRequirementsMet(AUTO_CENTER_PERK.id)"
+                @click="game.buyPerk(AUTO_CENTER_PERK.id)"
+              >
+                구매
+              </button>
+            </template>
+          </div>
+          <p class="desc">{{ AUTO_CENTER_PERK.desc }}</p>
+          <p v-if="!game.hasPerk(AUTO_CENTER_PERK.id) && !game.perkRequirementsMet(AUTO_CENTER_PERK.id)" class="desc">
+            파티 전체 체력·상태이상·PP 회복(전투 후)을 모두 먼저 구매해야 합니다.
+          </p>
+          <div v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="opt">
+            회복 비용이
+            <select v-model.number="game.autoCenterCost">
+              <option v-for="c in AUTO_CENTER_COST_STEPS" :key="c" :value="c">{{ won(c) }}</option>
+            </select>
+            이상이면 센터 귀환
+            <span class="muted">(지금 {{ won(game.recoverCost()) }})</span>
+          </div>
         </li>
       </ul>
     </section>
@@ -1061,6 +1099,13 @@ const slotRows = computed(() =>
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.main.sub-perk {
+  margin-top: 8px;
+  padding-top: 8px;
+  padding-left: 10px;
+  border-top: 1px dashed #3a3a48;
 }
 
 .grow {

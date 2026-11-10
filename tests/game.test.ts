@@ -641,6 +641,109 @@ describe('기절 회복 자동 사용·구매 (전투 중·전투 후)', () => {
   })
 })
 
+describe('전투 후 파티 전체 회복·자동 센터 귀환', () => {
+  const setup = () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    game.party.push(starter('bulbasaur'), starter('squirtle'))
+    game.perks.push('autoUse:healAfter', 'autoUse:status', 'autoUse:pp')
+    game.autoUse = { healAfter: true, status: true, pp: true }
+    return game
+  }
+
+  test('파티 전체 기능은 기본 자동 사용을 산 뒤에만 살 수 있고, 사면 켜짐', () => {
+    const game = useGameStore()
+    game.validate()
+    game.money = 100000
+    expect(game.buyPerk('partyUse:status')).toBe(false)
+    game.perks.push('autoUse:status')
+    expect(game.buyPerk('partyUse:status')).toBe(true)
+    expect(game.partyUse.status).toBe(true)
+  })
+
+  test('파티 전체 기능이 켜져 있으면 다른 파티 포켓몬의 상태이상도 고침 (기절한 포켓몬 제외)', () => {
+    const game = setup()
+    game.party[1]!.status = 'psn'
+    game.party[2]!.status = 'psn'
+    game.party[2]!.hp = 0
+    game.money = 10000
+    // 파티 전체 기능 없음: 싸우는 포켓몬만
+    expect(game.autoUseItem()).toBe(false)
+    game.perks.push('partyUse:status')
+    game.partyUse.status = true
+    expect(game.autoUseItem()).toBe(true)
+    expect(game.party[1]!.status).toBeFalsy()
+    expect(game.party[2]!.status).toBe('psn')
+    expect(game.autoUseItem()).toBe(false)
+  })
+
+  test('자동 센터 귀환은 파티 전체 기능 셋을 모두 산 뒤에만 살 수 있음', () => {
+    const game = setup()
+    game.money = 100000
+    game.perks.push('partyUse:healAfter', 'partyUse:status')
+    expect(game.buyPerk('autoCenter:cost')).toBe(false)
+    game.perks.push('partyUse:pp')
+    expect(game.buyPerk('autoCenter:cost')).toBe(true)
+    expect(game.autoCenter).toBe(true)
+  })
+
+  test('회복 비용: 가진 아이템은 공짜, 파티 전체 기능이 켜진 쪽만 다른 포켓몬까지', () => {
+    const game = setup()
+    game.party[0]!.status = 'psn'
+    game.party[1]!.status = 'psn'
+    expect(game.recoverCost()).toBe(100) // 싸우는 포켓몬 복슝열매 1개
+    game.items['pecha-berry'] = 1
+    expect(game.recoverCost()).toBe(0)
+    game.perks.push('partyUse:status')
+    game.partyUse.status = true
+    expect(game.recoverCost()).toBe(100) // 가진 1개는 싸우는 포켓몬, 1개는 사야 함
+  })
+
+  test('회복 비용이 기준 이상이거나 가진 돈보다 많으면 센터로, 아니면 아이템 사용', () => {
+    const game = setup()
+    game.perks.push('partyUse:healAfter', 'partyUse:status', 'partyUse:pp', 'autoCenter:cost')
+    game.partyUse = { healAfter: true, status: true, pp: true }
+    game.autoCenter = true
+    game.auto = true
+    for (const m of game.party) m.status = 'psn'
+    game.money = 100000
+    game.autoCenterCost = 1000
+    expect(game.recoverCost()).toBe(300)
+    expect(game.autoCenterForCost()).toBe(false)
+    game.money = 200
+    expect(game.autoCenterForCost()).toBe(true)
+    expect(game.faint).not.toBeNull()
+  })
+
+  test('이전 저장 데이터: PP 자동 센터 귀환은 없애고 산 값을 돌려줌', () => {
+    const game = useGameStore()
+    ;(game.perks as string[]).push('autoCenter:pp')
+    game.autoCenter = true
+    ;(game.$state as unknown as Record<string, unknown>).autoCenterPriority = 'center'
+    game.money = 0
+    game.validate()
+    expect(game.perks).toEqual([])
+    expect(game.money).toBe(5000)
+    expect(game.autoCenter).toBe(false)
+    expect('autoCenterPriority' in game.$state).toBe(false)
+  })
+})
+
+describe('도감 완성 후 전진', () => {
+  test('몬스터볼 자동 사용을 산 뒤에만 살 수 있고, 꺼져 있으면 쓸 수 없음', () => {
+    const game = useGameStore()
+    game.validate()
+    game.money = 100000
+    expect(game.buyPerk('stageMode:dex')).toBe(false)
+    game.perks.push('autoUse:ball')
+    expect(game.buyPerk('stageMode:dex')).toBe(true)
+    expect(game.dexModeReady).toBe(false)
+    game.autoUse.ball = true
+    expect(game.dexModeReady).toBe(true)
+  })
+})
+
 describe('알 기술·기술가르침', () => {
   beforeAll(loadLearnMethods)
 
