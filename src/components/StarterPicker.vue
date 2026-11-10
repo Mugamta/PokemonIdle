@@ -4,8 +4,8 @@ import { dexData, learnsets, loadDex, loadLearnsets, TYPE_COLORS } from '../data
 import { loadBattle } from '../data/battle'
 import { evolutionsOf, loadEvolutions } from '../data/evolutions'
 import { moveEffectText } from '../data/moveText'
-import { calcStats, NATURES } from '../data/natures'
-import { rollStarter, STARTER_CHANCES, STARTER_LEVEL, STARTERS, type StarterRoll } from '../data/starters'
+import { calcStats, NATURES, STAT_KEYS } from '../data/natures'
+import { FIX_UNLOCK_REROLLS, rollStarter, STARTER_CHANCES, STARTER_LEVEL, STARTERS, type StarterFix, type StarterRoll } from '../data/starters'
 import { useGameStore } from '../stores/game'
 import { STAT_LABELS } from '../data/dex'
 import PokeSprite from './PokeSprite.vue'
@@ -13,7 +13,9 @@ import PokeSprite from './PokeSprite.vue'
 const game = useGameStore()
 const error = ref<string | null>(null)
 const roll = ref<StarterRoll>(rollStarter())
-const rerolls = ref(0)
+// 다시 뽑기 횟수는 새로고침해도 유지 (스타팅 확정 시 초기화)
+const REROLLS_KEY = 'pokemonidle.starterRerolls'
+const rerolls = ref(Number(localStorage.getItem(REROLLS_KEY)) || 0)
 const showTable = ref(false)
 
 onMounted(() =>
@@ -52,8 +54,21 @@ const shownId = ref(roll.value.id)
 const shownNature = ref(roll.value.nature)
 const shownIvs = ref<number[]>([...roll.value.ivs])
 
+// ── V(개체값 31) 가 하나라도 나오면 결과 공개 후 1초간 다시 뽑기 잠금 (실수로 넘기는 것 방지) ──
+const V_LOCK_MS = 1000
+const rerollLocked = ref(false)
+let lockTimer = 0
+function lockIfV() {
+  clearTimeout(lockTimer)
+  // 고정으로 31이 된 칸은 V로 치지 않음
+  const fixedIv = fix.value?.kind === 'iv' ? fix.value.index : -1
+  rerollLocked.value = roll.value.ivs.some((v, i) => v === 31 && i !== fixedIv)
+  if (rerollLocked.value) lockTimer = window.setTimeout(() => (rerollLocked.value = false), V_LOCK_MS)
+}
+
 let raf = 0
 function finishSpin() {
+  const wasSpinning = raf !== 0 || isSpinning.value
   cancelAnimationFrame(raf)
   raf = 0
   shownId.value = roll.value.id
@@ -61,15 +76,24 @@ function finishSpin() {
   shownIvs.value = [...roll.value.ivs]
   spinning.value = SLOT_STOPS.map(() => false)
   waiting.value = SLOT_STOPS.map(() => false)
+  if (wasSpinning) lockIfV()
 }
 
 function startSpin() {
-  if (skipAnim.value) return finishSpin()
+  if (skipAnim.value) {
+    finishSpin()
+    return lockIfV()
+  }
   cancelAnimationFrame(raf)
   const start = performance.now()
   const nextAt = SLOT_STOPS.map(() => 0)
-  spinning.value = SLOT_STOPS.map(() => true)
-  waiting.value = SLOT_TIMES.map(([begin]) => begin > 0)
+  // 고정된 슬롯은 돌지 않고 처음부터 결과 표시
+  const fixed = fixedSlot()
+  spinning.value = SLOT_STOPS.map((_, i) => i !== fixed)
+  waiting.value = SLOT_TIMES.map(([begin], i) => i !== fixed && begin > 0)
+  if (fixed === 0) shownId.value = roll.value.id
+  else if (fixed === 1) shownNature.value = roll.value.nature
+  else if (fixed > 1) shownIvs.value[fixed - 2] = roll.value.ivs[fixed - 2]!
   const frame = (now: number) => {
     const t = now - start
     const state = [...spinning.value]
@@ -96,10 +120,14 @@ function startSpin() {
     spinning.value = state
     waiting.value = wait
     raf = state.some(Boolean) ? requestAnimationFrame(frame) : 0
+    if (!raf) lockIfV()
   }
   raf = requestAnimationFrame(frame)
 }
-onUnmounted(() => cancelAnimationFrame(raf))
+onUnmounted(() => {
+  cancelAnimationFrame(raf)
+  clearTimeout(lockTimer)
+})
 
 const showFinal = ref(false)
 /** 화면에 표시할 포켓몬: '최종진화 보기' 중이면 최종진화 모습 (포켓몬 슬롯이 멈춘 뒤에만) */
@@ -117,6 +145,25 @@ const statRows = computed(() =>
       }))
     : [],
 )
+
+const STAT_FULL_NAMES: Record<string, string> = {
+  atk: '공격', def: '방어', spa: '특수공격', spd: '특수방어', spe: '스피드',
+}
+/** 성격 옆 표기: 고집(공격↑ 특수공격↓). 무보정 성격은 '-' */
+const natureMod = computed(() => {
+  const n = NATURES[shownNature.value]
+  const plus = n?.plus && n.plus !== n.minus ? STAT_FULL_NAMES[n.plus] : null
+  const minus = n?.minus && n.plus !== n.minus ? STAT_FULL_NAMES[n.minus] : null
+  return { plus, minus }
+})
+
+/** 성격 보정: 상승 능력치는 빨강, 하락 능력치는 파랑 (성격 슬롯이 멈춘 뒤에만) */
+function natureClass(i: number) {
+  if (spinning.value[1]) return null
+  const n = NATURES[shownNature.value]
+  const key = STAT_KEYS[i]
+  return { up: !!n && n.plus === key, down: !!n && n.minus === key }
+}
 
 // ── 최종진화 보기: 카드의 도트·이름·타입·실능치를 최종진화 기준으로 바꿔 표시 ──
 /** 진화 트리의 끝(더 이상 진화하지 않는 포켓몬)들. 분기 진화면 여러 개 */
@@ -186,14 +233,36 @@ const firstMove = computed(() => {
   return attack ?? candidates[0] ?? null
 })
 
+// ── 고정 옵션: 다시 뽑기 100회 이후, 포켓몬 / 성격 / 개체값 하나(31) 중 하나만 고정 ──
+const fix = ref<StarterFix | null>(null)
+const fixUnlocked = computed(() => rerolls.value >= FIX_UNLOCK_REROLLS)
+/** 고정된 슬롯 번호 (0 포켓몬, 1 성격, 2~7 개체값), 없으면 -1 */
+function fixedSlot() {
+  const f = fix.value
+  return !f ? -1 : f.kind === 'species' ? 0 : f.kind === 'nature' ? 1 : f.index + 2
+}
+const isFixed = (kind: StarterFix['kind'], index = 0) =>
+  fix.value?.kind === kind && (fix.value.kind !== 'iv' || fix.value.index === index)
+/** 같은 걸 다시 누르면 해제. 포켓몬·성격은 지금 나온 것으로 고정 */
+function toggleFix(kind: StarterFix['kind'], index = 0) {
+  if (isSpinning.value) return
+  if (isFixed(kind, index)) fix.value = null
+  else if (kind === 'species') fix.value = { kind, id: roll.value.id }
+  else if (kind === 'nature') fix.value = { kind, nature: roll.value.nature }
+  else fix.value = { kind, index }
+}
+
 function reroll() {
-  roll.value = rollStarter()
+  if (isSpinning.value || rerollLocked.value) return
+  roll.value = rollStarter(Math.random, fixUnlocked.value ? fix.value : null)
   rerolls.value++
+  localStorage.setItem(REROLLS_KEY, String(rerolls.value))
   startSpin()
 }
 
 function confirm() {
   if (!firstMove.value || isSpinning.value) return
+  localStorage.removeItem(REROLLS_KEY)
   game.chooseStarter({
     species: roll.value.id,
     level: STARTER_LEVEL,
@@ -260,7 +329,13 @@ const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0)
           <div class="info-row">
           <dl class="info">
             <dt>성격</dt>
-            <dd><span class="slot" :class="{ spin: spinning[1] && !waiting[1], wait: waiting[1] }">{{ waiting[1] ? '???' : NATURES[shownNature]?.ko }}</span></dd>
+            <dd class="nature">
+              <span class="slot nature-name" :class="{ spin: spinning[1] && !waiting[1], wait: waiting[1] }">{{ waiting[1] ? '???' : NATURES[shownNature]?.ko }}</span>
+              <span class="nature-mod" :class="{ hidden: spinning[1] }">
+                (<span class="mod up">{{ natureMod.plus ? `${natureMod.plus}↑` : '-' }}</span>
+                <span class="mod down">{{ natureMod.minus ? `${natureMod.minus}↓` : '-' }}</span>)
+              </span>
+            </dd>
             <dt>기술</dt>
             <dd>{{ spinning[0] ? '…' : (firstMove?.ko ?? '불러오는 중…') }}</dd>
             <dt>확률</dt>
@@ -296,15 +371,44 @@ const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0)
               </tr>
               <tr v-for="(r, ri) in statRows" :key="r.lv" :class="{ first: ri === 0 }">
                 <th>실능치 <small>Lv.{{ r.lv }}</small></th>
-                <td v-for="(v, i) in r.values" :key="i">{{ waiting[1] || waiting[i + 2] ? '?' : v }}</td>
+                <td v-for="(v, i) in r.values" :key="i" :class="natureClass(i)">{{ waiting[1] || waiting[i + 2] ? '?' : v }}</td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <div class="actions">
-          <button type="button" class="reroll" :disabled="isSpinning" @click="reroll">다시 뽑기 <small v-if="rerolls">({{ rerolls }})</small></button>
+          <button type="button" class="reroll" :class="{ locked: rerollLocked }" :disabled="isSpinning || rerollLocked" @click="reroll">다시 뽑기 <small v-if="rerolls">({{ rerolls }})</small></button>
           <button type="button" class="ok" :disabled="!firstMove || isSpinning" @click="confirm">이 포켓몬으로 시작</button>
+        </div>
+
+        <div class="fix" :class="{ off: !fixUnlocked }">
+          <div class="fix-head">
+            <span>고정 <small>(하나만, 다시 누르면 해제)</small></span>
+            <small v-if="!fixUnlocked">다시 뽑기 {{ FIX_UNLOCK_REROLLS }}회부터 ({{ rerolls }}/{{ FIX_UNLOCK_REROLLS }})</small>
+          </div>
+          <div class="fix-row">
+            <button type="button" :class="{ on: isFixed('species') }" :disabled="!fixUnlocked || isSpinning" @click="toggleFix('species')">
+              포켓몬 고정
+            </button>
+            <button type="button" :class="{ on: isFixed('nature') }" :disabled="!fixUnlocked || isSpinning" @click="toggleFix('nature')">
+              성격 고정
+            </button>
+          </div>
+          <div class="fix-row">
+            <span class="fix-label">개체값 31</span>
+            <button
+              v-for="(l, i) in STAT_LABELS"
+              :key="l"
+              type="button"
+              class="iv"
+              :class="{ on: isFixed('iv', i) }"
+              :disabled="!fixUnlocked || isSpinning"
+              @click="toggleFix('iv', i)"
+            >
+              {{ l }}
+            </button>
+          </div>
         </div>
 
         <button type="button" class="toggle" @click="showTable = !showTable">
@@ -624,6 +728,48 @@ h2 {
   font-weight: 400;
 }
 
+/* 성격 옆 보정 표기: 칸 폭을 고정해 성격이 바뀌어도 화살표 위치가 그대로 */
+.nature {
+  white-space: nowrap;
+}
+
+.nature-name {
+  min-width: 4em;
+}
+
+.nature-mod {
+  font-size: 12px;
+}
+
+.nature-mod.hidden {
+  visibility: hidden;
+}
+
+.mod {
+  display: inline-block;
+  text-align: center;
+}
+
+.mod.up {
+  min-width: 5.2em;
+  color: #ff6b6b;
+}
+
+.mod.down {
+  min-width: 5.2em;
+  color: #5c9dff;
+}
+
+.stats td.up {
+  color: #ff6b6b;
+  font-weight: 700;
+}
+
+.stats td.down {
+  color: #5c9dff;
+  font-weight: 700;
+}
+
 .stats tbody tr.first > * {
   border-top: 1px solid #3a3a44;
 }
@@ -671,6 +817,94 @@ h2 {
 .reroll:disabled,
 .ok:disabled {
   opacity: 0.5;
+  cursor: default;
+}
+
+/* V 잠금: 버튼 아래쪽에 1초 동안 줄어드는 막대 */
+.reroll.locked {
+  position: relative;
+  overflow: hidden;
+}
+
+.reroll.locked::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: #ffcb05;
+  transform-origin: left;
+  animation: v-lock 1s linear forwards;
+}
+
+@keyframes v-lock {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.fix {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #3a3a44;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.fix.off {
+  opacity: 0.5;
+}
+
+.fix-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: #b4b4c0;
+}
+
+.fix-head small {
+  color: #8a8a96;
+  font-size: 11px;
+}
+
+.fix-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fix-row + .fix-row {
+  margin-top: 4px;
+}
+
+.fix-label {
+  flex: none;
+  margin-right: 2px;
+  color: #9a9aa6;
+  font-size: 12px;
+}
+
+.fix-row button {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 2px;
+  border: 1px solid #4a4a56;
+  border-radius: 6px;
+  background: #2a2a33;
+  color: #d4d4de;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fix-row button.on {
+  border-color: #ffcb05;
+  background: #3a3424;
+  color: #ffcb05;
+  font-weight: 700;
+}
+
+.fix-row button:disabled {
   cursor: default;
 }
 

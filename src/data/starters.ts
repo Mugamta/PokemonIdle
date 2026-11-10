@@ -34,7 +34,16 @@ export interface StarterRoll {
   ivs: number[]
 }
 
-export function rollStarter(rand: () => number = Math.random): StarterRoll {
+/** 다시 뽑기 100회 이후 쓸 수 있는 고정 옵션 (셋 중 하나만) */
+export type StarterFix =
+  | { kind: 'species'; id: string }
+  | { kind: 'nature'; nature: string }
+  | { kind: 'iv'; index: number }
+
+/** 고정 옵션이 열리는 다시 뽑기 횟수 */
+export const FIX_UNLOCK_REROLLS = 100
+
+export function rollStarter(rand: () => number = Math.random, fix: StarterFix | null = null): StarterRoll {
   let r = rand() * TOTAL
   let pick = STARTERS[STARTERS.length - 1]!
   for (const s of STARTERS) {
@@ -45,9 +54,13 @@ export function rollStarter(rand: () => number = Math.random): StarterRoll {
     }
   }
   const natures = Object.keys(NATURES)
-  return {
+  const roll: StarterRoll = {
     id: pick.id,
     nature: natures[Math.floor(rand() * natures.length)]!,
     ivs: Array.from({ length: 6 }, () => Math.floor(rand() * 32)),
   }
+  if (fix?.kind === 'species') roll.id = fix.id
+  else if (fix?.kind === 'nature') roll.nature = fix.nature
+  else if (fix?.kind === 'iv') roll.ivs[fix.index] = 31
+  return roll
 }

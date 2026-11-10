@@ -123,6 +123,13 @@ describe('스타팅 뽑기', () => {
       for (const iv of roll.ivs) expect(iv).toBeGreaterThanOrEqual(0), expect(iv).toBeLessThanOrEqual(31)
     }
   })
+  test('고정 옵션: 포켓몬 / 성격 / 개체값 31', () => {
+    for (const r of [0, 0.5, 0.999999]) {
+      expect(rollStarter(() => r, { kind: 'species', id: 'piplup' }).id).toBe('piplup')
+      expect(rollStarter(() => r, { kind: 'nature', nature: 'timid' }).nature).toBe('timid')
+      expect(rollStarter(() => r, { kind: 'iv', index: 5 }).ivs[5]).toBe(31)
+    }
+  })
 })
 
 describe('저장', () => {
