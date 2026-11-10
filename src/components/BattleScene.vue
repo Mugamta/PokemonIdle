@@ -110,12 +110,15 @@ const evYield = computed(() => {
     .join(' · ')
 })
 
-// 쓰러뜨린 상대: 다음 포켓몬이 나올 때까지 회색 스프라이트 + HP 0으로 남겨 둠
+// 끝난 상대: 다음 포켓몬이 나올 때까지 정보 칸을 남겨 둠 (레이아웃 유지).
+// 쓰러뜨렸으면 회색 스프라이트 + HP 0, 잡았거나 도망쳤으면 스프라이트만 숨김
 const fallen = ref<NonNullable<typeof game.enemy> | null>(null)
+const foeGone = ref(false)
 watch(
   () => game.enemy,
   (e, old) => {
-    fallen.value = !e && old && (old.hp ?? 1) <= 0 ? old : null
+    fallen.value = !e && old ? old : null
+    foeGone.value = !!fallen.value && (fallen.value.hp ?? 1) > 0
   },
 )
 watch(
@@ -213,6 +216,10 @@ const foeItem = computed(() => {
         <HpBar v-if="foe.info" :hp="foe.info.hp" :max="foe.info.max" :display="game.displayLevel('foeHp')" />
         <div v-if="game.foeMoveView" class="foe-moves">
           <span v-if="!foeMoves.length" class="foe-none">기술 없음 (발버둥)</span>
+          <!-- 기술 수와 관계없이 항상 4칸(2줄): 빈 칸은 보이지 않는 자리 채움 -->
+          <span v-for="n in 4 - Math.min(4, foeMoves.length || 2)" :key="`pad${n}`" class="foe-move pad" aria-hidden="true">
+            <span class="foe-name">&nbsp;</span>
+          </span>
           <template v-for="(f, i) in foeMoves" :key="i">
             <span v-if="f.hidden" class="foe-move hidden" title="파티에 위험예지 특성을 가진 포켓몬이 있으면 볼 수 있습니다">
               <span class="foe-name">???</span>
@@ -242,7 +249,7 @@ const foeItem = computed(() => {
           {{ foeItem.label }}
         </div>
       </div>
-      <div class="platform foe-pos" :class="{ 'boss-enter': !!bossIntro, fallen: foeFallen }">
+      <div class="platform foe-pos" :class="{ 'boss-enter': !!bossIntro, fallen: foeFallen, gone: foeFallen && foeGone }">
         <PokeSprite :key="foe.enemy.species" :species="foe.enemy.species" :size="96" pose="foe" class="mon" />
         <span v-if="evYield && !foeFallen" class="ev-yield">노력치 {{ evYield }}</span>
       </div>
@@ -482,6 +489,11 @@ const foeItem = computed(() => {
 
 .foe-pos.fallen .mon :deep(.anim) {
   animation-play-state: paused;
+}
+
+/* 잡았거나 도망친 상대: 정보 칸만 남기고 스프라이트는 숨김 */
+.foe-pos.gone .mon {
+  visibility: hidden;
 }
 
 /* 도트 이미지 아래쪽 여백만큼 내려서 발판 위에 서 있게 함 */
@@ -727,6 +739,11 @@ const foeItem = computed(() => {
 
 .foe-move.out {
   opacity: 0.5;
+}
+
+.foe-move.pad {
+  visibility: hidden;
+  order: 1;
 }
 
 .foe-move.hidden {
