@@ -19,6 +19,7 @@ import {
   NO_AUTO_BALLS,
   rankAutoBalls,
   ballSpentPerCatch,
+  type BallOption,
   AUTO_ASH_STEPS,
   SACRED_ASH,
   isAutoReviveItem,
@@ -285,12 +286,31 @@ const reviveItems = SHOP_ITEMS.filter((i) => isAutoReviveItem(i.id))
 const healKeyOf = (p: Perk): AutoHealKey | null =>
   p.id === 'autoUse:heal' ? 'heal' : p.id === 'autoUse:healAfter' ? 'healAfter' : null
 const itemName = (id: string) => dexData.value?.items[id]?.ko ?? id
-/** 몬스터볼 자동 사용 후보 표시 개수 (전투 중) */
-const AUTO_BALL_SHOWN = 5
 /** 몬스터볼 자동 사용: 지금 상대 기준 후보 (쓸 순서대로). 야생 포켓몬과 싸우는 중이 아니면 null */
 const autoBallNow = computed(() => {
   const opts = game.autoBallOptions()
   return opts && rankAutoBalls(opts, game.autoBall)
+})
+const autoBallNowById = computed(() => Object.fromEntries((game.autoBallOptions() ?? []).map((o) => [o.id, o])))
+/** 이번에 던질 볼 (도감에 있는 상대면 없음) */
+const autoBallPick = computed(() =>
+  game.enemy && !game.caught.includes(game.enemy.species) ? (autoBallNow.value?.[0] ?? null) : null,
+)
+const ballCostText = (o: BallOption) => (o.owned ? '가진 것' : `마리당 ${won(Math.round(ballSpentPerCatch(o)))}`)
+/** 후보 줄의 지금 상대 기준 값 */
+function ballNowText(id: string): string {
+  const o = autoBallNowById.value[id]
+  return o ? `지금 ${multText(o.mult)} · ${Math.round(o.chance * 1000) / 10}% · ${ballCostText(o)}` : '지금 —'
+}
+/** 이번에 던질 볼 한 줄 요약 */
+const autoBallSummary = computed(() => {
+  const head = '이번에 던질 볼: '
+  if (!autoBallNow.value || !game.enemy) return `${head}— (야생 포켓몬과 싸우는 중이 아님)`
+  if (game.caught.includes(game.enemy.species)) return `${head}없음 (도감에 있는 포켓몬)`
+  const o = autoBallPick.value
+  if (!o) return `${head}없음 (가진 볼도, 살 돈도 없음)`
+  const fallback = o.mult < game.autoBall ? ' · 기준에 닿는 볼이 없어 배율이 가장 높은 볼' : ''
+  return `${head}${itemName(o.id)} (${multText(o.mult)} · ${Math.round(o.chance * 1000) / 10}% · ${ballCostText(o)})${fallback}`
 })
 /** 몬스터볼 자동 사용: 고른 배율을 낼 수 있는 볼 (전투 밖 표시용) */
 const autoBallStatic = computed(() =>
@@ -761,28 +781,25 @@ const slotRows = computed(() =>
             인 볼 중 가성비 좋은 볼 사용
           </div>
           <template v-if="game.hasPerk(p.id) && p.id === 'autoUse:ball'">
-            <template v-if="autoBallNow">
-              <p class="desc">
-                지금 상대 기준 후보{{ game.caught.includes(game.enemy!.species) ? ' (도감에 있어 던지지 않음)' : '' }}
-                <template v-if="autoBallNow.length && autoBallNow[0]!.mult < game.autoBall"> · 기준에 닿는 볼이 없어 배율 순</template>
-              </p>
-              <p v-if="!autoBallNow.length" class="desc">가진 볼도 없고 살 돈도 없습니다.</p>
-              <ol v-else class="ball-cands">
-                <li v-for="(o, n) in autoBallNow.slice(0, AUTO_BALL_SHOWN)" :key="o.id" :class="{ pick: n === 0 }">
-                  <ItemIcon :id="o.id" :size="20" />
-                  <span class="grow">{{ itemName(o.id) }}<small v-if="o.owned" class="muted"> ×{{ o.owned }}</small></span>
-                  <span class="muted">{{ multText(o.mult) }} · {{ Math.round(o.chance * 1000) / 10 }}%</span>
-                  <span class="price">{{ o.owned ? '가진 것' : `마리당 ${won(Math.round(ballSpentPerCatch(o)))}` }}</span>
-                </li>
-              </ol>
-            </template>
-            <p v-else-if="game.autoBall === 1" class="desc">후보: 모든 볼 (상대를 만나면 한 마리 잡는 데 드는 돈이 가장 적은 볼)</p>
-            <ol v-else class="ball-cands">
-              <li v-for="it in autoBallStatic" :key="it.id">
+            <!-- 전투가 바뀌어도 레이아웃이 그대로이도록: 한 줄 요약 + 고정된 후보 목록 (값만 바뀜) -->
+            <p class="desc ball-now">{{ autoBallSummary }}</p>
+            <ol v-if="game.autoBall > 1" class="ball-cands">
+              <li
+                v-for="it in autoBallStatic"
+                :key="it.id"
+                :class="{ pick: autoBallPick?.id === it.id, off: autoBallNowById[it.id] && autoBallNowById[it.id]!.mult < game.autoBall }"
+              >
                 <ItemIcon :id="it.id" :size="20" />
-                <span class="grow">{{ itemName(it.id) }}<small v-if="game.items[it.id]" class="muted"> ×{{ game.items[it.id] }}</small></span>
-                <span class="muted">{{ BALL_NOTES[it.id] }}</span>
-                <span class="price">{{ won(it.price) }}</span>
+                <span class="grow">
+                  <span class="line">
+                    <span class="grow">{{ itemName(it.id) }}<small v-if="game.items[it.id]" class="muted"> ×{{ game.items[it.id] }}</small></span>
+                    <span class="price">{{ won(it.price) }}</span>
+                  </span>
+                  <span class="line muted">
+                    <span class="grow">{{ BALL_NOTES[it.id] }}</span>
+                    <span>{{ ballNowText(it.id) }}</span>
+                  </span>
+                </span>
               </li>
             </ol>
           </template>
@@ -1100,6 +1117,21 @@ const slotRows = computed(() =>
 .ball-cands li.pick {
   color: #ffcb05;
   font-weight: 700;
+}
+.ball-cands li.off {
+  opacity: 0.5;
+}
+.ball-cands .line {
+  display: flex;
+  gap: 6px;
+}
+.ball-cands li > .grow {
+  min-width: 0;
+}
+.ball-now {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .opt {
   display: flex;
