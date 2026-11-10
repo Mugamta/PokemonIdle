@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { DIFFICULTIES } from '../core/battle'
+import { exportSave, importSave, resetSave, save } from '../core/save'
 import { dexData, loadDex } from '../data/dex'
 import { loadSprites, resolveVariant, SPRITE_DEFAULTS, spriteData } from '../data/sprites'
 import { useGameStore } from '../stores/game'
@@ -37,6 +38,59 @@ const filtered = computed(() => {
 function currentLabel(id: string) {
   const v = resolveVariant(spriteData.value?.variants[id], game.spriteDefault, game.spriteChoice[id])
   return v?.label ?? '-'
+}
+
+// ---------- 데이터 백업 / 초기화 ----------
+const backupCode = ref('')
+const importCode = ref('')
+const dataMsg = ref('')
+/** 지금 상태를 저장한 뒤 백업 코드 생성 */
+function makeBackup() {
+  save(game.$state)
+  backupCode.value = exportSave()
+  dataMsg.value = ''
+}
+async function copyBackup() {
+  if (!backupCode.value) makeBackup()
+  try {
+    await navigator.clipboard.writeText(backupCode.value)
+    dataMsg.value = '백업 코드를 복사했습니다.'
+  } catch {
+    dataMsg.value = '복사하지 못했습니다. 코드 칸을 직접 선택해 복사해 주세요.'
+  }
+}
+function downloadBackup() {
+  makeBackup()
+  const d = new Date()
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`
+  const url = URL.createObjectURL(new Blob([backupCode.value], { type: 'text/plain' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `pokemon-idle-backup-${stamp}.txt`
+  a.click()
+  URL.revokeObjectURL(url)
+  dataMsg.value = '백업 파일을 저장했습니다.'
+}
+function applyImport(code: string) {
+  if (!code.trim()) return
+  if (!confirm('백업 데이터를 불러올까요?\n지금 진행 중인 데이터는 백업 데이터로 덮어써집니다.')) return
+  if (!importSave(code)) {
+    dataMsg.value = '올바른 백업 코드가 아닙니다.'
+    return
+  }
+  location.reload()
+}
+async function importFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) applyImport(await file.text())
+}
+function resetData() {
+  if (!confirm('모든 게임 데이터를 지우고 처음부터 시작할까요?\n포켓몬·도감·아이템·돈·강화·설정이 모두 사라지며 되돌릴 수 없습니다.')) return
+  if (!confirm('정말 초기화할까요? 필요하면 먼저 백업해 두세요.')) return
+  resetSave()
+  location.reload()
 }
 
 function resetAll() {
@@ -86,17 +140,52 @@ const credits = computed(() => {
     <p v-else-if="!dexData || !spriteData" class="msg">불러오는 중…</p>
 
     <!-- 게임 설정 -->
-    <section v-else-if="sub === 'game'" class="card">
-      <h3>난이도</h3>
-      <label v-for="d in DIFFICULTIES" :key="d.id" class="radio">
-        <input v-model="game.difficulty" type="radio" name="difficulty" :value="d.id" />
-        <span>
-          <strong>{{ d.label }}</strong>
-          <small>{{ d.desc }}</small>
-        </span>
-      </label>
-      <p class="hint">언제든 바꿀 수 있으며 다음 턴부터 적용됩니다.</p>
-    </section>
+    <template v-else-if="sub === 'game'">
+      <section class="card">
+        <h3>난이도</h3>
+        <label v-for="d in DIFFICULTIES" :key="d.id" class="radio">
+          <input v-model="game.difficulty" type="radio" name="difficulty" :value="d.id" />
+          <span>
+            <strong>{{ d.label }}</strong>
+            <small>{{ d.desc }}</small>
+          </span>
+        </label>
+        <p class="hint">언제든 바꿀 수 있으며 다음 턴부터 적용됩니다.</p>
+      </section>
+
+      <section class="card">
+        <h3>데이터 백업</h3>
+        <p class="hint top">백업 코드나 파일을 다른 브라우저·기기에서 불러오면 이어서 플레이할 수 있습니다.</p>
+        <div class="data-btns">
+          <button type="button" class="btn" @click="copyBackup">백업 코드 복사</button>
+          <button type="button" class="btn" @click="downloadBackup">백업 파일 저장</button>
+        </div>
+        <textarea
+          v-if="backupCode"
+          class="code"
+          readonly
+          rows="3"
+          :value="backupCode"
+          @focus="($event.target as HTMLTextAreaElement).select()"
+        />
+        <h3 class="gap">백업 불러오기</h3>
+        <textarea v-model="importCode" class="code" rows="3" placeholder="백업 코드를 붙여 넣으세요" />
+        <div class="data-btns">
+          <button type="button" class="btn" :disabled="!importCode.trim()" @click="applyImport(importCode)">코드로 불러오기</button>
+          <label class="btn">
+            파일에서 불러오기
+            <input type="file" accept=".txt,text/plain" hidden @change="importFile" />
+          </label>
+        </div>
+        <p v-if="dataMsg" class="hint">{{ dataMsg }}</p>
+      </section>
+
+      <section class="card">
+        <h3>데이터 초기화</h3>
+        <p class="hint top">모든 진행 상황을 지우고 신규 유저처럼 스타팅 포켓몬 선택부터 다시 시작합니다.</p>
+        <button type="button" class="btn danger-btn" @click="resetData">데이터 초기화</button>
+      </section>
+    </template>
 
     <!-- 도트 설정 -->
     <template v-else-if="sub === 'sprite'">
@@ -326,6 +415,50 @@ const credits = computed(() => {
   color: #9a9aa6;
   font-size: 13px;
   white-space: nowrap;
+}
+
+.data-btns {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.btn {
+  flex: 1;
+  padding: 8px 0;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #24242c;
+  color: #eee;
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  color: #6a6a76;
+  cursor: default;
+}
+
+.code {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #1e1e24;
+  color: #c8c8d0;
+  font: 11px/1.4 ui-monospace, monospace;
+  word-break: break-all;
+  resize: vertical;
+}
+
+.danger-btn {
+  width: 100%;
+  border-color: #6b2f2f;
+  color: #ff8a80;
 }
 
 .link {

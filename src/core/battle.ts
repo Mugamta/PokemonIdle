@@ -1520,6 +1520,10 @@ export interface TurnResult {
   playerMoved: boolean
   /** 내 기술 PP 소모량 (프레셔 = 2) */
   ppCost: number
+  /** 상대가 실제로 기술을 썼는지 */
+  enemyMoved: boolean
+  /** 상대 기술 PP 소모량 (내 포켓몬이 프레셔면 2) */
+  enemyPpCost: number
 }
 
 /**
@@ -1535,6 +1539,7 @@ export function runTurn(
 ): TurnResult {
   const log: string[] = []
   let playerMoved = false
+  let enemyMoved = false
   // 다이월은 그 턴에만
   for (const b of [player, enemy]) if (b.vol) b.vol.protect = false
   const pri = (att: Battler, def: Battler, id: string | null) => {
@@ -1603,6 +1608,7 @@ export function runTurn(
       return
     }
     if (att === player) playerMoved = true
+    else enemyMoved = true
     // 애널라이즈: 상대가 이미 행동했으면 (나중에 행동)
     useMove(att, def, move, log, i === 1 && !!order[0]![2], att === player ? playerOverride : undefined)
   })
@@ -1612,7 +1618,8 @@ export function runTurn(
       endOfTurn(b!, foe!, log)
   }
   const ppCost = ab(enemy, player) === 'pressure' ? 2 : 1
-  return { lines: log, playerMoved, ppCost }
+  const enemyPpCost = ab(player, enemy) === 'pressure' ? 2 : 1
+  return { lines: log, playerMoved, ppCost, enemyMoved, enemyPpCost }
 }
 
 // ---------- 기술 배치 ----------

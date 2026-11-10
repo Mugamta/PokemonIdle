@@ -4,7 +4,7 @@ import { calcStats, NATURES } from '../src/data/natures'
 import { josa, ro } from '../src/core/battle'
 import { formatMs, PHASE_MS, phaseAt, phaseRemaining } from '../src/core/dayNight'
 import { maxPower, teraShardOf, teraShardType, zPower } from '../src/core/gimmicks'
-import { exportSave, importSave, load, save, SAVE_VERSION } from '../src/core/save'
+import { exportSave, importSave, load, resetSave, save, SAVE_VERSION, unlockSave } from '../src/core/save'
 import { rollStarter, STARTER_CHANCES, STARTERS } from '../src/data/starters'
 import { baseSlotsAt, MAX_MOVE_SLOTS, slotsAt } from '../src/stores/game'
 
@@ -126,7 +126,10 @@ describe('스타팅 뽑기', () => {
 })
 
 describe('저장', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => {
+    localStorage.clear()
+    unlockSave()
+  })
 
   test('저장 → 불러오기', () => {
     expect(load()).toBeNull()
@@ -149,6 +152,29 @@ describe('저장', () => {
     expect(importSave('!!!not-base64')).toBe(false)
     expect(importSave(btoa('not json'))).toBe(false)
     expect(load<{ money: number }>()?.state.money).toBe(1)
+  })
+
+  test('저장 형식이 아닌 JSON 코드는 거부', () => {
+    save({ money: 1 })
+    expect(importSave(btoa(encodeURIComponent('{"a":1}')))).toBe(false)
+    expect(load<{ money: number }>()?.state.money).toBe(1)
+  })
+
+  test('가져오기 후에는 자동 저장이 가져온 데이터를 덮어쓰지 않음', () => {
+    save({ money: 5 })
+    const code = exportSave()
+    save({ money: 999 })
+    expect(importSave(code)).toBe(true)
+    save({ money: 999 })
+    expect(load<{ money: number }>()?.state.money).toBe(5)
+  })
+
+  test('초기화하면 저장 데이터가 사라지고 이후 자동 저장도 막힘', () => {
+    save({ money: 5 })
+    resetSave()
+    expect(load()).toBeNull()
+    save({ money: 5 })
+    expect(load()).toBeNull()
   })
 
   test('깨진 저장 데이터는 null', () => {

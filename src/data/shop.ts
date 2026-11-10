@@ -372,8 +372,8 @@ export const DEFAULT_AUTO_BUY: Record<AutoCategory, string> = {
 export type ItemPerkId = `${'autoUse' | 'autoBuy'}:${AutoCategory}`
 /** 자동 전투 AI 개선: strong = 가장 강한 기술, smart = 특성까지 고려 (strong 필요) */
 export type AiPerkId = 'ai:strong' | 'ai:smart'
-/** 전투 화면 표시 개선: ratio = 비율, full = 현재/최대와 비율 (ratio 필요) */
-export type DisplayPerkId = `${'foeHp' | 'exp'}:${'ratio' | 'full'}`
+/** 전투 화면 표시 개선: ratio = 비율, full = 현재/최대와 비율 (ratio 필요) / 상대 기술: list = 기술, pp = 남은 PP (list 필요) */
+export type DisplayPerkId = `${'foeHp' | 'exp'}:${'ratio' | 'full'}` | `foeMoves:${'list' | 'pp'}`
 /** 속도 가속: battle = 기술 선택 대기, search = 상대 포켓몬 찾는 시간. 1~4단계 */
 export type SpeedKind = 'battle' | 'search'
 export type SpeedLevel = 1 | 2 | 3 | 4
@@ -497,6 +497,19 @@ export const DISPLAY_PERKS: ChainPerk<DisplayPerkId>[] = [
     desc: '다음 레벨까지의 경험치를 현재 EXP/필요 EXP와 비율(%)로 표시합니다.',
     price: 10000,
     requires: 'exp:ratio',
+  },
+  {
+    id: 'foeMoves:list',
+    label: '상대 기술 표시 개선 1',
+    desc: '전투 탭 → 배틀에서 상대 포켓몬이 가진 기술(타입·분류·위력·명중)을 볼 수 있습니다.',
+    price: 5000,
+  },
+  {
+    id: 'foeMoves:pp',
+    label: '상대 기술 표시 개선 2',
+    desc: '상대 포켓몬 기술의 남은 PP도 함께 표시합니다. (상대도 내 포켓몬과 같은 규칙으로 PP를 소모하며, 모두 떨어지면 발버둥을 씁니다)',
+    price: 10000,
+    requires: 'foeMoves:list',
   },
 ]
 /** 속도 가속 단계별 대기 시간 (0단계 = 기본) */

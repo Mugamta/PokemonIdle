@@ -2,6 +2,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { loadAllData } from './helpers'
+import { maxHpOf } from '../src/core/battle'
 import { load, save } from '../src/core/save'
 import { findStage } from '../src/data/stages'
 import { PARTY_MAX, useGameStore, type PartyMember } from '../src/stores/game'
@@ -162,5 +163,47 @@ describe('상점', () => {
     expect(game.money).toBe(50)
     expect(game.buyItem('potion')).toBe(false)
     expect(game.money).toBe(50)
+  })
+})
+
+describe('상대 PP', () => {
+  const wild = (moves: string[]) => ({
+    species: 'rattata',
+    level: 50,
+    nature: 'hardy',
+    ivs: [31, 31, 31, 31, 31, 31],
+    hp: null,
+    moves,
+  })
+
+  test('PP 소모가 시작되면 상대도 기술을 쓸 때마다 PP가 줄어듦', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter({ ...starter('snorlax', ['splash']), level: 100 })
+    game.clearedStages.push('1-1')
+    game.startBattle(wild(['tackle']))
+    game.resolveTurn('splash')
+    expect(game.enemy?.pp?.tackle).toBe(34)
+  })
+
+  test('상대 기술 PP가 모두 0이면 발버둥', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter({ ...starter('snorlax', ['splash']), level: 100 })
+    game.clearedStages.push('1-1')
+    game.startBattle({ ...wild(['tackle']), pp: { tackle: 0 } })
+    game.resolveTurn('splash')
+    expect(game.enemy?.pp?.tackle).toBe(0)
+    // 발버둥 반동 (최대 HP의 1/4)
+    expect(game.enemy!.hp).toBeLessThan(maxHpOf(game.enemyBattler()!))
+  })
+
+  test('PP 소모 시작 전에는 상대 PP도 줄지 않음', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter({ ...starter('snorlax', ['splash']), level: 100 })
+    game.startBattle(wild(['tackle']))
+    game.resolveTurn('splash')
+    expect(game.enemy?.pp?.tackle).toBeUndefined()
   })
 })

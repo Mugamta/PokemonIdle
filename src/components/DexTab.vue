@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { dexData, loadDex, TYPE_COLORS } from '../data/dex'
+import { dexData, loadDex, TYPE_COLORS, type DexEntry } from '../data/dex'
+import { regionalDexOf } from '../data/regionalDex'
+import { findStage, REGIONS } from '../data/stages'
 import { useGameStore } from '../stores/game'
 import DexDetail from './DexDetail.vue'
 import DexItems from './DexItems.vue'
@@ -22,24 +24,43 @@ const FILTERS = [
   { key: 'caught', label: '포획' },
 ] as const
 
+/** 전국도감 / 지역도감 */
+const scope = ref<'national' | 'regional'>('national')
+/** 지역도감으로 볼 지방 (기본: 지금 있는 지방) */
+const regionKey = ref(findStage(game.currentStageId)?.region.key ?? REGIONS[0]!.key)
+/** 들어갈 수 있는 지방만 (조건을 만족하지 못한 히든 지방은 숨김) */
+const regionOptions = computed(() => REGIONS.filter((r) => game.canEnter(r) && regionalDexOf(r.key).length))
+
 onMounted(() => loadDex().catch((e) => (error.value = String(e))))
 
 const caughtSet = computed(() => new Set(game.caught))
 /** 실제로 조우·포획한 포켓몬 (도감 공개 퍽과 무관) */
 const seenSet = computed(() => new Set([...game.seen, ...game.caught]))
+/** 현재 도감 범위의 포켓몬 (지역도감은 지역도감 번호 순) */
+const scoped = computed<{ p: DexEntry; no: number }[]>(() => {
+  const index = dexData.value?.index ?? []
+  if (scope.value === 'national') return index.map((p) => ({ p, no: p.num }))
+  const byNum = new Map(index.map((p) => [p.num, p]))
+  return regionalDexOf(regionKey.value).flatMap((num, i) => {
+    const p = byNum.get(num)
+    return p ? [{ p, no: i + 1 }] : []
+  })
+})
 const filtered = computed(() => {
-  let list = dexData.value?.index ?? []
-  if (filter.value === 'seen') list = list.filter((p) => seenSet.value.has(p.id))
-  else if (filter.value === 'caught') list = list.filter((p) => caughtSet.value.has(p.id))
+  let list = scoped.value
+  if (filter.value === 'seen') list = list.filter(({ p }) => seenSet.value.has(p.id))
+  else if (filter.value === 'caught') list = list.filter(({ p }) => caughtSet.value.has(p.id))
   const q = query.value.trim()
   if (!q) return list
   const n = Number(q)
-  // 이름 검색은 조우한 포켓몬만 (미조우 포켓몬의 이름이 드러나지 않도록)
-  return list.filter((p) =>
-    Number.isInteger(n) && n > 0 ? p.num === n : game.dexLevel(p.id) !== 'hidden' && p.ko.includes(q),
+  // 번호 검색은 보고 있는 도감의 번호, 이름 검색은 조우한 포켓몬만 (미조우 포켓몬의 이름이 드러나지 않도록)
+  return list.filter(({ p, no }) =>
+    Number.isInteger(n) && n > 0 ? no === n : game.dexLevel(p.id) !== 'hidden' && p.ko.includes(q),
   )
 })
-const seenCount = computed(() => dexData.value?.index.filter((p) => seenSet.value.has(p.id)).length ?? 0)
+const seenCount = computed(() => scoped.value.filter(({ p }) => seenSet.value.has(p.id)).length)
+const caughtCount = computed(() => scoped.value.filter(({ p }) => caughtSet.value.has(p.id)).length)
+const pad = computed(() => (scope.value === 'national' ? 4 : 3))
 
 function open(id: string) {
   if (game.dexLevel(id) !== 'full') return
@@ -72,8 +93,15 @@ async function back() {
     <DexItems v-if="mode === 'items'" />
     <template v-else>
     <header class="header">
+      <div class="scopes">
+        <button type="button" :class="{ active: scope === 'national' }" @click="scope = 'national'">전국도감</button>
+        <button type="button" :class="{ active: scope === 'regional' }" @click="scope = 'regional'">지역도감</button>
+        <select v-if="scope === 'regional'" v-model="regionKey" class="region">
+          <option v-for="r in regionOptions" :key="r.key" :value="r.key">{{ r.title }}</option>
+        </select>
+      </div>
       <input v-model="query" class="search" type="search" placeholder="이름 또는 번호 검색" />
-      <span class="count">조우 {{ seenCount }} · 포획 {{ game.caught.length }} / {{ dexData.index.length }}</span>
+      <span class="count">조우 {{ seenCount }} · 포획 {{ caughtCount }} / {{ scoped.length }}</span>
       <div class="filters">
         <button
           v-for="f in FILTERS"
@@ -87,7 +115,7 @@ async function back() {
       </div>
     </header>
     <ul class="list">
-      <li v-for="p in filtered" :key="p.id">
+      <li v-for="{ p, no } in filtered" :key="p.id">
         <button
           type="button"
           class="row"
@@ -97,7 +125,7 @@ async function back() {
         >
           <span v-if="game.dexLevel(p.id) === 'hidden'" class="unknown">?</span>
           <PokeSprite v-else :species="p.id" :size="36" lazy />
-          <span class="num">No.{{ String(p.num).padStart(4, '0') }}</span>
+          <span class="num">No.{{ String(no).padStart(pad, '0') }}</span>
           <span class="name">{{ game.dexLevel(p.id) === 'hidden' ? '???' : p.ko }}</span>
           <span v-if="game.dexLevel(p.id) === 'full'" class="types">
             <span v-for="t in p.types" :key="t" class="type" :style="{ background: TYPE_COLORS[t] }">
@@ -164,6 +192,41 @@ async function back() {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+
+.scopes {
+  width: 100%;
+  display: flex;
+  gap: 6px;
+}
+
+.scopes button {
+  padding: 5px 12px;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #2a2a33;
+  color: #9a9aa6;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.scopes button.active {
+  border-color: #ffcb05;
+  color: #fff;
+  font-weight: 700;
+}
+
+.region {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #2a2a33;
+  color: #eee;
+  font: inherit;
+  font-size: 13px;
 }
 
 .filters {

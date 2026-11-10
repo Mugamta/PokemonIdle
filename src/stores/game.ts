@@ -369,6 +369,8 @@ export interface WildPokemon {
   hp: number | null
   /** 기술 (원작 야생 규칙: 해당 레벨까지 배운 마지막 4개) */
   moves?: string[]
+  /** 기술별 남은 PP (없는 기술 = 최대). PP 소모가 시작된 뒤부터 줄어듦 */
+  pp?: Record<string, number>
   /** 능력 랭크 */
   stages?: Stages
   boss?: boolean
@@ -600,6 +602,8 @@ export const useGameStore = defineStore('game', {
     /** 전투 화면 표시 단계: 0 = 기본, 1 = 비율, 2 = 현재/최대와 비율 */
     displayLevel: (s) => (kind: 'foeHp' | 'exp'): 0 | 1 | 2 =>
       s.perks.includes(`${kind}:full`) ? 2 : s.perks.includes(`${kind}:ratio`) ? 1 : 0,
+    /** 상대 기술 표시 단계: 0 = 안 보임, 1 = 기술, 2 = 기술과 남은 PP */
+    foeMoveView: (s): 0 | 1 | 2 => (s.perks.includes('foeMoves:pp') ? 2 : s.perks.includes('foeMoves:list') ? 1 : 0),
     /** 속도 가속 단계 (0 = 기본) */
     speedLevel: (s) => (kind: SpeedKind): number =>
       ([4, 3, 2, 1] as const).find((lv) => s.perks.includes(`${kind}Speed:${lv}`)) ?? 0,
@@ -1197,10 +1201,16 @@ export const useGameStore = defineStore('game', {
       // 실제로 나가는 기술: Z기술 / 다이맥스 중이면 다이맥스 기술 (PP는 원래 기술에서 소모)
       const md = playerMove && playerMove !== 'struggle' ? moveData(playerMove) : null
       const override = md ? (activated === 'z' ? zMove(md) : this.gimmickActive?.kind === 'dynamax' ? maxMove(md) : undefined) : undefined
-      const enemyMove = chooseMove(foe, me, DIFFICULTY_AI[this.difficulty])
+      // 상대도 PP가 남은 기술만 (모두 0이면 발버둥)
+      const foeMoves = this.ppActive ? foe.moves.filter((id) => (ppOf(this.enemy!, id) ?? 1) > 0) : foe.moves
+      const enemyMove = chooseMove({ ...foe, moves: foeMoves }, me, DIFFICULTY_AI[this.difficulty])
       const result: TurnResult = runTurn(me, foe, playerMove, enemyMove, override)
       for (const line of result.lines) log.push(line)
       this.battleTurns++
+      if (enemyMove !== 'struggle' && result.enemyMoved && this.ppActive) {
+        const left = ppOf(this.enemy, enemyMove)
+        if (left != null) (this.enemy.pp ??= {})[enemyMove] = Math.max(0, left - result.enemyPpCost)
+      }
 
       // PP 소모 (실제로 기술을 썼을 때만)
       if (playerMove && result.playerMoved && this.ppActive) {

@@ -36,21 +36,36 @@ import { formOf, megaFormFor, TERA_SHARD_COST, teraShardOf, teraShardType } from
 import { abilityInfo } from '../core/abilities'
 import { josa, maxHpOf, ro } from '../core/battle'
 import { BALL_NOTES, catchChance, isMachine, isRecord } from '../data/items'
+import { findStage } from '../data/stages'
+import { useStageViewStore } from '../stores/stageView'
 import BattleControls from './BattleControls.vue'
+import StageDetail from './StageDetail.vue'
+import StageMap from './StageMap.vue'
 import ItemIcon from './ItemIcon.vue'
 import PokeSprite from './PokeSprite.vue'
 
-type SubTab = 'fight' | 'party' | 'stats' | 'moves' | 'items'
+type SubTab = 'fight' | 'party' | 'stats' | 'moves' | 'items' | 'map'
 const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'fight', label: '배틀' },
   { id: 'party', label: '파티' },
   { id: 'stats', label: '능력치' },
   { id: 'moves', label: '기술' },
   { id: 'items', label: '아이템' },
+  { id: 'map', label: '지도' },
 ]
 
 const game = useGameStore()
 const sub = ref<SubTab>('fight')
+const view = useStageViewStore()
+// 지도: 열 때 지금 있는 지방·장소를 보여 줌
+watch(sub, (t) => {
+  if (t !== 'map') return
+  const cur = findStage(game.currentStageId)
+  if (!cur) return
+  if (view.regionId !== cur.region.id) view.selectRegion(cur.region.id)
+  if (!view.stageId) view.selectPlace(cur.stage.place)
+})
+const viewStage = computed(() => view.region.stages.find((s) => s.id === view.stageId) ?? null)
 const memberIndex = ref(0)
 const error = ref<string | null>(null)
 
@@ -450,6 +465,18 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
         </li>
       </ul>
     </section>
+
+    <!-- 지도: 전투 화면을 보면서 지도 확인·이동 -->
+    <template v-else-if="sub === 'map'">
+      <div class="map-box">
+        <StageMap />
+      </div>
+      <section v-if="viewStage" class="card">
+        <p class="map-stage"><strong>{{ viewStage.id }}</strong> {{ viewStage.name }}</p>
+        <StageDetail :key="viewStage.id" :stage="viewStage" />
+      </section>
+      <p v-else class="msg">지도에서 장소를 고르면 출현 정보와 이동 버튼이 표시됩니다.</p>
+    </template>
 
     <template v-else>
       <!-- 능력치 / 기술: 파티 포켓몬별 -->
@@ -1180,6 +1207,24 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
   padding: 12px;
   border-radius: 8px;
   background: #2a2a33;
+}
+
+.map-box {
+  height: 240px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #18181d;
+}
+
+.map-stage {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.map-stage strong {
+  margin-right: 4px;
+  color: #ffcb05;
 }
 
 .ability {
