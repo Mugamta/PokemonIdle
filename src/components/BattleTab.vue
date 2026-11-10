@@ -209,11 +209,25 @@ function teachTutor(t: TutorRow) {
   if (!s || s.kind === 'locked' || tutorBlock(t)) return
   if (game.learnByTutor(memberIdx.value, t.move, t.src, s.kind === 'move' ? s.id : undefined)) pickedSlot.value = null
 }
+// 기술 목록 필터: 타입 / 분류 (네 탭 공통, 포켓몬을 바꿔도 유지)
+const typeFilter = ref('')
+const clsFilter = ref<'' | 'physical' | 'special' | 'status'>('')
+const filterOn = computed(() => !!typeFilter.value || !!clsFilter.value)
+const FILTER_EMPTY = '필터에 맞는 기술이 없습니다.'
+const TYPE_OPTIONS = Object.keys(TYPE_COLORS)
+function passFilter<T extends { info?: { type: string; cls: string } }>(list: T[]): T[] {
+  if (!filterOn.value) return list
+  return list.filter((x) => x.info && (!typeFilter.value || x.info.type === typeFilter.value) && (!clsFilter.value || x.info.cls === clsFilter.value))
+}
+const fForgotten = computed(() => passFilter(forgotten.value))
+const fMachines = computed(() => passFilter(learnableMachines.value))
+const fEgg = computed(() => passFilter(eggRows.value))
+const fTutor = computed(() => passFilter(tutorRows.value))
 const LEARN_TABS = computed(() => [
-  { id: 'self' as const, label: '자력기', n: forgotten.value.length },
-  { id: 'tm' as const, label: '기술머신', n: learnableMachines.value.length },
-  { id: 'egg' as const, label: '알 기술', n: eggRows.value.length },
-  { id: 'tutor' as const, label: '기술가르침', n: tutorRows.value.length },
+  { id: 'self' as const, label: '자력기', n: fForgotten.value.length },
+  { id: 'tm' as const, label: '기술머신', n: fMachines.value.length },
+  { id: 'egg' as const, label: '알 기술', n: fEgg.value.length },
+  { id: 'tutor' as const, label: '기술가르침', n: fTutor.value.length },
 ])
 /**
  * 이 포켓몬이 기술머신으로 새로 배울 수 있는 기술 전체 (기술마다 한 줄).
@@ -609,16 +623,34 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                   {{ t.label }} <small>{{ t.n }}</small>
                 </button>
               </div>
+              <div class="move-filter">
+                <select v-model="typeFilter" class="type-select" :style="typeFilter ? { background: TYPE_COLORS[typeFilter], color: '#fff' } : {}">
+                  <option value="">모든 타입</option>
+                  <option v-for="ty in TYPE_OPTIONS" :key="ty" :value="ty">{{ dexData?.types[ty] ?? ty }}</option>
+                </select>
+                <div class="cls-btns">
+                  <button
+                    v-for="c in ['', 'physical', 'special', 'status'] as const"
+                    :key="c"
+                    type="button"
+                    :class="{ active: clsFilter === c }"
+                    @click="clsFilter = c"
+                  >
+                    {{ c ? CLS_LABEL[c] : '전체' }}
+                  </button>
+                </div>
+                <button v-if="filterOn" type="button" class="small-btn" @click="(typeFilter = ''), (clsFilter = '')">초기화</button>
+              </div>
               <template v-if="learnTab === 'egg'">
                 <h5 class="train-sec">
                   알 기술 물려받기
                   <span class="muted">1회 {{ won(EGG_MOVE_PRICE) }} (흉내허브) · 확률 = 이 포켓몬 암컷 비율 × 부모 수컷 비율 · 소지금 {{ won(game.money) }}</span>
                 </h5>
                 <p v-if="!learnMethods" class="msg">불러오는 중…</p>
-                <p v-else-if="!eggRows.length" class="msg">새로 물려받을 수 있는 알 기술이 없습니다.</p>
+                <p v-else-if="!fEgg.length" class="msg">{{ filterOn && eggRows.length ? FILTER_EMPTY : '새로 물려받을 수 있는 알 기술이 없습니다.' }}</p>
                 <ul v-else class="rows mrows">
                   <li
-                    v-for="o in eggRows"
+                    v-for="o in fEgg"
                     :key="o.move"
                     :class="{ clickable: !eggBlock(o), disabled: !!eggBlock(o) }"
                     :title="eggBlock(o) || `${won(EGG_MOVE_PRICE)}을 내고 ${pct(o.chance)} 확률로 물려받습니다 (실패해도 돈은 사라짐)`"
@@ -643,10 +675,10 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                   <span class="muted">소지금 {{ won(game.money) }} · BP {{ game.bp }} · 코인 {{ game.coins.toLocaleString() }}</span>
                 </h5>
                 <p v-if="!learnMethods" class="msg">불러오는 중…</p>
-                <p v-else-if="!tutorRows.length" class="msg">기술가르침으로 새로 배울 수 있는 기술이 없습니다.</p>
+                <p v-else-if="!fTutor.length" class="msg">{{ filterOn && tutorRows.length ? FILTER_EMPTY : '기술가르침으로 새로 배울 수 있는 기술이 없습니다.' }}</p>
                 <ul v-else class="rows mrows">
                   <li
-                    v-for="t in tutorRows"
+                    v-for="t in fTutor"
                     :key="t.move"
                     :class="{ clickable: !tutorBlock(t), disabled: !!tutorBlock(t) }"
                     :title="tutorBlock(t) || `${tutorRegionTitle(t.src)} ${t.src.place}에서 배웁니다 (${tutorCostText(t.src.cost)})`"
@@ -675,10 +707,10 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                   기술머신으로 가르치기
                   <span class="muted">소지금 {{ won(game.money) }}</span>
                 </h5>
-                <p v-if="!learnableMachines.length" class="msg">기술머신으로 새로 배울 수 있는 기술이 없습니다.</p>
+                <p v-if="!fMachines.length" class="msg">{{ filterOn && learnableMachines.length ? FILTER_EMPTY : '기술머신으로 새로 배울 수 있는 기술이 없습니다.' }}</p>
                 <ul v-else class="rows mrows">
                   <li
-                    v-for="t in learnableMachines"
+                    v-for="t in fMachines"
                     :key="t.move"
                     :class="{ clickable: t.n > 0 || game.money >= t.price, disabled: t.n <= 0 && game.money < t.price }"
                     :title="
@@ -710,10 +742,10 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                   잊은 기술 되살리기
                   <span class="muted">하트비늘 ×{{ heartScales }} (1개 소모<template v-if="!heartScales"> · 상점 → 육성 → 기술 떠올리기</template>)</span>
                 </h5>
-                <p v-if="!forgotten.length" class="msg">잊은 기술이 없습니다.</p>
+                <p v-if="!fForgotten.length" class="msg">{{ filterOn && forgotten.length ? FILTER_EMPTY : '잊은 기술이 없습니다.' }}</p>
                 <ul v-else class="rows mrows">
                   <li
-                    v-for="m in forgotten"
+                    v-for="m in fForgotten"
                     :key="m.id"
                     :class="{ clickable: heartScales > 0, disabled: !heartScales }"
                     :title="heartScales ? '하트비늘 1개를 써서 이 기술을 장착합니다' : '하트비늘이 없습니다'"
@@ -761,6 +793,47 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 }
 
 .learn-tabs button.active {
+  border-color: #ffcb05;
+  color: #fff;
+}
+
+/* 기술 목록 필터: 타입 선택 + 물리/특수/변화 */
+.move-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.type-select {
+  padding: 4px 6px;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: #1e1e26;
+  color: #ddd;
+  font: inherit;
+  font-size: 12px;
+}
+
+.cls-btns {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+}
+
+.cls-btns button {
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: transparent;
+  color: #9a9aa6;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cls-btns button.active {
   border-color: #ffcb05;
   color: #fff;
 }
