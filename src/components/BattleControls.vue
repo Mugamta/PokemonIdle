@@ -124,18 +124,6 @@ const slots = computed(() => {
     return { kind: 'move' as const, m, v, tag, special: v !== m, hint, pp, max, out: game.ppActive && pp === 0 }
   })
 })
-/** 상대 기술 (강화상점 상대 기술 표시 개선). 2단계면 남은 PP까지 */
-const foeMoves = computed(() => {
-  const e = game.enemy
-  if (!e || !game.foeMoveView) return []
-  return (e.moves ?? []).flatMap((id) => {
-    const m = moveData(id)
-    if (!m) return []
-    const max = maxPpOf(id)
-    const pp = ppOf(e, id)
-    return [{ m, max, pp, out: game.ppActive && pp === 0 }]
-  })
-})
 /** 모든 기술의 PP가 0이면 발버둥 */
 const struggling = computed(() => !!game.party[0] && game.usableMoves().length === 0)
 
@@ -235,24 +223,6 @@ watch(
       <span class="name">발버둥</span>
       <span class="meta">쓸 수 있는 기술이 없습니다. 반동으로 최대 HP의 1/4 데미지를 받습니다.</span>
     </button>
-    <div v-if="game.foeMoveView && game.enemy" class="foe-moves">
-      <span class="foe-label">상대 기술</span>
-      <span v-if="!foeMoves.length" class="foe-none">없음 (발버둥)</span>
-      <span
-        v-for="f in foeMoves"
-        :key="f.m.id"
-        class="foe-move"
-        :class="{ out: f.out }"
-        :style="{ '--c': TYPE_COLORS[f.m.type] ?? '#666' }"
-        :title="`${dexData?.types[f.m.type] ?? f.m.type} · ${CLS_LABEL[f.m.cls]} · 위력 ${f.m.power ?? '-'} · 명중 ${f.m.acc ?? '-'}`"
-      >
-        {{ f.m.ko }}
-        <small class="foe-meta">{{ CLS_LABEL[f.m.cls] }} {{ f.m.power ?? '-' }}</small>
-        <small v-if="game.foeMoveView >= 2 && f.max != null" class="foe-pp" :class="{ low: f.pp != null && f.pp <= f.max / 4 }">
-          {{ f.pp }}/{{ f.max }}
-        </small>
-      </span>
-    </div>
     <p class="status">{{ status }}</p>
 
     <div class="log-wrap">
@@ -465,54 +435,6 @@ watch(
   color: #6a6a76;
   font-size: 13px;
   cursor: default;
-}
-
-.foe-moves {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-}
-
-.foe-label {
-  color: #9a9aa6;
-  font-size: 11px;
-}
-
-.foe-none {
-  color: #6a6a76;
-}
-
-.foe-move {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border: 1px solid #3a3a44;
-  border-left: 3px solid var(--c);
-  border-radius: 4px;
-  background: #24242b;
-  color: #ddd;
-}
-
-.foe-move.out {
-  opacity: 0.5;
-}
-
-.foe-meta {
-  color: #8a8a96;
-  font-size: 10px;
-}
-
-.foe-pp {
-  color: #c8c8d0;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-.foe-pp.low {
-  color: #ff8a80;
 }
 
 /* 문구 길이와 상관없이 항상 한 줄 높이 (줄바꿈으로 아래 로그가 출렁이지 않게) */

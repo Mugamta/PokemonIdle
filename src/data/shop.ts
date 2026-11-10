@@ -501,7 +501,7 @@ export const DISPLAY_PERKS: ChainPerk<DisplayPerkId>[] = [
   {
     id: 'foeMoves:list',
     label: '상대 기술 표시 개선 1',
-    desc: '전투 탭 → 배틀에서 상대 포켓몬이 가진 기술(타입·분류·위력·명중)을 볼 수 있습니다.',
+    desc: '전투 화면의 상대 HP 바 아래에 상대 포켓몬이 가진 기술(타입 색·위력)을 표시합니다. 마우스를 올리면 분류·명중도 보입니다.',
     price: 5000,
   },
   {

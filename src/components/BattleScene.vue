@@ -4,13 +4,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { phaseAt, useNow } from '../core/dayNight'
 import { battleData, STATUS_COLORS, STATUS_LABELS } from '../data/battle'
-import { dexData, loadDex, STAT_LABELS } from '../data/dex'
+import { dexData, loadDex, STAT_LABELS, TYPE_COLORS } from '../data/dex'
 import { calcStats } from '../data/natures'
 import { findStage } from '../data/stages'
-import { expAtLevel, ro } from '../core/battle'
+import { expAtLevel, moveData, ro } from '../core/battle'
 import { formOf } from '../core/gimmicks'
 import { useBattleLogStore } from '../stores/battleLog'
-import { BOSS_DEFEATS, BOSS_INTRO_MS, useGameStore } from '../stores/game'
+import { BOSS_DEFEATS, BOSS_INTRO_MS, maxPpOf, ppOf, useGameStore } from '../stores/game'
 import HpBar from './HpBar.vue'
 import ItemIcon from './ItemIcon.vue'
 import PokemonCenter from './PokemonCenter.vue'
@@ -129,6 +129,19 @@ const foe = computed(() => {
   return { enemy: e, info: hpInfo(e.species, e.level, e.ivs, [0, 0, 0, 0, 0, 0], e.nature, e.hp) }
 })
 const foeFallen = computed(() => !game.enemy && !!fallen.value)
+/** 상대 기술 (강화상점 상대 기술 표시 개선, HP 바 아래). 2단계면 남은 PP까지 */
+const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
+const foeMoves = computed(() => {
+  const e = game.enemy
+  if (!e || !game.foeMoveView) return []
+  return (e.moves ?? []).flatMap((id) => {
+    const m = moveData(id)
+    if (!m) return []
+    const max = maxPpOf(id)
+    const pp = ppOf(e, id)
+    return [{ m, max, pp, out: game.ppActive && pp === 0 }]
+  })
+})
 </script>
 
 <template>
@@ -186,6 +199,23 @@ const foeFallen = computed(() => !game.enemy && !!fallen.value)
           <span class="lv">Lv.{{ foe.enemy.level }}</span>
         </div>
         <HpBar v-if="foe.info" :hp="foe.info.hp" :max="foe.info.max" :display="game.displayLevel('foeHp')" />
+        <div v-if="game.foeMoveView && game.enemy" class="foe-moves">
+          <span v-if="!foeMoves.length" class="foe-none">기술 없음 (발버둥)</span>
+          <span
+            v-for="f in foeMoves"
+            :key="f.m.id"
+            class="foe-move"
+            :class="{ out: f.out }"
+            :style="{ '--c': TYPE_COLORS[f.m.type] ?? '#666' }"
+            :title="`${dexData?.types[f.m.type] ?? f.m.type} · ${CLS_LABEL[f.m.cls]} · 위력 ${f.m.power ?? '-'} · 명중 ${f.m.acc ?? '-'}`"
+          >
+            <span class="foe-name">{{ f.m.ko }}</span>
+            <small v-if="game.foeMoveView >= 2 && f.max != null" class="foe-pp" :class="{ low: f.pp != null && f.pp <= f.max / 4 }">
+              {{ f.pp }}/{{ f.max }}
+            </small>
+            <small v-else class="foe-meta">{{ f.m.power ?? '-' }}</small>
+          </span>
+        </div>
       </div>
       <div class="platform foe-pos" :class="{ 'boss-enter': !!bossIntro, fallen: foeFallen }">
         <PokeSprite :key="foe.enemy.species" :species="foe.enemy.species" :size="96" pose="foe" class="mon" />
@@ -638,6 +668,57 @@ const foeFallen = computed(() => !game.enemy && !!fallen.value)
 .foe-box {
   top: 52px;
   left: 12px;
+}
+
+/* 상대 기술: HP 바 아래 2열 */
+.foe-moves {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.foe-none {
+  grid-column: 1 / -1;
+  color: #8a8a96;
+}
+
+.foe-move {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 1px 4px;
+  border-left: 3px solid var(--c);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ddd;
+}
+
+.foe-move.out {
+  opacity: 0.5;
+}
+
+.foe-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foe-meta,
+.foe-pp {
+  flex: none;
+  color: #9a9aa6;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.foe-pp.low {
+  color: #ff8a80;
 }
 
 .caught-mark {
