@@ -5,6 +5,7 @@
 // 한국어 지명 출처: WikiDex "Lista de localizaciones en todos los idiomas"
 //   출처에 한국어 표기가 없어 추정한 지명에는 `// 확인필요` 주석을 달아둠
 import type { Gimmick } from '../core/gimmicks'
+import type { Weather } from '../core/battle'
 import { ENCOUNTERS, type EncounterSet } from './encounters'
 import { KANTO_JOHTO_MAP, KANTO_MAP } from './maps/kantoJohto'
 import { LEGACY_REGIONS, LEGACY_V1, LEGACY_V2 } from './legacyStages'
@@ -403,4 +404,29 @@ const TERRAIN_RULES: [Terrain, RegExp][] = [
 export function stageTerrain(stage: Pick<Stage, 'kind' | 'name' | 'place'>): Terrain {
   if (stage.kind === 'water') return 'water'
   return TERRAIN_RULES.find(([, re]) => re.test(stage.name) || re.test(stage.place))?.[0] ?? 'grass'
+}
+
+/** 원작에서 날씨가 있는 장소 (지방 key → 장소 이름 → 날씨). 장소마다 고정, 같은 장소의 수상 스테이지도 같은 날씨 */
+const HOENN_WEATHER: Record<string, Weather> = { '111번도로': 'sand', '119번도로': 'rain', '120번도로': 'rain', 송화산: 'fog' }
+const SINNOH_WEATHER: Record<string, Weather> = {
+  '210번도로': 'fog',
+  '212번도로': 'rain',
+  '215번도로': 'rain',
+  '216번도로': 'hail',
+  '217번도로': 'hail',
+  예지호수근처: 'hail',
+  예지호수: 'hail',
+  '228번도로': 'sand',
+}
+const FIELD_WEATHER: Record<string, Record<string, Weather>> = {
+  'hoenn-rs': HOENN_WEATHER,
+  'hoenn-e': HOENN_WEATHER,
+  'sinnoh-dp': SINNOH_WEATHER,
+  'sinnoh-pt': SINNOH_WEATHER,
+}
+
+/** 스테이지의 필드 날씨 (없으면 null) */
+export function stageWeather(stageId: string): Weather | null {
+  const found = findStage(stageId)
+  return (found && FIELD_WEATHER[found.region.key]?.[found.stage.place]) ?? null
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
-import { REGIONS } from '../data/stages'
+import { REGIONS, stageWeather } from '../data/stages'
+import { WEATHER_LABELS } from '../core/battle'
 import { useGameStore } from '../stores/game'
 import { useStageViewStore } from '../stores/stageView'
 import StageDetail from './StageDetail.vue'
@@ -47,6 +48,7 @@ watch(
           <span class="stage-id">{{ stage.id }}</span>
           <span class="name">{{ stage.name }}</span>
           <span v-if="stage.kind === 'water'" class="tag water">수상</span>
+          <span v-if="stageWeather(stage.id)" class="tag weather" title="이곳에서는 항상 이 날씨로 전투합니다">{{ WEATHER_LABELS[stageWeather(stage.id)!] }}</span>
           <span v-if="game.currentStageId === stage.id" class="tag here">현재</span>
           <span v-if="game.stageDexDone(stage)" class="tag dex" title="출현 포켓몬을 모두 잡았습니다">도감 완성</span>
           <span v-if="game.clearedStages.includes(stage.id)" class="tag cleared">클리어</span>
@@ -100,6 +102,11 @@ watch(
 .tag.dex {
   background: #7a2f2f;
   color: #fff;
+}
+
+.tag.weather {
+  background: #3a4a5e;
+  color: #cfe6ff;
 }
 
 .tag.lock {

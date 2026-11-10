@@ -1,5 +1,5 @@
 // 전투 계산 (core/battle.ts)
-import { beforeAll, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
 import { battler, loadAllData } from './helpers'
 import {
   chooseMove,
@@ -12,6 +12,7 @@ import {
   moveData,
   movesUpToLevel,
   runTurn,
+  setWeather,
   speedOf,
   stackMult,
   surelyKo,
@@ -384,5 +385,60 @@ describe('판정 강화: 전투가 끝난 턴의 이로운 턴 종료 효과', (
     b.hp = 100
     endOfTurnBenefits(b, full(battler('pikachu', 50, ['tackle'])))
     expect(b.hp).toBe(100)
+  })
+})
+
+describe('필드 날씨', () => {
+  afterEach(() => setWeather(null))
+  const sq = () => full(battler('squirtle', 50, ['water-gun']))
+  const ch = () => full(battler('charmander', 50, ['ember']))
+
+  test('비: 물 기술 1.5배, 불꽃 기술 절반', () => {
+    const water = damageOf(sq(), ch(), mv('water-gun'), 100, false)
+    const fire = damageOf(ch(), sq(), mv('ember'), 100, false)
+    setWeather('rain')
+    expect(damageOf(sq(), ch(), mv('water-gun'), 100, false)).toBeGreaterThan(water * 1.4)
+    expect(damageOf(ch(), sq(), mv('ember'), 100, false)).toBeLessThan(fire * 0.6)
+  })
+
+  test('날씨부정이 있으면 날씨 효과 없음', () => {
+    const water = damageOf(sq(), ch(), mv('water-gun'), 100, false)
+    setWeather('rain')
+    const golduck = full(battler('charmander', 50, ['ember'], { ability: 'cloud-nine' }))
+    expect(damageOf(sq(), golduck, mv('water-gun'), 100, false)).toBe(water)
+  })
+
+  test('쓱쓱: 비에서 스피드 2배', () => {
+    const b = full(battler('lotad', 50, ['tackle'], { ability: 'swift-swim' }))
+    const foe = ch()
+    const base = speedOf(b, foe)
+    setWeather('rain')
+    expect(speedOf(b, foe)).toBe(base * 2)
+  })
+
+  test('안개: 명중률 0.6배', () => {
+    const base = expectedDamage(sq(), ch(), mv('water-gun'))
+    setWeather('fog')
+    expect(expectedDamage(sq(), ch(), mv('water-gun'))).toBeCloseTo(base * 0.6, 0)
+  })
+
+  test('모래바람: 바위·땅·강철 외에는 턴 종료 시 1/16 데미지', () => {
+    setWeather('sand')
+    const p = full(battler('squirtle', 50, ['tackle']))
+    const e = full(battler('geodude', 50, ['tackle']))
+    vi.spyOn(Math, 'random').mockReturnValue(0.99)
+    const r = runTurn(p, e, null, 'tackle')
+    vi.restoreAllMocks()
+    expect(r.lines.some((l) => l.includes('모래바람에 의한 데미지'))).toBe(true)
+    expect(e.hp).toBe(maxHpOf(e))
+  })
+
+  test('날씨볼: 비에서 물 타입·위력 2배', () => {
+    const att = full(battler('castform', 50, ['weather-ball']))
+    const def = ch()
+    const normal = damageOf(att, def, mv('weather-ball'), 100, false)
+    setWeather('rain')
+    // 물 타입(효과 굉장 2배) × 위력 2배 × 비 1.5배 ÷ 노말 자속(1.5배) 없어짐 = 4배
+    expect(damageOf(att, def, mv('weather-ball'), 100, false)).toBeGreaterThan(normal * 3.5)
   })
 })

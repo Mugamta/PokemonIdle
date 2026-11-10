@@ -33,6 +33,7 @@ import {
   type Volatile,
   type MoveData,
   onAbilityChange,
+  setWeather,
 } from '../core/battle'
 import {
   DYNAMAX_TURNS,
@@ -150,7 +151,7 @@ import {
   type CatchContext,
 } from '../data/items'
 import { BATTLE_HELD, POWER_ITEM_EV, POWER_ITEMS } from '../core/items'
-import { findStage, migrateLegacyRegionIds, migrateLegacyStageId, REGIONS, type Region, type Stage } from '../data/stages'
+import { findStage, stageWeather, migrateLegacyRegionIds, migrateLegacyStageId, REGIONS, type Region, type Stage } from '../data/stages'
 import { useBattleLogStore } from './battleLog'
 import GENDER_RATES from '../data/genderRates.json'
 
@@ -807,6 +808,8 @@ export const useGameStore = defineStore('game', {
     /** PP 소모 여부 (PP_START_STAGE 클리어 후) */
     ppActive: (s) => s.clearedStages.includes(PP_START_STAGE),
     hasPerk: (s) => (id: PerkId) => s.perks.includes(id),
+    /** 지금 있는 스테이지의 필드 날씨 (원작에서 날씨가 있는 장소, 없으면 null) */
+    fieldWeather: (s) => stageWeather(s.currentStageId),
     /** 먼저 사야 하는 기능을 모두 샀는지 */
     perkRequirementsMet: (s) => (id: PerkId): boolean => {
       const chainReq = CHAIN_PERKS.find((p) => p.id === id)?.requires
@@ -981,6 +984,8 @@ export const useGameStore = defineStore('game', {
         return
       }
       if (this.travel && now >= this.travel.arriveAt) this.arrive(this.travel.to)
+      // 전투 계산에 쓰는 필드 날씨 = 지금 있는 스테이지의 날씨
+      setWeather(this.fieldWeather)
       if (this.travel || !this.party.length || !battleReady()) return
 
       // HP 0인 채로 남아 있으면 (이전 버전 저장 데이터 등) 바로 기절 처리

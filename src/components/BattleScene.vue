@@ -7,6 +7,7 @@ import { battleData, STATUS_COLORS, STATUS_LABELS } from '../data/battle'
 import { dexData, loadDex, STAT_LABELS, TYPE_COLORS } from '../data/dex'
 import { calcStats } from '../data/natures'
 import { findStage, stageTerrain } from '../data/stages'
+import { WEATHER_LABELS } from '../core/battle'
 import { expAtLevel, isConsumableItem, moveData, ro } from '../core/battle'
 import { formOf } from '../core/gimmicks'
 import { useBattleLogStore } from '../stores/battleLog'
@@ -26,6 +27,13 @@ const stage = computed(() => findStage(game.currentStageId)?.stage)
 /** 전투 배경 지형 (수상·동굴·건물 등은 풀밭 대신 다른 색). 동굴·건물 안은 밤에도 어두워지지 않음 */
 const terrain = computed(() => (stage.value ? stageTerrain(stage.value) : 'grass'))
 const indoor = computed(() => terrain.value === 'cave' || terrain.value === 'building' || terrain.value === 'volcano')
+const WEATHER_ICONS = { rain: '☔', sand: '🌪', hail: '❄', fog: '🌫' } as const
+const WEATHER_TIPS = {
+  rain: '비: 물 기술 1.5배, 불꽃 기술 0.5배, 번개·폭풍 반드시 명중',
+  sand: '모래바람: 바위·땅·강철 타입 외에는 매 턴 1/16 데미지, 바위 타입 특수방어 1.5배',
+  hail: '싸라기눈: 얼음 타입 외에는 매 턴 1/16 데미지, 눈보라 반드시 명중',
+  fog: '안개: 모든 기술 명중률 0.6배',
+} as const
 const travelTarget = computed(() => (game.travel ? findStage(game.travel.to)?.stage : null))
 const travelLeft = computed(() =>
   game.travel ? Math.max(0, Math.ceil((game.travel.arriveAt - now.value) / 1000)) : 0,
@@ -164,6 +172,9 @@ const foeItem = computed(() => {
 
 <template>
   <div class="scene" :class="[`t-${terrain}`, { night: night && !indoor, shake: !!bossIntro }]">
+    <!-- 필드 날씨 연출 (원작에서 날씨가 있는 장소) -->
+    <div v-if="game.fieldWeather" class="weather" :class="`w-${game.fieldWeather}`" />
+
     <!-- 좌상단: 자동 전투 -->
     <div class="controls">
       <button
@@ -212,6 +223,7 @@ const foeItem = computed(() => {
     <!-- 우상단: 스테이지 진행도 (일반 BOSS_DEFEATS 마리 처치 시 보스 등장) -->
     <div v-if="stage?.encounters && !game.faint" class="stage-box">
       <span v-if="cleared" class="clear">클리어</span>
+      <span v-if="game.fieldWeather" class="weather-tag" :title="WEATHER_TIPS[game.fieldWeather]">{{ WEATHER_ICONS[game.fieldWeather] }} {{ WEATHER_LABELS[game.fieldWeather] }}</span>
       <span class="prog">{{ inBoss ? '보스전' : `보스까지 ${Math.min(progress.defeats, BOSS_DEFEATS)}/${BOSS_DEFEATS}` }}</span>
     </div>
 
@@ -1040,6 +1052,79 @@ const foeItem = computed(() => {
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
+}
+
+.weather-tag {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(30, 30, 36, 0.75);
+  color: #cfe6ff;
+  font-size: 11px;
+}
+
+/* 필드 날씨 연출 (발판·포켓몬·정보 상자 뒤) */
+.weather {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.weather.w-rain {
+  background-image: repeating-linear-gradient(
+    105deg,
+    transparent 0 14px,
+    rgba(200, 225, 255, 0.45) 14px 15px,
+    transparent 15px 31px
+  );
+  background-size: 62px 62px;
+  background-color: rgba(40, 60, 90, 0.18);
+  animation: rain-fall 0.5s linear infinite;
+}
+
+@keyframes rain-fall {
+  to {
+    background-position: -16px 62px;
+  }
+}
+
+.weather.w-sand {
+  background-image: radial-gradient(rgba(150, 110, 50, 0.55) 1px, transparent 1.5px);
+  background-size: 18px 12px;
+  background-color: rgba(200, 160, 90, 0.3);
+  animation: sand-blow 0.8s linear infinite;
+}
+
+@keyframes sand-blow {
+  to {
+    background-position: -36px 6px;
+  }
+}
+
+.weather.w-hail {
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.9) 1.5px, transparent 2px),
+    radial-gradient(rgba(255, 255, 255, 0.7) 1px, transparent 1.5px);
+  background-size: 40px 40px, 24px 24px;
+  background-position: 0 0, 12px 8px;
+  background-color: rgba(220, 235, 250, 0.15);
+  animation: hail-fall 1.4s linear infinite;
+}
+
+@keyframes hail-fall {
+  to {
+    background-position: -10px 40px, 2px 56px;
+  }
+}
+
+.weather.w-fog {
+  background: linear-gradient(to bottom, rgba(230, 230, 236, 0.15), rgba(230, 230, 236, 0.55) 55%, rgba(230, 230, 236, 0.35));
+  animation: fog-drift 6s ease-in-out infinite alternate;
+}
+
+@keyframes fog-drift {
+  to {
+    opacity: 0.7;
+  }
 }
 
 .prog,

@@ -194,6 +194,45 @@ export function activeAbility(b: Battler, foe: Battler): string | null {
   return a
 }
 const ab = activeAbility
+
+// ---------- 날씨 ----------
+/** 필드 날씨 (원작에서 날씨가 있는 장소: 비·모래바람·싸라기눈·안개). 장소마다 고정 */
+export type Weather = 'rain' | 'sand' | 'hail' | 'fog'
+export const WEATHER_LABELS: Record<Weather, string> = { rain: '비', sand: '모래바람', hail: '싸라기눈', fog: '안개' }
+const WEATHER_START: Record<Weather, string> = {
+  rain: '비가 계속 내리고 있다.',
+  sand: '모래바람이 세차게 불고 있다.',
+  hail: '싸라기눈이 계속 내리고 있다.',
+  fog: '안개가 깊게 끼어 있다.',
+}
+let fieldWeather: Weather | null = null
+/** 지금 싸우는 장소의 날씨 (게임 스토어가 현재 스테이지 기준으로 설정) */
+export function setWeather(w: Weather | null) {
+  fieldWeather = w
+}
+/** 실제로 적용되는 날씨 (날씨부정·에어록이면 없음) */
+function weatherOf(x: Battler, y: Battler): Weather | null {
+  if (!fieldWeather) return null
+  for (const [a, b] of [[x, y], [y, x]] as const) {
+    const t = ab(a, b)
+    if (t === 'cloud-nine' || t === 'air-lock') return null
+  }
+  return fieldWeather
+}
+/** 날씨볼: 날씨에 따라 타입이 바뀌고 위력 2배 (안개는 노말 그대로) */
+const WEATHER_BALL_TYPE: Record<Weather, string> = { rain: 'water', sand: 'rock', hail: 'ice', fog: 'normal' }
+/** 날씨에서 반드시 맞는 기술 */
+const WEATHER_SURE_HIT: Record<Weather, string[]> = { rain: ['thunder', 'hurricane', 'bleakwind-storm', 'wildbolt-storm', 'sandsear-storm'], sand: [], hail: ['blizzard'], fog: [] }
+/** 맑음 이외의 날씨에서 위력이 절반인 기술 */
+const SOLAR_MOVES = new Set(['solar-beam', 'solar-blade'])
+/** 맑음 이외의 날씨에서 회복량이 1/4인 기술 */
+const SUN_HEAL_MOVES = new Set(['moonlight', 'synthesis', 'morning-sun'])
+/** 날씨 데미지를 받지 않는 특성 */
+const WEATHER_DMG_IMMUNE: Record<'sand' | 'hail', string[]> = {
+  sand: ['sand-veil', 'sand-rush', 'sand-force', 'overcoat'],
+  hail: ['ice-body', 'snow-cloak', 'slush-rush', 'overcoat'],
+}
+const WEATHER_DMG_TYPES: Record<'sand' | 'hail', string[]> = { sand: ['rock', 'ground', 'steel'], hail: ['ice'] }
 /** 방어 측 특성 (공격 측이 틀깨기 계열이면 무시, 특성가드면 무시되지 않음) */
 function defAb(def: Battler, att: Battler): string | null {
   const d = ab(def, att)
@@ -337,6 +376,9 @@ export function speedOf(b: Battler, foe?: Battler): number {
   else if (b.status === 'par') s = Math.floor(s * 0.5)
   if (a === 'slow-start' && (b.vol?.turns ?? 0) < 5) s = Math.floor(s * 0.5)
   if (a === 'unburden' && b.vol?.unburden && !heldTotal(b.held)) s *= 2
+  // 날씨: 쓱쓱·모래헤치기·눈치우기
+  const w = foe ? weatherOf(b, foe) : null
+  if ((w === 'rain' && a === 'swift-swim') || (w === 'sand' && a === 'sand-rush') || (w === 'hail' && a === 'slush-rush')) s *= 2
   for (const id of itemsOf(b, foe)) {
     const n = b.held![id]!
     if (id === 'choice-scarf') s = Math.floor(s * stackMult(1.5, n))
@@ -356,6 +398,8 @@ export function typeEffect(moveType: string, defender: Battler): number {
 /** 실제 기술 타입과 위력 배율 (노말스킨·스카이스킨 등) */
 function moveTypeOf(att: Battler, def: Battler, m: MoveData): { type: string; pow: number } {
   if (m.type === 'typeless') return { type: m.type, pow: 1 }
+  const w = weatherOf(att, def)
+  if (m.id === 'weather-ball' && w) return { type: WEATHER_BALL_TYPE[w], pow: 2 }
   const a = ab(att, def)
   if (a === 'normalize') return { type: 'normal', pow: 1.2 }
   if (a && SKIN[a] && m.type === 'normal') return { type: SKIN[a]!, pow: 1.2 }
@@ -485,6 +529,10 @@ export function damageOf(att: Battler, def: Battler, m: MoveData, rand: number, 
   if (a === 'reckless' && (m.extra.drain ?? 0) < 0) power *= 1.2
   if (a === 'sheer-force' && hasSecondary(m)) power *= 1.3
   if (a === 'analytic' && opts.last) power *= 1.3
+  // 날씨: 솔라빔 위력 절반 / 모래바람의 모래의힘
+  const w = weatherOf(att, def)
+  if (w && SOLAR_MOVES.has(m.id)) power *= 0.5
+  if (w === 'sand' && a === 'sand-force' && (type === 'rock' || type === 'ground' || type === 'steel')) power *= 1.3
   // 도구: 타입 강화·전용 구슬·주얼·힘의머리띠·박식안경·펀치글러브
   // (주얼은 소모형이라 여러 개여도 한 번에 하나만 1.3배)
   let gem = false
@@ -531,11 +579,16 @@ export function damageOf(att: Battler, def: Battler, m: MoveData, rand: number, 
   if (canEvolve(def.species)) D *= itemMult(def, 'eviolite', 1.5, att)
   if (!physical) D *= itemMult(def, 'assault-vest', 1.5, att)
   if (!physical && def.species === 'clamperl') D *= itemMult(def, 'deep-sea-scale', 2, att)
+  // 모래바람: 바위 타입 특수방어 1.5배
+  if (!physical && w === 'sand' && typesOf(def).includes('rock')) D *= 1.5
   if (physical && def.species === 'ditto') D *= itemMult(def, 'metal-powder', 2, att)
   A = Math.max(1, Math.floor(A))
   D = Math.max(1, Math.floor(D))
 
   let dmg = Math.floor(Math.floor((Math.floor((2 * att.level) / 5 + 2) * power * A) / D) / 50) + 2
+  // 비: 물 기술 1.5배, 불꽃 기술 절반
+  if (w === 'rain' && type === 'water') dmg = Math.floor(dmg * 1.5)
+  if (w === 'rain' && type === 'fire') dmg = Math.floor(dmg * 0.5)
   if (crit) dmg = Math.floor(dmg * (a === 'sniper' ? 2.25 : 1.5))
   dmg = Math.floor((dmg * rand) / 100)
   const stab = stabOf(att, type, a)
@@ -576,6 +629,8 @@ function accuracyOf(att: Battler, def: Battler, m: MoveData, last = false): numb
   const a = ab(att, def)
   const d = defAb(def, att)
   if (a === 'no-guard' || ab(def, att) === 'no-guard' || m.acc == null) return 1
+  const w = weatherOf(att, def)
+  if (w && WEATHER_SURE_HIT[w].includes(m.id)) return 1
   const accStage = d === 'unaware' ? 0 : (att.stages.acc ?? 0)
   const evaStage = a === 'unaware' || a === 'keen-eye' || a === 'minds-eye' || a === 'illuminate' ? 0 : (def.stages.eva ?? 0)
   let acc = (m.acc / 100) * accStageMult(accStage - evaStage)
@@ -583,6 +638,9 @@ function accuracyOf(att: Battler, def: Battler, m: MoveData, last = false): numb
   if (a === 'victory-star') acc *= 1.1
   if (a === 'hustle' && m.cls === 'physical') acc *= 0.8
   if (d === 'wonder-skin' && m.cls === 'status') acc = Math.min(acc, 0.5)
+  // 날씨: 안개 명중률 0.6배 / 모래숨기·눈숨기 회피
+  if (w === 'fog') acc *= 0.6
+  if ((w === 'sand' && d === 'sand-veil') || (w === 'hail' && d === 'snow-cloak')) acc *= 0.8
   acc *= itemMult(att, 'wide-lens', 1.1, def)
   if (last) acc *= itemMult(att, 'zoom-lens', 1.2, def)
   if (att.vol?.micle) acc *= 1.2
@@ -1040,6 +1098,8 @@ function endOfTurn(b: Battler, foe: Battler, log: string[]) {
   if (b.hp <= 0) return
   const max = maxHpOf(b)
   const a = ab(b, foe)
+  weatherEndOfTurn(b, foe, log, false)
+  if (b.hp <= 0) return
   if (b.status === 'brn') {
     if (indirect(b, foe, Math.floor(max / 16))) log.push(`${josa(b.name, '은', '는')} 화상 데미지를 입었다!`)
   } else if (b.status === 'psn' || b.status === 'tox') {
@@ -1108,6 +1168,46 @@ function endOfTurn(b: Battler, foe: Battler, log: string[]) {
   }
 }
 
+/**
+ * 턴 종료 날씨 효과: 모래바람·싸라기눈 데미지, 젖은접시·건조피부·아이스바디 회복, 촉촉바디.
+ * benefitsOnly = 이로운 것만 (판정 강화: 상대를 쓰러뜨린 턴)
+ */
+function weatherEndOfTurn(b: Battler, foe: Battler, log: string[], benefitsOnly: boolean) {
+  const w = weatherOf(b, foe)
+  if (!w || b.hp <= 0) return
+  const max = maxHpOf(b)
+  const a = ab(b, foe)
+  if (w === 'sand' || w === 'hail') {
+    if (a === 'ice-body' && w === 'hail') {
+      if (b.hp < max) {
+        announce(b, log)
+        heal(b, Math.floor(max / 16))
+        log.push(`${josa(b.name, '은', '는')} 체력을 조금 회복했다!`)
+      }
+      return
+    }
+    if (benefitsOnly) return
+    const immune =
+      typesOf(b).some((t) => WEATHER_DMG_TYPES[w].includes(t)) ||
+      WEATHER_DMG_IMMUNE[w].includes(a ?? '') ||
+      !!nItem(b, 'safety-goggles', foe)
+    if (!immune && indirect(b, foe, Math.floor(max / 16)))
+      log.push(`${josa(b.name, '은', '는')} ${w === 'sand' ? '모래바람' : '싸라기눈'}에 의한 데미지를 입었다!`)
+    return
+  }
+  if (w !== 'rain') return
+  if ((a === 'rain-dish' || a === 'dry-skin') && b.hp < max) {
+    announce(b, log)
+    heal(b, Math.floor(max / (a === 'dry-skin' ? 8 : 16)))
+    log.push(`${josa(b.name, '은', '는')} 체력을 회복했다!`)
+  }
+  if (a === 'hydration' && b.status) {
+    announce(b, log)
+    log.push(`${b.name}의 ${STATUS_LABELS[b.status]} 상태가 나았다!`)
+    cureStatus(b)
+  }
+}
+
 /** 타입 기술 흡수 특성 효과 */
 function applyAbsorb(def: Battler, fx: AbsorbFx | undefined, log: string[]) {
   announce(def, log)
@@ -1131,7 +1231,9 @@ function applyStatusMove(user: Battler, target: Battler, m: MoveData, log: strin
   if (ex.heal) {
     const max = maxHpOf(user)
     const before = user.hp
-    user.hp = Math.min(max, user.hp + Math.floor((max * ex.heal) / 100))
+    // 달빛·광합성·아침햇살: 맑음 이외의 날씨에서는 1/4
+    const pct = SUN_HEAL_MOVES.has(m.id) && weatherOf(user, target) ? 25 : ex.heal
+    user.hp = Math.min(max, user.hp + Math.floor((max * pct) / 100))
     log.push(user.hp > before ? `${josa(user.name, '은', '는')} 체력을 회복했다!` : `${user.name}의 체력은 이미 가득하다!`)
     did = true
   }
@@ -1545,6 +1647,7 @@ function afterMove(att: Battler, def: Battler, m: MoveData, log: string[]) {
 /** 전투 시작 시 특성 발동 (위협·다운로드·트레이스 등). 빠른 쪽부터. 로그 반환 */
 export function onEntry(player: Battler, enemy: Battler): string[] {
   const log: string[] = []
+  if (fieldWeather) log.push(WEATHER_START[fieldWeather])
   const ps = speedOf(player, enemy)
   const es = speedOf(enemy, player)
   const order: [Battler, Battler][] = ps >= es ? [[player, enemy], [enemy, player]] : [[enemy, player], [player, enemy]]
@@ -1667,6 +1770,7 @@ function entryEffect(b: Battler, foe: Battler, log: string[]) {
 export function endOfTurnBenefits(b: Battler, foe: Battler): string[] {
   const log: string[] = []
   if (b.hp <= 0) return log
+  weatherEndOfTurn(b, foe, log, true)
   const max = maxHpOf(b)
   const a = ab(b, foe)
   if (a === 'poison-heal' && (b.status === 'psn' || b.status === 'tox') && b.hp < max) {
