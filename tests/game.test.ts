@@ -5,7 +5,9 @@ import { loadAllData } from './helpers'
 import { maxHpOf } from '../src/core/battle'
 import { load, save } from '../src/core/save'
 import { findStage } from '../src/data/stages'
-import { PARTY_MAX, useGameStore, type PartyMember } from '../src/stores/game'
+import { EGG_MOVE_PRICE, eggMoveOptions, PARTY_MAX, tutorOptions, useGameStore, type PartyMember } from '../src/stores/game'
+import { loadLearnMethods } from '../src/data/dex'
+import { REGIONS } from '../src/data/stages'
 
 beforeAll(loadAllData)
 
@@ -488,5 +490,70 @@ describe('기절 회복 자동 사용·구매 (전투 중·전투 후)', () => {
     expect(game.autoUseItem()).toBe(true)
     expect(game.items['sacred-ash']).toBe(1)
     expect(game.money).toBe(8000)
+  })
+})
+
+describe('알 기술·기술가르침', () => {
+  beforeAll(loadLearnMethods)
+
+  test('알 기술: 부모를 잡은 적 있어야 하고, 확률 = 암컷 비율 × 부모 수컷 비율', () => {
+    const game = useGameStore()
+    game.validate()
+    game.party = [starter('cinderace', ['tackle'])]
+    const hjk = () => eggMoveOptions('cinderace', (id) => game.ownsSpecies(id)).find((o) => o.move === 'high-jump-kick')!
+    expect(hjk().parents.some((p) => p.species === 'hitmonlee')).toBe(true)
+    expect(hjk().best).toBeNull()
+    expect(game.tryEggMove(0, 'high-jump-kick')).toBeNull()
+    game.caught.push('hitmonlee')
+    // 에이스번 암컷 1/8 × 시라소몬 수컷 100%
+    expect(hjk().chance).toBeCloseTo(1 / 8)
+    game.money = EGG_MOVE_PRICE
+    vi.spyOn(Math, 'random').mockReturnValue(0.05)
+    expect(game.tryEggMove(0, 'high-jump-kick', 'tackle')).toBe('success')
+    vi.restoreAllMocks()
+    expect(game.money).toBe(0)
+    expect(game.party[0]!.moves).toContain('high-jump-kick')
+  })
+
+  test('알 기술 실패해도 돈은 사라짐', () => {
+    const game = useGameStore()
+    game.validate()
+    game.party = [starter('cinderace', ['tackle'])]
+    game.caught.push('hitmonlee')
+    game.money = EGG_MOVE_PRICE
+    vi.spyOn(Math, 'random').mockReturnValue(0.9)
+    expect(game.tryEggMove(0, 'high-jump-kick', 'tackle')).toBe('fail')
+    vi.restoreAllMocks()
+    expect(game.money).toBe(0)
+    expect(game.party[0]!.moves).not.toContain('high-jump-kick')
+  })
+
+  test('기술가르침: 그 작품 지방의 도시 너머 스테이지에 도착해야 함, 비용 소모', () => {
+    const game = useGameStore()
+    game.validate()
+    game.party = [starter('charizard', ['scratch'])]
+    const opt = tutorOptions('charizard').find((o) => o.move === 'blast-burn')!
+    const src = opt.sources.find((s) => s.region === 'sinnoh-dp')!
+    expect(game.learnByTutor(0, 'blast-burn', src)).toBe(false)
+    const region = REGIONS.find((r) => r.key === 'sinnoh-dp')!
+    const gate = region.stages.find((s) => s.name === src.gate)!
+    game.unlockedRegions.push(region.id)
+    game.clearedStages.push(gate.id)
+    expect(game.learnByTutor(0, 'blast-burn', src, 'scratch')).toBe(true)
+    expect(game.party[0]!.moves).toContain('blast-burn')
+  })
+
+  test('기술가르침: BP 부족하면 배울 수 없음', () => {
+    const game = useGameStore()
+    game.validate()
+    game.party = [starter('pikachu', ['thunder-shock'])]
+    const src = tutorOptions('pikachu').flatMap((o) => o.sources.map((s) => ({ move: o.move, s }))).find((x) => x.s.cost.bp)!
+    const region = REGIONS.find((r) => r.key === src.s.region)!
+    game.unlockedRegions.push(region.id)
+    game.clearedStages.push(region.stages.find((s) => s.name === src.s.gate)!.id)
+    expect(game.learnByTutor(0, src.move, src.s)).toBe(false)
+    game.bp = src.s.cost.bp!
+    expect(game.learnByTutor(0, src.move, src.s, 'thunder-shock')).toBe(true)
+    expect(game.bp).toBe(0)
   })
 })

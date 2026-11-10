@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { dexData, loadDex, STAT_LABELS, TYPE_COLORS } from '../data/dex'
+import { dexData, learnMethods, loadDex, loadLearnMethods, STAT_LABELS, TYPE_COLORS } from '../data/dex'
+import { tutorCostText, tutorRegionTitle } from '../data/tutors'
 import { calcStats, NATURES, STAT_KEYS } from '../data/natures'
 import { evolutionsOf, FRIENDSHIP_EVOLVE, FRIENDSHIP_MAX } from '../data/evolutions'
 import { HEART_SCALE } from '../data/shop'
 import { isMachine, isRecord, tmShopList } from '../data/items'
 import {
   canLearnMachine,
+  EGG_MOVE_PRICE,
+  eggMoveOptions,
+  tutorOptions,
   evolutionCondText,
   evolutionMet,
   friendshipOf,
@@ -57,7 +61,10 @@ const viewStage = computed(() => view.region.stages.find((s) => s.id === view.st
 const memberIndex = ref(0)
 const error = ref<string | null>(null)
 
-onMounted(() => loadDex().catch((e) => (error.value = String(e))))
+onMounted(() => {
+  loadDex().catch((e) => (error.value = String(e)))
+  loadLearnMethods().catch((e) => (error.value = String(e)))
+})
 
 const member = computed(() => game.party[memberIndex.value] ?? game.party[0] ?? null)
 /** 고른 포켓몬의 특성 */
@@ -139,8 +146,75 @@ const forgotten = computed(() => {
 /** 레벨업으로 배우려는 기술 대기열 (맨 앞만 처리 가능) */
 const pendingList = computed(() => (member.value?.pending ?? []).map((id) => ({ id, info: moveInfo(id) })))
 const heartScales = computed(() => game.items[HEART_SCALE] ?? 0)
-/** 기술 교체 하위 탭: 자력기(잊은 기술 되살리기) / 기술머신 */
-const learnTab = ref<'self' | 'tm'>('self')
+/** 기술 교체 하위 탭: 자력기(잊은 기술 되살리기) / 기술머신 / 알 기술 / 기술가르침 */
+type LearnTab = 'self' | 'tm' | 'egg' | 'tutor'
+const learnTab = ref<LearnTab>('self')
+
+/** 알 기술: 아직 배우지 않은 것. 유전 부모 후보와 소지한 부모 기준 성공 확률 */
+const eggRows = computed(() => {
+  const m = member.value
+  if (!m || !learnMethods.value) return []
+  const known = m.learned ?? m.moves
+  return eggMoveOptions(m.species, (id) => game.ownsSpecies(id))
+    .filter((o) => !known.includes(o.move))
+    .map((o) => ({ ...o, info: moveInfo(o.move) }))
+    .sort((a, b) => b.chance - a.chance || (a.info?.ko ?? a.move).localeCompare(b.info?.ko ?? b.move, 'ko'))
+})
+const pct = (x: number) => `${Math.round(x * 1000) / 10}%`
+const speciesKo = (id: string) => species(id)?.ko ?? id
+/** 부모 후보 표시: 소지한 부모 먼저, 최대 3마리 */
+function parentText(o: (typeof eggRows.value)[number]) {
+  if (!o.parents.length) return '유전 부모 없음'
+  if (o.best) return `부모 ${speciesKo(o.best.species)} · 확률 ${pct(o.chance)}`
+  const names = o.parents.slice(0, 3).map((p) => speciesKo(p.species))
+  return `부모 후보 ${names.join(', ')}${o.parents.length > 3 ? ` 외 ${o.parents.length - 3}` : ''} (미보유)`
+}
+function eggBlock(o: (typeof eggRows.value)[number]): string {
+  if (!o.parents.length) return '이 기술을 물려줄 수 있는 포켓몬이 없습니다'
+  if (!o.best) return '부모 후보를 잡은 적이 없습니다'
+  if (o.chance <= 0) return '성비 때문에 유전할 수 없습니다'
+  if (game.money < EGG_MOVE_PRICE) return '돈이 부족합니다'
+  return ''
+}
+function tryEgg(o: (typeof eggRows.value)[number]) {
+  const s = picked.value
+  if (!s || s.kind === 'locked' || eggBlock(o)) return
+  if (game.tryEggMove(memberIdx.value, o.move, s.kind === 'move' ? s.id : undefined) === 'success') pickedSlot.value = null
+}
+
+/** 기술가르침: 아직 배우지 않은 것. 조건을 만족하는 장소(없으면 첫 장소) */
+const tutorRows = computed(() => {
+  const m = member.value
+  if (!m || !learnMethods.value) return []
+  const known = m.learned ?? m.moves
+  return tutorOptions(m.species)
+    .filter((o) => !known.includes(o.move))
+    .map((o) => {
+      const states = o.sources.map((src) => {
+        const open = game.stageVisited(src.region, src.gate)
+        return { src, open, short: open ? game.tutorShortfall(src.cost) : '' }
+      })
+      const pick = states.find((x) => x.open && !x.short) ?? states.find((x) => x.open) ?? states[0]!
+      return { move: o.move, info: moveInfo(o.move), ...pick, more: o.sources.length - 1 }
+    })
+    .sort((a, b) => Number(b.open && !b.short) - Number(a.open && !a.short) || (a.info?.ko ?? a.move).localeCompare(b.info?.ko ?? b.move, 'ko'))
+})
+type TutorRow = (typeof tutorRows.value)[number]
+function tutorBlock(t: TutorRow): string {
+  if (!t.open) return `${tutorRegionTitle(t.src)}의 ${t.src.gate}에 도착해야 합니다`
+  return t.short
+}
+function teachTutor(t: TutorRow) {
+  const s = picked.value
+  if (!s || s.kind === 'locked' || tutorBlock(t)) return
+  if (game.learnByTutor(memberIdx.value, t.move, t.src, s.kind === 'move' ? s.id : undefined)) pickedSlot.value = null
+}
+const LEARN_TABS = computed(() => [
+  { id: 'self' as const, label: '자력기', n: forgotten.value.length },
+  { id: 'tm' as const, label: '기술머신', n: learnableMachines.value.length },
+  { id: 'egg' as const, label: '알 기술', n: eggRows.value.length },
+  { id: 'tutor' as const, label: '기술가르침', n: tutorRows.value.length },
+])
 /**
  * 이 포켓몬이 기술머신으로 새로 배울 수 있는 기술 전체 (기술마다 한 줄).
  * 가지고 있으면 그 머신(기술머신 우선)을 쓰고, 없으면 상점 머신을 사서 씀
@@ -531,14 +605,72 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                 </button>
               </div>
               <div class="learn-tabs">
-                <button type="button" :class="{ active: learnTab === 'self' }" @click="learnTab = 'self'">
-                  자력기 <small>{{ forgotten.length }}</small>
-                </button>
-                <button type="button" :class="{ active: learnTab === 'tm' }" @click="learnTab = 'tm'">
-                  기술머신 <small>{{ learnableMachines.length }}</small>
+                <button v-for="t in LEARN_TABS" :key="t.id" type="button" :class="{ active: learnTab === t.id }" @click="learnTab = t.id">
+                  {{ t.label }} <small>{{ t.n }}</small>
                 </button>
               </div>
-              <template v-if="learnTab === 'tm'">
+              <template v-if="learnTab === 'egg'">
+                <h5 class="train-sec">
+                  알 기술 물려받기
+                  <span class="muted">1회 {{ won(EGG_MOVE_PRICE) }} (흉내허브) · 확률 = 이 포켓몬 암컷 비율 × 부모 수컷 비율 · 소지금 {{ won(game.money) }}</span>
+                </h5>
+                <p v-if="!learnMethods" class="msg">불러오는 중…</p>
+                <p v-else-if="!eggRows.length" class="msg">새로 물려받을 수 있는 알 기술이 없습니다.</p>
+                <ul v-else class="rows mrows">
+                  <li
+                    v-for="o in eggRows"
+                    :key="o.move"
+                    :class="{ clickable: !eggBlock(o), disabled: !!eggBlock(o) }"
+                    :title="eggBlock(o) || `${won(EGG_MOVE_PRICE)}을 내고 ${pct(o.chance)} 확률로 물려받습니다 (실패해도 돈은 사라짐)`"
+                    @click="tryEgg(o)"
+                  >
+                    <span class="tm-name">
+                      <span class="tm-move">{{ o.info?.ko ?? o.move }}</span>
+                      <small class="tm-meta" :class="{ 'buy-tag': !!o.best && o.chance > 0 }">{{ parentText(o) }}</small>
+                    </span>
+                    <template v-if="o.info">
+                      <span class="type" :style="{ background: TYPE_COLORS[o.info.type] }">{{ dexData.types[o.info.type] }}</span>
+                      <span class="muted">{{ CLS_LABEL[o.info.cls] }}</span>
+                      <span class="muted num"><small>위력</small> {{ o.info.power ?? '-' }}</span>
+                      <span class="muted num"><small>명중</small> {{ o.info.acc ?? '-' }}</span>
+                    </template>
+                  </li>
+                </ul>
+              </template>
+              <template v-else-if="learnTab === 'tutor'">
+                <h5 class="train-sec">
+                  기술가르침
+                  <span class="muted">소지금 {{ won(game.money) }} · BP {{ game.bp }} · 코인 {{ game.coins.toLocaleString() }}</span>
+                </h5>
+                <p v-if="!learnMethods" class="msg">불러오는 중…</p>
+                <p v-else-if="!tutorRows.length" class="msg">기술가르침으로 새로 배울 수 있는 기술이 없습니다.</p>
+                <ul v-else class="rows mrows">
+                  <li
+                    v-for="t in tutorRows"
+                    :key="t.move"
+                    :class="{ clickable: !tutorBlock(t), disabled: !!tutorBlock(t) }"
+                    :title="tutorBlock(t) || `${tutorRegionTitle(t.src)} ${t.src.place}에서 배웁니다 (${tutorCostText(t.src.cost)})`"
+                    @click="teachTutor(t)"
+                  >
+                    <span class="tm-name">
+                      <span class="tm-move">{{ t.info?.ko ?? t.move }}</span>
+                      <small class="tm-meta">
+                        {{ t.src.place }} · {{ tutorCostText(t.src.cost) }}<template v-if="t.more"> · 외 {{ t.more }}곳</template>
+                      </small>
+                      <small class="tm-meta" :class="{ 'buy-tag': !t.open }">
+                        {{ t.open ? tutorRegionTitle(t.src) : `${tutorRegionTitle(t.src)} ${t.src.gate} 도착 필요` }}
+                      </small>
+                    </span>
+                    <template v-if="t.info">
+                      <span class="type" :style="{ background: TYPE_COLORS[t.info.type] }">{{ dexData.types[t.info.type] }}</span>
+                      <span class="muted">{{ CLS_LABEL[t.info.cls] }}</span>
+                      <span class="muted num"><small>위력</small> {{ t.info.power ?? '-' }}</span>
+                      <span class="muted num"><small>명중</small> {{ t.info.acc ?? '-' }}</span>
+                    </template>
+                  </li>
+                </ul>
+              </template>
+              <template v-else-if="learnTab === 'tm'">
                 <h5 class="train-sec">
                   기술머신으로 가르치기
                   <span class="muted">소지금 {{ won(game.money) }}</span>

@@ -147,7 +147,29 @@ export function loadLearnsets(): Promise<void> {
   return learnPromise
 }
 
-export const STAT_LABELS = ['HP', '공격', '방어', '특공', '특방', '스피드']
+/** 알 기술·기술가르침 (public/data/dex/learn-methods.json, scripts/build-learn-methods.mjs 로 생성) */
+export interface LearnMethods {
+  /** {포켓몬 id: [기술 번호]} 알 기술 (진화 전 단계 포함, 레벨업 기술 제외) */
+  egg: Record<string, number[]>
+  /** {포켓몬 id: [[기술 번호, [버전 그룹 id]]]} */
+  tutor: Record<string, [number, number[]][]>
+  /** {기술 번호: [포켓몬 id]} 레벨업으로 배우는 포켓몬 (유전 부모 후보) */
+  levelBy: Record<string, string[]>
+  /** {포켓몬 id: [알 그룹 id]} (15 = 미발견) */
+  eggGroups: Record<string, number[]>
+  /** {포켓몬 id: 암컷 비율 0~8 (8분의 n), -1 = 무성} */
+  gender: Record<string, number>
+}
+export const learnMethods = shallowRef<LearnMethods | null>(null)
+let methodsPromise: Promise<void> | null = null
+export function loadLearnMethods(): Promise<void> {
+  methodsPromise ??= load<LearnMethods>('learn-methods.json').then((d) => {
+    learnMethods.value = d
+  })
+  return methodsPromise
+}
+
+export const STAT_LABELS =['HP', '공격', '방어', '특공', '특방', '스피드']
 
 export const TYPE_COLORS: Record<string, string> = {
   normal: '#9fa19f', fighting: '#ff8000', flying: '#81b9ef', poison: '#9141cb', ground: '#915121',

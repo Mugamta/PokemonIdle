@@ -53,7 +53,8 @@ import {
 import { abilityName, hiddenAbility, normalAbilities, speciesAbilities } from '../core/abilities'
 import { phaseAt } from '../core/dayNight'
 import { battleData, STATUS_LABELS, type StageKey, type Status } from '../data/battle'
-import { dexData, learnsets, STAT_LABELS } from '../data/dex'
+import { dexData, learnMethods, learnsets, STAT_LABELS } from '../data/dex'
+import { SHARD_ITEM, tutorSource, type ShardColor, type TutorCost, type TutorSource } from '../data/tutors'
 import {
   evolutionsOf,
   FRIENDSHIP_EVOLVE,
@@ -377,6 +378,69 @@ export function canLearnMachine(m: Pick<PartyMember, 'species'>, moveId: string)
   const num = moveNumOf(moveId)
   return num != null && !!learnsets.value?.[m.species]?.some((e) => e[0] === num)
 }
+
+/** 알 기술 시도 1회 비용 (흉내허브 원작 가격) */
+export const EGG_MOVE_PRICE = 30000
+const NO_EGGS_GROUP = 15
+/** 암컷 비율 (0~1). 무성이면 null */
+const femaleRatio = (rate: number | undefined) => (rate == null || rate < 0 ? null : rate / 8)
+export interface EggParent {
+  species: string
+  owned: boolean
+  /** 이 부모로 시도할 때 성공 확률 (0~1) */
+  chance: number
+}
+export interface EggMoveOption {
+  move: string
+  parents: EggParent[]
+  /** 소지한 부모 중 가장 높은 성공 확률 (소지한 부모가 없으면 0) */
+  chance: number
+  best: EggParent | null
+}
+/**
+ * 알 기술: 같은 알 그룹이고 그 기술을 레벨업으로 배우는 포켓몬이 유전 부모.
+ * 알은 어미(이 포켓몬 계열의 암컷)에게서 나오고 기술은 아비(부모 후보 수컷)에게서 물려받으므로
+ * 성공 확률 = 이 포켓몬의 암컷 비율 × 부모 후보의 수컷 비율
+ */
+export function eggMoveOptions(species: string, owned: (id: string) => boolean): EggMoveOption[] {
+  const lm = learnMethods.value
+  const dex = dexData.value
+  if (!lm || !dex) return []
+  const groups = (lm.eggGroups[species] ?? []).filter((g) => g !== NO_EGGS_GROUP)
+  const female = femaleRatio(lm.gender[species]) ?? 0
+  return (lm.egg[species] ?? []).flatMap((num) => {
+    const move = dex.moves[num]?.id
+    if (!move) return []
+    const parents = (lm.levelBy[num] ?? [])
+      .filter((p) => (lm.eggGroups[p] ?? []).some((g) => g !== NO_EGGS_GROUP && groups.includes(g)))
+      .map((p) => {
+        const f = femaleRatio(lm.gender[p])
+        return { species: p, owned: owned(p), chance: f == null ? 0 : female * (1 - f) }
+      })
+      .sort((a, b) => Number(b.owned) - Number(a.owned) || b.chance - a.chance)
+    const best = parents.filter((p) => p.owned).sort((a, b) => b.chance - a.chance)[0] ?? null
+    return [{ move, parents, chance: best?.chance ?? 0, best }]
+  })
+}
+/** 기술가르침: 기술별로 가르쳐 주는 작품·장소 (표에 있는 작품만, 같은 장소·비용은 하나로) */
+export function tutorOptions(species: string): { move: string; sources: TutorSource[] }[] {
+  const lm = learnMethods.value
+  const dex = dexData.value
+  if (!lm || !dex) return []
+  return (lm.tutor[species] ?? []).flatMap(([num, vgs]) => {
+    const move = dex.moves[num]?.id
+    if (!move) return []
+    const seen = new Set<string>()
+    const sources = vgs.flatMap((vg) => {
+      const src = tutorSource(vg, move)
+      const key = src && JSON.stringify(src)
+      if (!src || seen.has(key!)) return []
+      seen.add(key!)
+      return [src]
+    })
+    return sources.length ? [{ move, sources }] : []
+  })
+}
 /** 한 턴 효과음에서 공격 사이 간격 (초) */
 const HIT_SFX_GAP = 0.4
 /** 기술 효과음이 나온 뒤 타격음까지 (초) */
@@ -615,6 +679,10 @@ export const useGameStore = defineStore('game', {
     seen: [] as string[],
     /** 돈 */
     money: 0,
+    /** 배틀포인트 (기술가르침 비용. 아직 얻는 곳 없음) */
+    bp: 0,
+    /** 게임코너 코인 (기술가르침 비용. 아직 얻는 곳 없음) */
+    coins: 0,
     /** 보유 아이템 {identifier: 개수} */
     items: {} as Record<string, number>,
     /** 구매한 편의성 기능 */
@@ -868,6 +936,8 @@ export const useGameStore = defineStore('game', {
       for (const p of Object.values(this.stageProgress)) for (const id of p.seen ?? []) seen.add(id)
       if (seen.size !== this.seen.length) this.seen = [...seen]
       if (!Number.isInteger(this.evBreaks) || this.evBreaks < 0) this.evBreaks = 0
+      if (!Number.isInteger(this.bp) || this.bp < 0) this.bp = 0
+      if (!Number.isInteger(this.coins) || this.coins < 0) this.coins = 0
       // 이전 저장 데이터 호환: 회복·기절 회복이 한 분류였던 시절 → 기절 회복 자동 사용·자동 구매를 따로 나눔
       if (legacyHeal && this.perks.includes('autoUse:heal') && !this.perks.includes('autoUse:revive')) {
         this.perks.push('autoUse:revive')
@@ -1851,6 +1921,70 @@ export const useGameStore = defineStore('game', {
       if (m.pending) m.pending = m.pending.filter((id) => id !== move)
       this.putMove(m, move, full ? replaceId : undefined)
       return true
+    },
+
+    // ---------- 알 기술·기술가르침 ----------
+    /** 알 기술 유전 부모로 인정: 잡은 적 있거나 파티에 있는 포켓몬 */
+    ownsSpecies(id: string): boolean {
+      return this.caught.includes(id) || this.party.some((m) => m.species === id)
+    },
+    /** 그 작품 지방의 그 스테이지에 도착한 적 있는지 (지금 있는 곳 / 클리어 / 전투 기록) */
+    stageVisited(regionKey: string, stageName: string): boolean {
+      const region = REGIONS.find((r) => r.key === regionKey)
+      if (!region || !this.unlockedRegions.includes(region.id)) return false
+      return region.stages.some(
+        (s) => s.name === stageName && (s.id === this.currentStageId || this.clearedStages.includes(s.id) || !!this.stageProgress[s.id]),
+      )
+    },
+    /** 기술가르침 비용이 부족한 것 (없으면 빈 문자열) */
+    tutorShortfall(cost: TutorCost): string {
+      if (cost.money && this.money < cost.money) return '돈이 부족합니다'
+      if (cost.bp && this.bp < cost.bp) return 'BP가 부족합니다'
+      if (cost.coin && this.coins < cost.coin) return '코인이 부족합니다'
+      for (const [k, n] of Object.entries(cost.shards ?? {}))
+        if (n && (this.items[SHARD_ITEM[k as ShardColor]] ?? 0) < n) return '조각이 부족합니다'
+      return ''
+    },
+    /** 기술가르침으로 기술 장착: 빈 칸이 있으면 장착, 칸이 가득 차면 replaceId 대신 */
+    learnByTutor(memberIndex: number, moveId: string, src: TutorSource, replaceId?: string): boolean {
+      const m = this.party[memberIndex]
+      if (!m || this.faint || (m.learned ?? m.moves).includes(moveId)) return false
+      if (!tutorOptions(m.species).some((o) => o.move === moveId && o.sources.some((s) => JSON.stringify(s) === JSON.stringify(src)))) return false
+      if (!this.stageVisited(src.region, src.gate) || this.tutorShortfall(src.cost)) return false
+      const full = m.moves.length >= this.slotsOf(m)
+      if (full && (!replaceId || !m.moves.includes(replaceId))) return false
+      const c = src.cost
+      if (c.money) this.money -= c.money
+      if (c.bp) this.bp -= c.bp
+      if (c.coin) this.coins -= c.coin
+      for (const [k, n] of Object.entries(c.shards ?? {})) for (let i = 0; i < (n ?? 0); i++) this.takeFromBag(SHARD_ITEM[k as ShardColor])
+      if (m.pending) m.pending = m.pending.filter((id) => id !== moveId)
+      this.putMove(m, moveId, full ? replaceId : undefined)
+      return true
+    },
+    /**
+     * 알 기술 시도 (EGG_MOVE_PRICE 원 소모). 소지한 부모 중 확률이 가장 높은 부모로 시도:
+     * 성공하면 장착 (칸이 가득 차면 replaceId 대신), 실패해도 돈은 사라짐
+     */
+    tryEggMove(memberIndex: number, moveId: string, replaceId?: string): 'success' | 'fail' | null {
+      const m = this.party[memberIndex]
+      if (!m || this.faint || this.money < EGG_MOVE_PRICE || (m.learned ?? m.moves).includes(moveId)) return null
+      const opt = eggMoveOptions(m.species, (id) => this.ownsSpecies(id)).find((o) => o.move === moveId)
+      if (!opt?.best || opt.chance <= 0) return null
+      const full = m.moves.length >= this.slotsOf(m)
+      if (full && (!replaceId || !m.moves.includes(replaceId))) return null
+      this.money -= EGG_MOVE_PRICE
+      const name = speciesOf(m.species)?.ko ?? m.species
+      const parent = speciesOf(opt.best.species)?.ko ?? opt.best.species
+      const move = dexData.value?.movesById[moveId]?.ko ?? moveId
+      if (Math.random() >= opt.chance) {
+        useBattleLogStore().push(`${parent}에게서 ${josa(move, '을', '를')} 물려받지 못했다…`, 'info')
+        return 'fail'
+      }
+      useBattleLogStore().push(`${josa(name, '이', '가')} ${parent}에게서 ${josa(move, '을', '를')} 물려받았다!`, 'info')
+      if (m.pending) m.pending = m.pending.filter((id) => id !== moveId)
+      this.putMove(m, moveId, full ? replaceId : undefined)
+      return 'success'
     },
 
     // ---------- 파티·도감 ----------

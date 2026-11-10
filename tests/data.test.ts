@@ -11,6 +11,7 @@ import { STARTERS, STARTER_LEVEL } from '../src/data/starters'
 import { wildMoveset } from '../src/core/battle'
 import { GIMMICKS } from '../src/core/gimmicks'
 import { regionOfGimmick } from '../src/data/stages'
+import { tutorTableProblems } from '../src/data/tutors'
 
 beforeAll(loadAllData)
 
@@ -157,5 +158,11 @@ describe('상점', () => {
       expect(i.price, i.id).toBeGreaterThan(0)
       expect(dex().items[i.id], i.id).toBeDefined()
     }
+  })
+})
+
+describe('기술가르침 표', () => {
+  test('지방 key·도착 판정 스테이지 이름이 실제로 있음', () => {
+    expect(tutorTableProblems()).toEqual([])
   })
 })
