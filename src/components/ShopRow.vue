@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { dexData } from '../data/dex'
 import { useGameStore } from '../stores/game'
 import ItemIcon from './ItemIcon.vue'
+import { offerQuickUse } from './quickUse'
 
 const props = withDefaults(defineProps<{ id: string; price: number; note?: string; multi?: boolean; label?: string }>(), {
   note: '',
@@ -13,6 +14,10 @@ const props = withDefaults(defineProps<{ id: string; price: number; note?: strin
 const game = useGameStore()
 const info = computed(() => dexData.value?.items[props.id])
 const won = (n: number) => `${n.toLocaleString()}원`
+/** 사고 나서 바로 쓸 수 있으면 사용 여부를 물음 */
+function buy(n: number) {
+  if (game.buyItem(props.id, n)) offerQuickUse(props.id)
+}
 </script>
 
 <template>
@@ -24,8 +29,8 @@ const won = (n: number) => `${n.toLocaleString()}원`
         <span class="muted">보유 {{ game.items[id] ?? 0 }}</span>
       </span>
       <span class="price">{{ won(price) }}</span>
-      <button type="button" class="buy" :disabled="game.money < price" @click="game.buyItem(id, 1)">1개</button>
-      <button v-if="multi" type="button" class="buy" :disabled="game.money < price * 10" @click="game.buyItem(id, 10)">10개</button>
+      <button type="button" class="buy" :disabled="game.money < price" @click="buy(1)">1개</button>
+      <button v-if="multi" type="button" class="buy" :disabled="game.money < price * 10" @click="buy(10)">10개</button>
     </div>
     <p v-if="note" class="desc item note-line">{{ note }}</p>
     <p v-if="info?.text" class="desc item">{{ info.text }}</p>

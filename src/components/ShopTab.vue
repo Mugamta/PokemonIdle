@@ -43,7 +43,9 @@ import {
 } from '../data/shop'
 import { BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, tmShopList, type HeldGroup } from '../data/items'
 import ItemIcon from './ItemIcon.vue'
+import QuickUseDialog from './QuickUseDialog.vue'
 import ShopRow from './ShopRow.vue'
+import { offerQuickUse } from './quickUse'
 import {
   BASE_SLOTS_MAX,
   canLearnMachine,
@@ -198,7 +200,7 @@ const ownedSpecies = computed(() => new Set([...game.caught, ...game.party.map((
 function buyEvoItem(id: string, name: string, usable: boolean) {
   if (!usable && !confirm(`도감에 ${name}(으)로 진화할 수 있는 포켓몬이 없습니다.
 그래도 구매할까요?`)) return
-  game.buyItem(id, 1)
+  if (game.buyItem(id, 1)) offerQuickUse(id)
 }
 const evoGroups = computed(() =>
   EVO_GROUPS.map((g) => ({
@@ -315,6 +317,7 @@ const slotRows = computed(() =>
 
 <template>
   <div class="shop">
+    <QuickUseDialog />
     <div class="tabs-head">
       <nav class="sub-tabs">
         <button v-for="g in groups" :key="g.id" type="button" :class="{ active: curGroup.id === g.id }" @click="group = g.id">
