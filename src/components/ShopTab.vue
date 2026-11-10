@@ -149,6 +149,7 @@ const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
     { id: 'evDown', label: '노력치 ↓' },
     { id: 'exp', label: '경험치' },
     { id: 'pp', label: 'PP' },
+    { id: 'move', label: '기술' },
     { id: 'ability', label: '특성' },
     { id: 'iv', label: '개체값' },
     { id: 'nature', label: '민트' },

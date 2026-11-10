@@ -32,6 +32,7 @@ import { findStage } from '../data/stages'
 import { useStageViewStore } from '../stores/stageView'
 import BattleControls from './BattleControls.vue'
 import HScroll from './HScroll.vue'
+import HpBar from './HpBar.vue'
 import StageDetail from './StageDetail.vue'
 import StageMap from './StageMap.vue'
 import ItemIcon from './ItemIcon.vue'
@@ -98,6 +99,14 @@ const stats = computed(() => {
           ]
     return { label: STAT_LABELS[i], base, iv, ev, value, mod, formula, locked: game.evLockedOf(m, i) }
   })
+})
+
+/** 성격으로 오르고 내리는 능력치 이름 (변화 없는 성격이면 null) */
+const natureMods = computed(() => {
+  const n = member.value && NATURES[member.value.nature]
+  if (!n?.plus || !n.minus || n.plus === n.minus) return null
+  const label = (k: string) => STAT_LABELS[STAT_KEYS.indexOf(k as (typeof STAT_KEYS)[number])]
+  return { up: label(n.plus), down: label(n.minus) }
 })
 
 /** 친밀도 (0~255) */
@@ -382,12 +391,13 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             </div>
             <div class="party-actions">
               <button
-                v-if="i > 0"
                 type="button"
                 class="small-btn"
-                :disabled="m.hp === 0 || !!game.faint || game.leadTrapped"
+                :disabled="i === 0 || m.hp === 0 || !!game.faint || game.leadTrapped"
                 :title="
-                  game.leadTrapped
+                  i === 0
+                    ? '지금 싸우고 있는 포켓몬입니다'
+                    : game.leadTrapped
                     ? '싸우는 포켓몬이 묶여 있어 교체할 수 없습니다'
                     : game.enemy && game.battleTurns > 0
                       ? '전투 중에 교체하면 한 턴을 소모합니다'
@@ -395,7 +405,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                 "
                 @click="game.setLead(i)"
               >
-                싸우는 포켓몬으로
+                교체
               </button>
               <button
                 v-if="isHurt(m)"
@@ -459,51 +469,86 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
         <section v-if="sub === 'stats' && stats" class="card">
           <div class="card-head">
             <PokeSprite :species="member!.species" :size="56" />
-            <strong>{{ species(member!.species)?.ko }}</strong>
-            <span class="muted">Lv.{{ member!.level }} · {{ NATURES[member!.nature]?.ko ?? '-' }} · {{ hpText(member!) }}</span>
+            <div class="head-main">
+              <div class="head-title">
+                <strong class="head-name">{{ species(member!.species)?.ko }}</strong>
+                <span class="lv-badge">Lv.{{ member!.level }}</span>
+                <span v-if="member!.hp === 0" class="faint-badge">기절</span>
+              </div>
+              <div class="head-hp">
+                <HpBar :hp="member!.hp ?? maxHp(member!)" :max="maxHp(member!)" show-numbers />
+              </div>
+            </div>
           </div>
-          <p class="muted held-line">
-            지닌 도구
-            <template v-if="heldIds(member!).length">
-              <span v-for="id in heldIds(member!)" :key="id" class="held-chip">
-                <ItemIcon :id="id" :size="18" />
-                {{ itemKo(id) }}<template v-if="member!.held![id]! > 1"> ×{{ member!.held![id] }}</template
-                ><template v-if="member!.heldSpent?.[id]"> (사용함{{ member!.held![id]! > 1 ? ` ${member!.heldSpent[id]}개` : '' }})</template>
-              </span>
-            </template>
-            <template v-else> 없음</template>
-          </p>
-          <p v-if="ability" class="ability">
-            <strong>특성 {{ ability.ko }}</strong><span v-if="member!.hiddenAbility" class="muted"> (숨겨진 특성)</span>
-            <span class="muted">{{ ability.text }}</span>
-          </p>
-          <p v-if="game.gimmickUnlocked('tera')" class="muted held-line">
-            테라스탈 타입
-            <span class="type" :style="{ background: TYPE_COLORS[teraTypeOf(member!)] }">{{ dexData.types[teraTypeOf(member!)] }}</span>
-            <small>(도구 탭에서 테라피스 {{ TERA_SHARD_COST }}개로 변경)</small>
-          </p>
-          <p v-if="megaInfo" class="muted held-line" :class="{ 'mega-ok': megaInfo.ok }">메가진화 · {{ megaInfo.text }}</p>
+          <dl class="info">
+            <div class="info-row">
+              <dt>성격</dt>
+              <dd>
+                <span class="chip">{{ NATURES[member!.nature]?.ko ?? '-' }}</span>
+                <template v-if="natureMods">
+                  <small class="nat up">{{ natureMods.up }} ▲</small>
+                  <small class="nat down">{{ natureMods.down }} ▼</small>
+                </template>
+                <small v-else class="muted">능력 변화 없음</small>
+              </dd>
+            </div>
+            <div v-if="ability" class="info-row">
+              <dt>특성</dt>
+              <dd class="col">
+                <span class="ab-name">
+                  <strong>{{ ability.ko }}</strong>
+                  <span v-if="member!.hiddenAbility" class="chip hidden-ab">숨겨진 특성</span>
+                </span>
+                <span class="desc">{{ ability.text }}</span>
+              </dd>
+            </div>
+            <div class="info-row">
+              <dt>지닌 도구</dt>
+              <dd>
+                <template v-if="heldIds(member!).length">
+                  <span v-for="id in heldIds(member!)" :key="id" class="chip held-chip">
+                    <ItemIcon :id="id" :size="18" />
+                    {{ itemKo(id) }}<template v-if="member!.held![id]! > 1"> ×{{ member!.held![id] }}</template
+                    ><template v-if="member!.heldSpent?.[id]"> (사용함{{ member!.held![id]! > 1 ? ` ${member!.heldSpent[id]}개` : '' }})</template>
+                  </span>
+                </template>
+                <span v-else class="muted">없음</span>
+              </dd>
+            </div>
+            <div v-if="game.gimmickUnlocked('tera')" class="info-row">
+              <dt>테라스탈</dt>
+              <dd>
+                <span class="type" :style="{ background: TYPE_COLORS[teraTypeOf(member!)] }">{{ dexData.types[teraTypeOf(member!)] }}</span>
+                <small class="muted">도구 탭에서 테라피스 {{ TERA_SHARD_COST }}개로 변경</small>
+              </dd>
+            </div>
+            <div v-if="megaInfo" class="info-row">
+              <dt>메가진화</dt>
+              <dd class="muted" :class="{ 'mega-ok': megaInfo.ok }">{{ megaInfo.text }}</dd>
+            </div>
+          </dl>
           <p v-if="memberIdx === 0 && game.gimmickActive?.kind === 'mega'" class="muted held-line">
             지금 {{ formOf(game.gimmickActive.form)?.ko }}(으)로 메가진화한 상태입니다. (위 능력치는 원래 모습 기준)
           </p>
+          <h4 class="sec stat-head">능력치</h4>
           <table class="stats">
             <thead>
               <tr>
                 <th />
                 <th>실능치</th>
-                <th v-if="game.statViewLevel >= 1">종족값</th>
-                <th v-if="game.statViewLevel >= 2">개체값</th>
-                <th v-if="game.statViewLevel >= 3">노력치</th>
-                <th v-if="game.hasPerk('evBreak:1')" title="끄면 전투로 이 능력치의 노력치를 얻지 않습니다">노력치 획득</th>
+                <th>종족값</th>
+                <th>개체값</th>
+                <th>노력치</th>
+                <th title="끄면 전투로 이 능력치의 노력치를 얻지 않습니다">노력치 획득</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(s, i) in stats" :key="s.label">
                 <th>{{ s.label }}</th>
                 <td class="value" :class="s.mod">{{ s.value }}<span v-if="s.mod">{{ s.mod === 'up' ? '▲' : '▼' }}</span></td>
-                <td v-if="game.statViewLevel >= 1">{{ s.base }}</td>
-                <td v-if="game.statViewLevel >= 2">{{ s.iv }}</td>
-                <td v-if="game.statViewLevel >= 3">{{ s.ev }}</td>
+                <td :class="{ unknown: game.statViewLevel < 1 }">{{ game.statViewLevel >= 1 ? s.base : '???' }}</td>
+                <td :class="{ unknown: game.statViewLevel < 2 }">{{ game.statViewLevel >= 2 ? s.iv : '???' }}</td>
+                <td :class="{ unknown: game.statViewLevel < 3 }">{{ game.statViewLevel >= 3 ? s.ev : '???' }}</td>
                 <td v-if="game.hasPerk('evBreak:1')">
                   <input
                     type="checkbox"
@@ -511,6 +556,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                     @change="game.setEvLock(memberIdx, i, !($event.target as HTMLInputElement).checked)"
                   />
                 </td>
+                <td v-else class="unknown">???</td>
               </tr>
             </tbody>
           </table>
@@ -740,7 +786,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
               <template v-else>
                 <h5 class="train-sec">
                   잊은 기술 되살리기
-                  <span class="muted">하트비늘 ×{{ heartScales }} (1개 소모<template v-if="!heartScales"> · 상점 → 육성 → 기술 떠올리기</template>)</span>
+                  <span class="muted">하트비늘 {{ heartScales }}개 보유 · 1개씩 소모<template v-if="!heartScales"> (도구상점 → 육성 → 기술에서 구매)</template></span>
                 </h5>
                 <p v-if="!fForgotten.length" class="msg">{{ filterOn && forgotten.length ? FILTER_EMPTY : '잊은 기술이 없습니다.' }}</p>
                 <ul v-else class="rows mrows">
@@ -1061,7 +1107,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
   gap: 2px;
 }
 
-.held-chip + .held-chip::before {
+.held-chip:not(.chip) + .held-chip::before {
   content: '·';
   margin-right: 2px;
 }
@@ -1208,8 +1254,142 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 .card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 6px 10px 8px 4px;
+  border-radius: 8px;
+  background: #23232b;
+}
+
+.head-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.head-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.head-name {
+  font-size: 17px;
+}
+
+.lv-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #ffcb05;
+  color: #1e1e24;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.faint-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #7a2f2f;
+  color: #fff;
+  font-size: 12px;
+}
+
+.head-hp {
+  font-size: 12px;
+}
+
+/* 성격·특성·도구 등: 왼쪽 라벨 + 오른쪽 내용 */
+.info {
+  margin: 0 0 12px;
+  border: 1px solid #3a3a44;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: start;
+}
+
+.info-row + .info-row {
+  border-top: 1px solid #34343e;
+}
+
+.info dt {
+  padding: 7px 10px;
+  background: #23232b;
+  color: #8a8a96;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.info dd {
+  margin: 0;
+  padding: 7px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.info dd.col {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.info .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #3a3a46;
+  color: #eee;
+  font-size: 12px;
+}
+
+.info .chip.hidden-ab {
+  background: #3d2a5c;
+  color: #c9a0ff;
+  font-size: 11px;
+}
+
+.ab-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info .desc {
+  color: #9a9aa6;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nat {
+  font-size: 12px;
+}
+
+.nat.up {
+  color: #ff8a7a;
+}
+
+.nat.down {
+  color: #7aa8ff;
+}
+
+.stat-head {
+  margin-top: 4px;
+}
+
+.stats td.unknown {
+  color: #5a5a66;
 }
 
 .muted {

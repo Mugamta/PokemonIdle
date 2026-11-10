@@ -576,6 +576,13 @@ export function stageSpecies(set: EncounterSet | undefined): string[] {
   return [...new Set(lists.flat().filter((e) => !e.special).map((e) => e.p))]
 }
 
+/** 스테이지 도감 대상: 일반 출현 포켓몬 전체 (수상 스테이지는 모든 조우 방법 포함) */
+export function stageDexSpecies(set: EncounterSet | undefined): string[] {
+  if (!set) return []
+  const extra = Object.values(set.methods ?? {}).flatMap((t) => stageSpecies(t as EncounterSet))
+  return [...new Set([...stageSpecies(set), ...extra])]
+}
+
 /** 특성 뽑기. hidden = 숨겨진 특성도 후보 (보스·어려움 난이도) */
 function rollAbility(species: string, hidden: boolean): string | null {
   const list = speciesAbilities(species, hidden)
@@ -819,6 +826,18 @@ export const useGameStore = defineStore('game', {
     unlockedGens: (s) => REGIONS.filter((r) => s.unlockedRegions.includes(r.id)).flatMap((r) => r.gens),
     /** 이동 가능한 지방인지 (히든 지방은 조건 포켓몬 포획 필요) */
     canEnter: (s) => (region: Region) => !region.hidden || s.caught.includes(region.hidden.requiresCaught),
+    /** 스테이지 출현 포켓몬을 모두 잡았는지 (출현 정보가 없으면 null) */
+    stageDexDone: (s) => (stage: Stage): boolean | null => {
+      const list = stageDexSpecies(stage.encounters)
+      return list.length ? list.every((p) => s.caught.includes(p)) : null
+    },
+    /** 지방의 모든 스테이지를 클리어했는지 */
+    regionCleared: (s) => (region: Region) => region.stages.every((st) => s.clearedStages.includes(st.id)),
+    /** 지방의 모든 스테이지 출현 포켓몬을 잡았는지 (출현 정보가 없으면 null) */
+    regionDexDone: (s) => (region: Region): boolean | null => {
+      const list = [...new Set(region.stages.flatMap((st) => stageDexSpecies(st.encounters)))]
+      return list.length ? list.every((p) => s.caught.includes(p)) : null
+    },
     /**
      * 이동 가능한 스테이지: 지방의 첫 스테이지, 클리어한 스테이지, 클리어한 스테이지의 다음 스테이지.
      * 수상 스테이지는 파도타기 포켓몬이나 낚싯대가 있어야 하고, 진행을 막지 않음 (앞의 수상 스테이지는 건너뛰고 판단)

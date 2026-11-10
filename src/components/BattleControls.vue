@@ -207,8 +207,10 @@ watch(
           <span v-if="s.max != null" class="pp" :class="{ low: s.pp != null && s.pp <= s.max / 4 }">PP {{ s.pp }}/{{ s.max }}</span>
           <span class="meta">
             <span class="type">{{ dexData?.types[s.v.type] ?? s.v.type }}</span>
-            {{ CLS_LABEL[s.v.cls] }} · 위력 {{ s.v.power ?? '-' }} · 명중 {{ s.v.acc ?? '-' }}
-            <template v-if="s.tag"> · {{ s.tag }}</template>
+            <span class="cls">{{ CLS_LABEL[s.v.cls] }}</span>
+            <span>· 위력 <span class="num">{{ s.v.power ?? '-' }}</span></span>
+            <span>· 명중 <span class="num">{{ s.v.acc ?? '-' }}</span></span>
+            <span v-if="s.tag">· {{ s.tag }}</span>
           </span>
         </button>
         <div v-else-if="s.kind === 'empty'" class="move slot">빈 칸 (기술 탭에서 장착)</div>
@@ -305,16 +307,41 @@ watch(
 }
 
 .move .name {
+  max-width: calc(100% - 64px);
+  overflow: hidden;
   font-size: 15px;
   font-weight: 700;
+  height: 20px;
+  line-height: 20px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
+/* 타입·분류·위력·명중을 칸 너비로 고정해 버튼끼리 세로로 줄이 맞도록 */
 .move .meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
   color: #9a9aa6;
   font-size: 11px;
+  line-height: 16px;
+}
+
+.move .meta .cls {
+  min-width: 2.2em;
+}
+
+.move .meta .num {
+  display: inline-block;
+  min-width: 3ch;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .move .type {
+  min-width: 3.6em;
+  text-align: center;
   padding: 0 5px;
   border-radius: 3px;
   background: var(--c);
@@ -323,8 +350,10 @@ watch(
 }
 
 .move .hint {
+  vertical-align: top;
   color: #ffcb05;
   font-size: 11px;
+  line-height: 20px;
   font-weight: 400;
 }
 

@@ -48,6 +48,7 @@ watch(
           <span class="name">{{ stage.name }}</span>
           <span v-if="stage.kind === 'water'" class="tag water">수상</span>
           <span v-if="game.currentStageId === stage.id" class="tag here">현재</span>
+          <span v-if="game.stageDexDone(stage)" class="tag dex" title="출현 포켓몬을 모두 잡았습니다">도감 완성</span>
           <span v-if="game.clearedStages.includes(stage.id)" class="tag cleared">클리어</span>
           <span v-if="game.waterLocked(stage.id)" class="tag lock" title="파도타기 포켓몬이나 이곳에서 쓸 수 있는 낚싯대 필요">🔒</span>
           <span v-else-if="!game.clearedStages.includes(stage.id) && !game.stageUnlocked(stage.id)" class="tag lock">🔒</span>
@@ -77,6 +78,8 @@ watch(
         <span class="num">{{ region.id }}</span>
         <span class="name">{{ region.name }} <small class="ver">{{ region.version }}</small></span>
         <span v-if="region.hidden" class="tag hidden">히든</span>
+        <span v-if="game.regionDexDone(region)" class="tag dex" title="모든 스테이지의 출현 포켓몬을 잡았습니다">도감 완성</span>
+        <span v-if="game.regionCleared(region)" class="tag cleared" title="모든 스테이지를 클리어했습니다">전부 클리어</span>
         <span class="count">{{ region.stages.length }}개</span>
       </button>
     </li>
@@ -91,6 +94,11 @@ watch(
 
 .tag.cleared {
   background: #2f6b3f;
+  color: #fff;
+}
+
+.tag.dex {
+  background: #7a2f2f;
   color: #fff;
 }
 
