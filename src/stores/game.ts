@@ -127,7 +127,7 @@ export const AUTO_UNLOCK_STAGE = '1-1'
 /** 기술칸 최대 수 */
 export const MAX_MOVE_SLOTS = 8
 /** 2·3·4번째 기술칸 해금에 필요한, 계정 전체에서 쓰러뜨린 수 */
-export const SLOT_DEFEATS = [10, 30, 50]
+export const SLOT_DEFEATS = [5, 10, 15]
 /** 상점에서 추가로 열 수 있는 기술칸 수 (기본 4칸이 모두 열린 뒤) */
 export const EXTRA_SLOTS = MAX_MOVE_SLOTS - 1 - SLOT_DEFEATS.length
 /** 기본 기술칸이 모두 열렸을 때의 칸 수 */

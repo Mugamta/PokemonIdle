@@ -104,7 +104,7 @@ describe('특수 기능 수치', () => {
 describe('기술칸', () => {
   test('격파 수에 따라 기본 칸이 늘고, 최대치를 넘지 않음', () => {
     expect(baseSlotsAt(0)).toBe(1)
-    expect(baseSlotsAt(10)).toBe(2)
+    expect(baseSlotsAt(5)).toBe(2)
     expect(baseSlotsAt(1_000_000)).toBe(4)
     expect(slotsAt(1_000_000, { extraSlots: 99 })).toBeLessThanOrEqual(MAX_MOVE_SLOTS)
   })
