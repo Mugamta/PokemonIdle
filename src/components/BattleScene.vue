@@ -7,7 +7,7 @@ import { battleData, STATUS_COLORS, STATUS_LABELS } from '../data/battle'
 import { dexData, loadDex, STAT_LABELS, TYPE_COLORS } from '../data/dex'
 import { calcStats } from '../data/natures'
 import { findStage } from '../data/stages'
-import { expAtLevel, moveData, ro } from '../core/battle'
+import { expAtLevel, isConsumableItem, moveData, ro } from '../core/battle'
 import { formOf } from '../core/gimmicks'
 import { useBattleLogStore } from '../stores/battleLog'
 import { BOSS_DEFEATS, BOSS_INTRO_MS, maxPpOf, ppOf, useGameStore } from '../stores/game'
@@ -129,18 +129,29 @@ const foe = computed(() => {
   return { enemy: e, info: hpInfo(e.species, e.level, e.ivs, [0, 0, 0, 0, 0, 0], e.nature, e.hp) }
 })
 const foeFallen = computed(() => !game.enemy && !!fallen.value)
-/** 상대 기술 (강화상점 상대 기술 표시 개선, HP 바 아래). 2단계면 남은 PP까지 */
+/** 상대 기술 (강화상점 상대 기술 표시 개선, HP 바 아래). 2단계면 남은 PP까지
+ *  첫 번째 기술만 보이고 나머지는 ??? (파티에 위험예지가 있으면 전부) */
 const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 const foeMoves = computed(() => {
   const e = game.enemy
   if (!e || !game.foeMoveView) return []
-  return (e.moves ?? []).flatMap((id) => {
+  const all = game.partyHasAbility('anticipation')
+  return (e.moves ?? []).flatMap((id, i) => {
     const m = moveData(id)
     if (!m) return []
     const max = maxPpOf(id)
     const pp = ppOf(e, id)
-    return [{ m, max, pp, out: game.ppActive && pp === 0 }]
+    return [{ m, max, pp, out: game.ppActive && pp === 0, hidden: !all && i > 0 }]
   })
+})
+/** 상대 도구 (강화상점 상대 도구 표시). 지속형/소모성만, 파티에 통찰이 있으면 정확한 도구 */
+const foeItem = computed(() => {
+  const e = game.enemy
+  if (!e || !game.foeItemView) return null
+  const id = e.item ?? null
+  if (!id) return { id: null, label: '도구 없음' }
+  if (game.partyHasAbility('frisk')) return { id, label: dexData.value?.items[id]?.ko ?? id }
+  return { id: null, label: isConsumableItem(id) ? '소모성 도구' : '지속형 도구' }
 })
 </script>
 
@@ -201,20 +212,33 @@ const foeMoves = computed(() => {
         <HpBar v-if="foe.info" :hp="foe.info.hp" :max="foe.info.max" :display="game.displayLevel('foeHp')" />
         <div v-if="game.foeMoveView && game.enemy" class="foe-moves">
           <span v-if="!foeMoves.length" class="foe-none">기술 없음 (발버둥)</span>
-          <span
-            v-for="f in foeMoves"
-            :key="f.m.id"
-            class="foe-move"
-            :class="{ out: f.out }"
-            :style="{ '--c': TYPE_COLORS[f.m.type] ?? '#666' }"
-            :title="`${dexData?.types[f.m.type] ?? f.m.type} · ${CLS_LABEL[f.m.cls]} · 위력 ${f.m.power ?? '-'} · 명중 ${f.m.acc ?? '-'}`"
-          >
-            <span class="foe-name">{{ f.m.ko }}</span>
-            <small v-if="game.foeMoveView >= 2 && f.max != null" class="foe-pp" :class="{ low: f.pp != null && f.pp <= f.max / 4 }">
-              {{ f.pp }}/{{ f.max }}
-            </small>
-            <small v-else class="foe-meta">{{ f.m.power ?? '-' }}</small>
-          </span>
+          <template v-for="(f, i) in foeMoves" :key="i">
+            <span v-if="f.hidden" class="foe-move hidden" title="파티에 위험예지 특성을 가진 포켓몬이 있으면 볼 수 있습니다">
+              <span class="foe-name">???</span>
+            </span>
+            <span
+              v-else
+              class="foe-move"
+              :class="{ out: f.out }"
+              :style="{ '--c': TYPE_COLORS[f.m.type] ?? '#666' }"
+              :title="`${dexData?.types[f.m.type] ?? f.m.type} · ${CLS_LABEL[f.m.cls]} · 위력 ${f.m.power ?? '-'} · 명중 ${f.m.acc ?? '-'}`"
+            >
+              <span class="foe-name">{{ f.m.ko }}</span>
+              <small v-if="game.foeMoveView >= 2 && f.max != null" class="foe-pp" :class="{ low: f.pp != null && f.pp <= f.max / 4 }">
+                {{ f.pp }}/{{ f.max }}
+              </small>
+              <small v-else class="foe-meta">{{ f.m.power ?? '-' }}</small>
+            </span>
+          </template>
+        </div>
+        <div
+          v-if="foeItem"
+          class="foe-item"
+          :title="foeItem.id ? '지닌 도구 (통찰)' : '파티에 통찰 특성을 가진 포켓몬이 있으면 정확한 도구를 알 수 있습니다'"
+        >
+          <ItemIcon v-if="foeItem.id" :id="foeItem.id" :size="16" />
+          <span v-else class="foe-item-dot">◆</span>
+          {{ foeItem.label }}
         </div>
       </div>
       <div class="platform foe-pos" :class="{ 'boss-enter': !!bossIntro, fallen: foeFallen }">
@@ -702,6 +726,26 @@ const foeMoves = computed(() => {
 
 .foe-move.out {
   opacity: 0.5;
+}
+
+.foe-move.hidden {
+  --c: #55555f;
+  color: #8a8a96;
+}
+
+.foe-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: #ddd;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.foe-item-dot {
+  color: #9a9aa6;
+  font-size: 9px;
 }
 
 .foe-name {

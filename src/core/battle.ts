@@ -236,6 +236,15 @@ const itemMult = (b: Battler, id: string, m: number, foe?: Battler) => stackMult
 const nItems = (b: Battler, foe: Battler | undefined, test: (id: string) => boolean) =>
   itemsOf(b, foe).reduce((a, id) => a + (test(id) ? b.held![id]! : 0), 0)
 const isBerry = (id: string) => id.endsWith('-berry')
+/** 한 번 쓰면 사라지는 도구 (나무열매·주얼 외) */
+const SINGLE_USE_ITEMS = new Set([
+  'focus-sash', 'air-balloon', 'white-herb', 'mental-herb', 'power-herb', 'mirror-herb', 'weakness-policy',
+  'blunder-policy', 'throat-spray', 'adrenaline-orb', 'absorb-bulb', 'cell-battery', 'snowball', 'luminous-moss',
+  'red-card', 'eject-button', 'eject-pack', 'room-service', 'booster-energy',
+  'electric-seed', 'grassy-seed', 'misty-seed', 'psychic-seed',
+])
+/** 소모성 도구인지 (아니면 지속형) */
+export const isConsumableItem = (id: string) => isBerry(id) || id.endsWith('-gem') || SINGLE_USE_ITEMS.has(id)
 /** 열매를 먹을 수 있는지 (상대가 긴장감이면 없음) */
 function canEat(b: Battler, foe?: Battler): boolean {
   return !foe || !UNNERVE.has(ab(foe, b) ?? '')

@@ -688,6 +688,10 @@ export const useGameStore = defineStore('game', {
       s.perks.includes(`${kind}:full`) ? 2 : s.perks.includes(`${kind}:ratio`) ? 1 : 0,
     /** 상대 기술 표시 단계: 0 = 안 보임, 1 = 기술, 2 = 기술과 남은 PP */
     foeMoveView: (s): 0 | 1 | 2 => (s.perks.includes('foeMoves:pp') ? 2 : s.perks.includes('foeMoves:list') ? 1 : 0),
+    /** 상대 도구 표시 (지속형/소모성만, 파티에 통찰이 있으면 정확한 도구) */
+    foeItemView: (s): boolean => s.perks.includes('foeItem:show'),
+    /** 파티에 이 특성을 가진 포켓몬이 있는지 (위험예지: 상대 기술 전부, 통찰: 상대 도구) */
+    partyHasAbility: (s) => (id: string): boolean => s.party.some((m) => memberAbility(m) === id),
     /** 속도 가속 단계 (0 = 기본) */
     speedLevel: (s) => (kind: SpeedKind): number =>
       ([4, 3, 2, 1] as const).find((lv) => s.perks.includes(`${kind}Speed:${lv}`)) ?? 0,

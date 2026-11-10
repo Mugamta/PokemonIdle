@@ -379,7 +379,7 @@ export type ItemPerkId = `autoUse:${AutoUseKey}` | `autoBuy:${AutoBuyCategory}`
 /** 자동 전투 AI 개선: strong = 가장 강한 기술, smart = 특성까지 고려 (strong 필요) */
 export type AiPerkId = 'ai:strong' | 'ai:smart'
 /** 전투 화면 표시 개선: ratio = 비율, full = 현재/최대와 비율 (ratio 필요) / 상대 기술: list = 기술, pp = 남은 PP (list 필요) */
-export type DisplayPerkId = `${'foeHp' | 'exp'}:${'ratio' | 'full'}` | `foeMoves:${'list' | 'pp'}`
+export type DisplayPerkId = `${'foeHp' | 'exp'}:${'ratio' | 'full'}` | `foeMoves:${'list' | 'pp'}` | 'foeItem:show'
 /** 속도 가속: battle = 기술 선택 대기, search = 상대 포켓몬 찾는 시간. 1~4단계 */
 export type SpeedKind = 'battle' | 'search'
 export type SpeedLevel = 1 | 2 | 3 | 4
@@ -535,7 +535,9 @@ export const DISPLAY_PERKS: ChainPerk<DisplayPerkId>[] = [
   {
     id: 'foeMoves:list',
     label: '상대 기술 표시 개선 1',
-    desc: '전투 화면의 상대 HP 바 아래에 상대 포켓몬이 가진 기술(타입 색·위력)을 표시합니다. 마우스를 올리면 분류·명중도 보입니다.',
+    desc:
+      '전투 화면의 상대 HP 바 아래에 상대 포켓몬의 첫 번째 기술(타입 색·위력)을 표시합니다. 마우스를 올리면 분류·명중도 보입니다. ' +
+      '나머지 기술은 ???로 가려지며, 파티에 위험예지 특성을 가진 포켓몬이 있으면 모든 기술을 볼 수 있습니다.',
     price: 5000,
   },
   {
@@ -544,6 +546,14 @@ export const DISPLAY_PERKS: ChainPerk<DisplayPerkId>[] = [
     desc: '상대 포켓몬 기술의 남은 PP도 함께 표시합니다. (상대도 내 포켓몬과 같은 규칙으로 PP를 소모하며, 모두 떨어지면 발버둥을 씁니다)',
     price: 10000,
     requires: 'foeMoves:list',
+  },
+  {
+    id: 'foeItem:show',
+    label: '상대 도구 표시',
+    desc:
+      '전투 화면에 상대 포켓몬이 지속형 도구나 소모성 도구(나무열매·주얼·기합의띠 등)를 가졌는지 표시합니다. ' +
+      '파티에 통찰 특성을 가진 포켓몬이 있으면 가진 도구를 정확히 알 수 있습니다.',
+    price: 5000,
   },
 ]
 /** 속도 가속 단계별 대기 시간 (0단계 = 기본) */
