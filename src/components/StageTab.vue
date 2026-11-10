@@ -83,7 +83,7 @@ watch(
         @click="openRegion(region.id)"
       >
         <span class="num">{{ region.id }}</span>
-        <span class="name">{{ region.name }} <small class="ver">{{ region.version }}</small></span>
+        <span class="name rname">{{ region.name }}<small class="ver">{{ region.version }}</small></span>
         <span v-if="region.hidden" class="tag hidden">히든</span>
         <span v-if="game.regionDexDone(region)" class="tag dex" title="모든 스테이지의 출현 포켓몬을 잡았습니다">도감 완성</span>
         <span v-if="game.regionCleared(region)" class="tag cleared" title="모든 스테이지를 클리어했습니다">전부 클리어</span>
@@ -184,6 +184,18 @@ watch(
 .name {
   flex: 1;
   font-size: 16px;
+}
+/* 지방 이름: 버전은 항상 다음 줄, 넘치면 잘림 */
+.rname {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rname .ver {
+  margin-left: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .count,
