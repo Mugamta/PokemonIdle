@@ -10,6 +10,7 @@ import StageMap from './components/StageMap.vue'
 import StarterPicker from './components/StarterPicker.vue'
 import StageTab from './components/StageTab.vue'
 import TabBar from './components/TabBar.vue'
+import ToastHost from './components/ToastHost.vue'
 import { TABS, type TabId } from './components/tabs'
 import { installAudio, playMusic } from './core/audio'
 import { startGameLoop } from './core/gameLoop'
@@ -96,6 +97,7 @@ onUnmounted(() => {
     </ScrollPanel>
 
     <TabBar v-model="activeTab" />
+    <ToastHost />
 
     <!-- 파티가 비어 있으면 스타팅 포켓몬 선택 -->
     <StarterPicker v-if="loaded && !game.party.length" />

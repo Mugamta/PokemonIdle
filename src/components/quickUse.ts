@@ -6,6 +6,7 @@ import { isMachine, isRecord } from '../data/items'
 import { EVO_ITEMS, shopItem, trainItem } from '../data/shop'
 import { speciesOf } from '../core/battle'
 import { canLearnMachine, maxPpOf, useGameStore } from '../stores/game'
+import { toast } from './toast'
 
 export interface QuickUseOption {
   key: string
@@ -109,4 +110,11 @@ export function quickUseOptions(itemId: string): QuickUseOption[] {
 /** 산 직후 호출: 쓸 대상이 있으면 대화상자를 띄움 */
 export function offerQuickUse(itemId: string) {
   if (quickUseOptions(itemId).length) quickUse.itemId = itemId
+}
+
+/** 상점에서 아이템을 산 직후: 구매 알림을 띄우고, 바로 쓸 수 있으면 사용 여부를 물음 */
+export function afterBuy(itemId: string, count: number) {
+  const name = dexData.value?.items[itemId]?.ko ?? itemId
+  toast(`${name} ${count}개를 구매했습니다`)
+  offerQuickUse(itemId)
 }

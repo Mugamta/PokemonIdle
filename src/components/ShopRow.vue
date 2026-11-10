@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import { dexData } from '../data/dex'
 import { useGameStore } from '../stores/game'
 import ItemIcon from './ItemIcon.vue'
-import { offerQuickUse } from './quickUse'
+import { afterBuy } from './quickUse'
 
 const props = withDefaults(defineProps<{ id: string; price: number; note?: string; multi?: boolean; label?: string }>(), {
   note: '',
@@ -16,7 +16,7 @@ const info = computed(() => dexData.value?.items[props.id])
 const won = (n: number) => `${n.toLocaleString()}원`
 /** 사고 나서 바로 쓸 수 있으면 사용 여부를 물음 */
 function buy(n: number) {
-  if (game.buyItem(props.id, n)) offerQuickUse(props.id)
+  if (game.buyItem(props.id, n)) afterBuy(props.id, n)
 }
 </script>
 

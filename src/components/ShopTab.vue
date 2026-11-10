@@ -45,7 +45,7 @@ import { BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, HELD_GROUP_LABELS, HELD_I
 import ItemIcon from './ItemIcon.vue'
 import QuickUseDialog from './QuickUseDialog.vue'
 import ShopRow from './ShopRow.vue'
-import { offerQuickUse } from './quickUse'
+import { afterBuy } from './quickUse'
 import {
   BASE_SLOTS_MAX,
   canLearnMachine,
@@ -200,7 +200,7 @@ const ownedSpecies = computed(() => new Set([...game.caught, ...game.party.map((
 function buyEvoItem(id: string, name: string, usable: boolean) {
   if (!usable && !confirm(`도감에 ${name}(으)로 진화할 수 있는 포켓몬이 없습니다.
 그래도 구매할까요?`)) return
-  if (game.buyItem(id, 1)) offerQuickUse(id)
+  if (game.buyItem(id, 1)) afterBuy(id, 1)
 }
 const evoGroups = computed(() =>
   EVO_GROUPS.map((g) => ({
