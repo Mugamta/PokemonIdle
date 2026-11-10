@@ -75,6 +75,11 @@ const member = computed(() => game.party[memberIndex.value] ?? game.party[0] ?? 
 const ability = computed(() => (member.value && dexData.value ? abilityInfo(memberAbility(member.value)) : null))
 const species = (id: string) => dexData.value?.index.find((p) => p.id === id)
 
+/** 능력치 계산식 설명: 아래 숫자 행과 같은 열로 쪼갬 */
+const FORMULA_HEAD = [
+  { label: 'HP', parts: ['⌊(', '2×종족값', '+ 개체값', '+ ⌊노력치/4⌋)', '× 레벨/100⌋', '+ 레벨 + 10'] },
+  { label: '그 외', parts: ['⌊(⌊(', '2×종족값', '+ 개체값', '+ ⌊노력치/4⌋)', '× 레벨/100⌋', '+ 5) × 성격보정⌋'] },
+]
 const stats = computed(() => {
   const m = member.value
   const sp = m && species(m.species)
@@ -579,11 +584,15 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             </tbody>
           </table>
           <div v-if="game.statViewLevel >= 4" class="formula">
-            <p class="muted">
-              HP = ⌊(2×종족값 + 개체값 + ⌊노력치/4⌋) × 레벨/100⌋ + 레벨 + 10<br />
-              그 외 = ⌊(⌊(2×종족값 + 개체값 + ⌊노력치/4⌋) × 레벨/100⌋ + 5) × 성격보정⌋ (▲ 1.1 · ▼ 0.9)
-            </p>
             <table class="ftable">
+              <thead>
+                <!-- 계산식 설명도 같은 열에 맞춰 아래 숫자와 세로로 정렬 -->
+                <tr v-for="h in FORMULA_HEAD" :key="h.label" class="fhead">
+                  <th>{{ h.label }}</th>
+                  <td v-for="(part, k) in h.parts" :key="k" :class="`f${k}`">{{ part }}</td>
+                  <td class="fres" />
+                </tr>
+              </thead>
               <tbody>
                 <tr v-for="s in stats" :key="s.label">
                   <th>{{ s.label }}</th>
@@ -595,6 +604,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                 </tr>
               </tbody>
             </table>
+            <p class="muted fnat">성격보정: ▲ 1.1 · ▼ 0.9 · 그 외 1</p>
           </div>
 
           <div class="friend">
@@ -1465,7 +1475,8 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 .info-row {
   display: grid;
   grid-template-columns: 72px 1fr;
-  align-items: start;
+  /* 라벨 배경이 설명 줄까지 행 높이 전체를 덮도록 */
+  align-items: stretch;
 }
 
 .info-row + .info-row {
@@ -1486,6 +1497,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  align-content: flex-start;
   gap: 4px 6px;
   font-size: 13px;
   line-height: 20px;
@@ -1588,6 +1600,20 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 .ftable td.fnote {
   text-align: left;
   color: #8a8a96;
+}
+.ftable tr.fhead th,
+.ftable tr.fhead td {
+  color: #8a8a96;
+  font-weight: 400;
+}
+.ftable tr.fhead:last-child th,
+.ftable tr.fhead:last-child td {
+  padding-bottom: 5px;
+  border-bottom: 1px solid #34343e;
+}
+.formula p.fnat {
+  margin: 4px 0 0;
+  font-size: 12px;
 }
 .ftable td.fres {
   padding-left: 8px;

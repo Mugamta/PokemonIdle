@@ -756,6 +756,32 @@ describe('도감 완성 후 전진', () => {
     game.buyRod('old-rod')
     expect(game.stageDexReachableDone(stage)).toBe(false)
   })
+
+  test('도감 모드: 가진 낚싯대 전부로 판정하고, 고른 낚싯대로 더 잡을 게 없으면 다른 낚싯대로 바꿈', () => {
+    const game = useGameStore()
+    game.validate()
+    const methodsOf = (s: (typeof REGIONS)[number]['stages'][number]) => s.encounters?.methods
+    const only = (s: (typeof REGIONS)[number]['stages'][number]) => {
+      const old = stageSpecies(methodsOf(s)!['old-rod'] as never)
+      const sup = stageSpecies(methodsOf(s)!['super-rod'] as never)
+      return old.filter((p) => !sup.includes(p))
+    }
+    const stage = REGIONS.flatMap((r) => r.stages).find((s) => methodsOf(s)?.['old-rod'] && methodsOf(s)?.['super-rod'] && only(s).length)!
+    game.chooseStarter(starter())
+    game.perks.push('autoUse:ball', 'stageMode:dex')
+    game.autoUse.ball = true
+    game.stageMode = 'dex'
+    game.money = 100000
+    game.buyRod('old-rod')
+    game.buyRod('super-rod')
+    expect(game.rod).toBe('super-rod')
+    game.caught = stageSpecies(methodsOf(stage)!['super-rod'] as never)
+    expect(game.stageDexReachableDone(stage)).toBe(false) // 낡은낚싯대로만 나오는 포켓몬이 남음
+    game.dexPickRod(stage)
+    expect(game.rod).toBe('old-rod')
+    game.caught.push(...only(stage))
+    expect(game.stageDexReachableDone(stage)).toBe(true)
+  })
 })
 
 describe('알 기술·기술가르침', () => {

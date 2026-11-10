@@ -620,6 +620,8 @@ export function stageSpecies(set: EncounterSet | undefined): string[] {
   return [...new Set(lists.flat().filter((e) => !e.special).map((e) => e.p))]
 }
 
+const ROD_KO: Record<RodId, string> = { 'old-rod': '낡은낚싯대', 'good-rod': '좋은낚싯대', 'super-rod': '대단한낚싯대' }
+
 /** 스테이지 도감 대상: 일반 출현 포켓몬 전체 (수상 스테이지는 모든 조우 방법 포함) */
 export function stageDexSpecies(set: EncounterSet | undefined): string[] {
   if (!set) return []
@@ -936,14 +938,22 @@ export const useGameStore = defineStore('game', {
       const list = stageDexSpecies(stage.encounters)
       return list.length ? list.every((p) => s.caught.includes(p)) : null
     },
+    /** 이 조우 방법들로 만나는 포켓몬 중 아직 안 잡은 포켓몬 */
+    uncaughtWith(): (stage: Stage, methods: readonly WaterMethod[]) => string[] {
+      return (stage, methods) => {
+        const set = stage.encounters && encountersWith(stage.encounters, methods)
+        return set ? stageDexSpecies(set).filter((p) => !this.caught.includes(p)) : []
+      }
+    },
     /**
-     * 도감 모드 판정: 지금 쓸 수 있는 조우 방법(파도타기·고른 낚싯대)으로 만나는 포켓몬을 모두 잡았는지.
+     * 도감 모드 판정: 가진 수단(파도타기 + 가진 낚싯대 전부)으로 만나는 포켓몬을 모두 잡았는지.
      * 수단이 없어 못 만나는 포켓몬은 빼고 판단 (출현 정보가 없으면 null)
      */
     stageDexReachableDone(): (stage: Stage) => boolean | null {
       return (stage) => {
         if (!stage.encounters) return null
-        return stageDexSpecies(this.stageEncounters(stage) ?? undefined).every((p) => this.caught.includes(p))
+        const methods: WaterMethod[] = [...(this.canSurf ? ['surf' as const] : []), ...this.rods]
+        return !this.uncaughtWith(stage, methods).length
       }
     },
     /** 지방의 모든 스테이지를 클리어했는지 */
@@ -1516,8 +1526,21 @@ export const useGameStore = defineStore('game', {
     addToBag(id: string, n = 1) {
       this.items[id] = (this.items[id] ?? 0) + n
     },
+    /** 도감 모드: 고른 낚싯대로 더 잡을 포켓몬이 없으면, 안 잡은 포켓몬이 나오는 가진 낚싯대로 바꿈 */
+    dexPickRod(stage: Stage) {
+      if (this.stageMode !== 'dex' || !this.dexModeReady || !stage.encounters?.methods || !this.rods.length) return
+      const surf: WaterMethod[] = this.canSurf ? ['surf'] : []
+      const left = (rod: RodId) => this.uncaughtWith(stage, [...surf, rod]).length
+      if (this.rod && left(this.rod)) return
+      // 더 좋은 낚싯대부터
+      const rod = [...this.rods].reverse().find((r) => r !== this.rod && left(r))
+      if (!rod) return
+      this.rod = rod
+      useBattleLogStore().push(`안 잡은 포켓몬을 찾아 ${ROD_KO[rod]}로 바꿨다.`, 'info')
+    },
     spawn() {
       const stage = findStage(this.currentStageId)?.stage
+      if (stage) this.dexPickRod(stage)
       const enemy = stage && rollWild(this.stageEncounters(stage), this.difficulty === 'hard')
       if (enemy) this.startBattle(enemy)
       else this.nextEncounterAt = Date.now() + 5000
@@ -3128,7 +3151,7 @@ export const useGameStore = defineStore('game', {
         this.stageMode === 'advance' || (this.stageMode === 'dex' && (!this.dexModeReady || this.stageDexReachableDone(found.stage) !== false))
       if (advance && next && this.stageUnlocked(next.id)) {
         if (this.stageMode === 'dex' && this.dexModeReady && this.stageDexDone(found.stage) === false)
-          log.push('파도타기·낚싯대 조건이 부족해 잡을 수 없는 포켓몬은 건너뜁니다.', 'info')
+          log.push('파도타기·낚싯대가 없어 만날 수 없는 포켓몬은 건너뜁니다.', 'info')
         log.push(`${next.id} ${ro(next.name)} 이동합니다.`, 'info')
         this.arrive(next.id)
       }
