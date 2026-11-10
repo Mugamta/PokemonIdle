@@ -782,6 +782,37 @@ describe('도감 완성 후 전진', () => {
     game.caught.push(...only(stage))
     expect(game.stageDexReachableDone(stage)).toBe(true)
   })
+
+  test('도감 모드: 앞 스테이지에 지금 잡을 수 있는 포켓몬이 남았으면 돌아가고, 다 채우면 진행하던 곳으로', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    game.perks.push('autoUse:ball', 'stageMode:dex')
+    game.autoUse.ball = true
+    game.stageMode = 'dex'
+    const land = REGIONS[0]!.stages.filter((s) => s.kind === 'land' && s.encounters)
+    const all = (s: (typeof land)[number]) => game.uncaughtWith(s, ['surf', 'old-rod', 'good-rod', 'super-rod'])
+    // 근처(앞 스테이지 ~ 3칸 뒤) 다른 스테이지에는 안 나오는 포켓몬이 있는 스테이지
+    const stages = REGIONS[0]!.stages
+    const onlyIn = (s: (typeof land)[number]) => {
+      const j = stages.indexOf(s)
+      const others = [...stages.slice(0, j), ...stages.slice(j + 1, j + 4)].flatMap(all)
+      return all(s).find((p) => !others.includes(p))
+    }
+    const early = land.find((s) => onlyIn(s))!
+    const i = stages.indexOf(early)
+    const cur = stages[i + 2]!
+    const frontier = stages[i + 3]!
+    const missing = onlyIn(early)!
+    game.caught = [...new Set(stages.slice(0, i + 3).flatMap(all))].filter((p) => p !== missing)
+    game.clearedStages = stages.slice(0, i + 2).map((s) => s.id)
+    game.currentStageId = cur.id
+    game.onBossCleared(cur.id)
+    expect(game.currentStageId).toBe(early.id)
+    game.caught.push(missing)
+    game.onBossCleared(early.id)
+    expect(game.currentStageId).toBe(frontier.id)
+  })
 })
 
 describe('알 기술·기술가르침', () => {

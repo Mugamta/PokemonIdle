@@ -3147,11 +3147,27 @@ export const useGameStore = defineStore('game', {
       // 수상 스테이지에 들어갈 수 없으면 건너뜀
       const i = found.region.stages.indexOf(found.stage)
       const next = found.region.stages.slice(i + 1).find((st) => st.kind !== 'water' || !!this.stageEncounters(st))
-      const advance =
-        this.stageMode === 'advance' || (this.stageMode === 'dex' && (!this.dexModeReady || this.stageDexReachableDone(found.stage) !== false))
-      if (advance && next && this.stageUnlocked(next.id)) {
-        if (this.stageMode === 'dex' && this.dexModeReady && this.stageDexDone(found.stage) === false)
-          log.push('파도타기·낚싯대가 없어 만날 수 없는 포켓몬은 건너뜁니다.', 'info')
+      const dex = this.stageMode === 'dex' && this.dexModeReady
+      const advance = this.stageMode === 'advance' || (this.stageMode === 'dex' && (!dex || this.stageDexReachableDone(found.stage) !== false))
+      if (!advance) return
+      if (dex && this.stageDexDone(found.stage) === false) log.push('파도타기·낚싯대가 없어 만날 수 없는 포켓몬은 건너뜁니다.', 'info')
+      // 도감 모드: 같은 지방의 앞 스테이지 중 지금은 더 잡을 수 있는 곳(파도타기·낚싯대를 새로 얻음 등)이 있으면 먼저 거기로,
+      //   다 채웠으면 아직 클리어하지 않은 가장 앞 스테이지(진행하던 곳)로 돌아감
+      const dexTarget =
+        dex &&
+        found.region.stages.find(
+          (st) =>
+            st !== found.stage &&
+            this.stageUnlocked(st.id) &&
+            (this.stageDexReachableDone(st) === false || !this.clearedStages.includes(st.id)),
+        )
+      if (dexTarget && dexTarget.id !== next?.id) {
+        const back = found.region.stages.indexOf(dexTarget) < i
+        log.push(`${dexTarget.id} ${ro(dexTarget.name)} ${back ? '도감을 채우러 돌아갑니다.' : '이동합니다.'}`, 'info')
+        this.arrive(dexTarget.id)
+        return
+      }
+      if (next && this.stageUnlocked(next.id)) {
         log.push(`${next.id} ${ro(next.name)} 이동합니다.`, 'info')
         this.arrive(next.id)
       }
