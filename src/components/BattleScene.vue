@@ -289,7 +289,10 @@ const foeMoves = computed(() => {
       <div v-if="log.avgReward" class="avg" :title="`최근 ${log.avgReward.n}번 전투(쓰러뜨림·포획)에서 싸운 포켓몬이 얻은 경험치와 상금의 평균`">
         최근 {{ log.avgReward.n }}전 평균 · EXP {{ log.avgReward.exp.toLocaleString() }} · {{ log.avgReward.money.toLocaleString() }}원
       </div>
-      <div v-if="stage && !travelTarget" class="where">{{ stage.id }} {{ stage.name }}</div>
+      <div class="where-row">
+        <div v-if="stage && !travelTarget" class="where">{{ stage.id }} {{ stage.name }}</div>
+        <div class="money" title="소지금">{{ game.money.toLocaleString() }}원</div>
+      </div>
     </div>
   </div>
 </template>
@@ -948,5 +951,22 @@ const foeMoves = computed(() => {
   background: rgba(30, 30, 36, 0.6);
   color: #ddd;
   font-size: 11px;
+}
+
+.where-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.money {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(30, 30, 36, 0.6);
+  color: #ffcb05;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: auto;
 }
 </style>
