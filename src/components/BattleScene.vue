@@ -132,8 +132,9 @@ const foeFallen = computed(() => !game.enemy && !!fallen.value)
 /** 상대 기술 (강화상점 상대 기술 표시 개선, HP 바 아래). 2단계면 남은 PP까지
  *  첫 번째 기술만 보이고 나머지는 ??? (파티에 위험예지가 있으면 전부) */
 const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
+// 쓰러뜨린 상대가 남아 있는 동안에도 기술·도구를 그대로 보여 줌 (다음 상대를 찾는 동안 레이아웃 유지)
 const foeMoves = computed(() => {
-  const e = game.enemy
+  const e = foe.value?.enemy
   if (!e || !game.foeMoveView) return []
   const all = game.partyHasAbility('anticipation')
   return (e.moves ?? []).flatMap((id, i) => {
@@ -146,7 +147,7 @@ const foeMoves = computed(() => {
 })
 /** 상대 도구 (강화상점 상대 도구 표시). 지속형/소모성만, 파티에 통찰이 있으면 정확한 도구 */
 const foeItem = computed(() => {
-  const e = game.enemy
+  const e = foe.value?.enemy
   if (!e || !game.foeItemView) return null
   const id = e.item ?? null
   if (!id) return { id: null, label: '도구 없음' }
@@ -210,7 +211,7 @@ const foeItem = computed(() => {
           <span class="lv">Lv.{{ foe.enemy.level }}</span>
         </div>
         <HpBar v-if="foe.info" :hp="foe.info.hp" :max="foe.info.max" :display="game.displayLevel('foeHp')" />
-        <div v-if="game.foeMoveView && game.enemy" class="foe-moves">
+        <div v-if="game.foeMoveView" class="foe-moves">
           <span v-if="!foeMoves.length" class="foe-none">기술 없음 (발버둥)</span>
           <template v-for="(f, i) in foeMoves" :key="i">
             <span v-if="f.hidden" class="foe-move hidden" title="파티에 위험예지 특성을 가진 포켓몬이 있으면 볼 수 있습니다">
