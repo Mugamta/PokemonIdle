@@ -7,7 +7,11 @@ import {
   AUTO_CENTER_PERK,
   BOSS_INTRO_PERK,
   DEX_REVEAL_PERK,
+  AI_PERKS,
   CHAIN_PERKS,
+  DISPLAY_PERKS,
+  SPEED_PERKS,
+  STAT_VIEW_PERKS,
   AUTO_HEAL_THRESHOLDS,
   CATEGORY_LABELS,
   EV_BREAK_PERK,
@@ -31,6 +35,7 @@ import {
   BOTTLE_CAP_LEVEL,
   VITAMIN_EV,
   type AutoCategory,
+  type ChainPerk,
   type EvoGroup,
   type TrainGroup,
   type ItemCategory,
@@ -81,7 +86,8 @@ const GROUPS: { id: string; label: string; kind: 'item' | 'upgrade'; subs: Sub[]
   { id: 'evo', label: '진화·변신', kind: 'item', subs: ['evo', 'gimmick'] },
   { id: 'train', label: '육성', kind: 'item', subs: ['train'] },
   { id: 'sell', label: '판매', kind: 'item', subs: ['sell'] },
-  { id: 'boost', label: '육성·편의성', kind: 'upgrade', subs: ['growth', 'perks'] },
+  { id: 'growth', label: '육성 강화', kind: 'upgrade', subs: ['growth'] },
+  { id: 'perks', label: '편의성', kind: 'upgrade', subs: ['perks'] },
   { id: 'slots', label: '칸 추가', kind: 'upgrade', subs: ['slots', 'heldSlots'] },
 ]
 const game = useGameStore()
@@ -121,6 +127,12 @@ const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
     { id: 'ability', label: '특성' },
     { id: 'iv', label: '개체값' },
     { id: 'nature', label: '민트' },
+  ],
+  perks: [
+    { id: 'battle', label: '전투·탐색' },
+    { id: 'autoUse', label: '자동 사용' },
+    { id: 'autoBuy', label: '자동 구매' },
+    { id: 'info', label: '정보 표시' },
   ],
   gimmick: [
     { id: 'mega', label: '메가스톤' },
@@ -223,8 +235,14 @@ const gimmickRows = computed(() => {
   })
 })
 
-/** 편의성 탭에 나오는 차례 구매 기능 (노력치 한계 돌파는 육성 탭) */
-const perkList = CHAIN_PERKS.filter((p) => p.id !== EV_BREAK_PERK.id)
+/** 편의성 탭에 나오는 차례 구매 기능, 작은 탭별 (노력치 한계 돌파는 육성 강화 탭) */
+const CHAIN_BY_MINI: Record<string, ChainPerk[]> = {
+  battle: [...AI_PERKS, ...SPEED_PERKS],
+  info: [...DISPLAY_PERKS, ...STAT_VIEW_PERKS],
+}
+const perkList = computed(() => CHAIN_BY_MINI[cur.value ?? ''] ?? [])
+/** 자동 사용·자동 구매 탭에 나오는 아이템 편의성 */
+const itemPerks = computed(() => PERKS.filter((p) => perkKind(p).kind === cur.value))
 /** 노력치 한계 돌파 2 다음 구매 정보 */
 const evBreak2 = computed(() => ({
   price: evBreak2Price(game.evBreaks + 1),
@@ -575,7 +593,7 @@ const slotRows = computed(() =>
     <!-- 편의성 -->
     <section v-else-if="sub === 'perks'" class="card">
       <ul class="rows">
-        <li>
+        <li v-if="cur === 'battle'">
           <div class="main">
             <ItemIcon :id="FISHING_ROD_ITEM.id" />
             <span class="grow"><strong>{{ itemName(FISHING_ROD_ITEM.id) }}</strong></span>
@@ -610,7 +628,7 @@ const slotRows = computed(() =>
             {{ CHAIN_PERKS.find((x) => x.id === p.requires)?.label }}을 먼저 구매해야 합니다.
           </p>
         </li>
-        <li>
+        <li v-if="cur === 'battle'">
           <div class="main">
             <span class="grow"><strong>{{ BOSS_INTRO_PERK.label }}</strong></span>
             <label v-if="game.hasPerk(BOSS_INTRO_PERK.id)" class="toggle">
@@ -626,7 +644,7 @@ const slotRows = computed(() =>
           </div>
           <p class="desc">{{ BOSS_INTRO_PERK.desc }}</p>
         </li>
-        <li>
+        <li v-if="cur === 'battle'">
           <div class="main">
             <span class="grow"><strong>{{ AUTO_CENTER_PERK.label }}</strong></span>
             <label v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="toggle">
@@ -652,7 +670,7 @@ const slotRows = computed(() =>
             PP 회복 아이템 자동 사용이 켜져 있고 쓸 수 있는 PP 회복 아이템이 있으면 아이템을 쓰고, 없을 때만 센터에 다녀옵니다.
           </p>
         </li>
-        <li>
+        <li v-if="cur === 'info'">
           <div class="main">
             <span class="grow"><strong>{{ DEX_REVEAL_PERK.label }}</strong></span>
             <span v-if="game.hasPerk(DEX_REVEAL_PERK.id)" class="owned">구매함</span>
@@ -665,7 +683,7 @@ const slotRows = computed(() =>
           </div>
           <p class="desc">{{ DEX_REVEAL_PERK.desc }}</p>
         </li>
-        <li v-for="p in PERKS" :key="p.id">
+        <li v-for="p in itemPerks" :key="p.id">
           <div class="main">
             <span class="grow"><strong>{{ p.label }}</strong></span>
             <template v-if="game.hasPerk(p.id)">
