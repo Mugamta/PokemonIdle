@@ -936,6 +936,16 @@ export const useGameStore = defineStore('game', {
       const list = stageDexSpecies(stage.encounters)
       return list.length ? list.every((p) => s.caught.includes(p)) : null
     },
+    /**
+     * 도감 모드 판정: 지금 쓸 수 있는 조우 방법(파도타기·고른 낚싯대)으로 만나는 포켓몬을 모두 잡았는지.
+     * 수단이 없어 못 만나는 포켓몬은 빼고 판단 (출현 정보가 없으면 null)
+     */
+    stageDexReachableDone(): (stage: Stage) => boolean | null {
+      return (stage) => {
+        if (!stage.encounters) return null
+        return stageDexSpecies(this.stageEncounters(stage) ?? undefined).every((p) => this.caught.includes(p))
+      }
+    },
     /** 지방의 모든 스테이지를 클리어했는지 */
     regionCleared: (s) => (region: Region) => region.stages.every((st) => s.clearedStages.includes(st.id)),
     /** 지방의 모든 스테이지 출현 포켓몬을 잡았는지 (출현 정보가 없으면 null) */
@@ -3110,11 +3120,15 @@ export const useGameStore = defineStore('game', {
       }
       // 전진 모드: 다음 스테이지로 진입 (반복 모드는 현재 스테이지에서 일반 BOSS_DEFEATS 마리 + 보스 반복)
       // 도감 모드: 출현 포켓몬을 모두 잡았으면 전진, 아니면 반복 (출현 정보가 없는 스테이지는 전진)
+      //   파도타기·낚싯대가 없어 만날 수 없는 포켓몬은 빼고 판단
       // 수상 스테이지에 들어갈 수 없으면 건너뜀
       const i = found.region.stages.indexOf(found.stage)
       const next = found.region.stages.slice(i + 1).find((st) => st.kind !== 'water' || !!this.stageEncounters(st))
-      const advance = this.stageMode === 'advance' || (this.stageMode === 'dex' && (!this.dexModeReady || this.stageDexDone(found.stage) !== false))
+      const advance =
+        this.stageMode === 'advance' || (this.stageMode === 'dex' && (!this.dexModeReady || this.stageDexReachableDone(found.stage) !== false))
       if (advance && next && this.stageUnlocked(next.id)) {
+        if (this.stageMode === 'dex' && this.dexModeReady && this.stageDexDone(found.stage) === false)
+          log.push('파도타기·낚싯대 조건이 부족해 잡을 수 없는 포켓몬은 건너뜁니다.', 'info')
         log.push(`${next.id} ${ro(next.name)} 이동합니다.`, 'info')
         this.arrive(next.id)
       }

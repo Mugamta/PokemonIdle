@@ -5,7 +5,7 @@ import { loadAllData } from './helpers'
 import { maxHpOf } from '../src/core/battle'
 import { load, save } from '../src/core/save'
 import { findStage } from '../src/data/stages'
-import { EGG_MOVE_PRICE, eggMoveOptions, PARTY_MAX, tutorOptions, useGameStore, type PartyMember } from '../src/stores/game'
+import { EGG_MOVE_PRICE, eggMoveOptions, PARTY_MAX, stageSpecies, tutorOptions, useGameStore, type PartyMember } from '../src/stores/game'
 import { loadLearnMethods } from '../src/data/dex'
 import { pickAutoBall, rankAutoBalls } from '../src/data/shop'
 import { useBattleLogStore } from '../src/stores/battleLog'
@@ -741,6 +741,20 @@ describe('도감 완성 후 전진', () => {
     expect(game.dexModeReady).toBe(false)
     game.autoUse.ball = true
     expect(game.dexModeReady).toBe(true)
+  })
+
+  test('파도타기·낚싯대가 없어 못 만나는 포켓몬은 도감 모드 판정에서 뺌', () => {
+    const game = useGameStore()
+    game.validate()
+    const stage = REGIONS[0]!.stages.find((s) => s.encounters?.methods?.surf && s.encounters.methods['old-rod'])!
+    game.chooseStarter(starter('squirtle', ['surf']))
+    const surfOnly = stageSpecies(game.stageEncounters(stage)!)
+    game.caught = [...surfOnly]
+    expect(game.stageDexDone(stage)).toBe(false)
+    expect(game.stageDexReachableDone(stage)).toBe(true)
+    game.money = 1000
+    game.buyRod('old-rod')
+    expect(game.stageDexReachableDone(stage)).toBe(false)
   })
 })
 
