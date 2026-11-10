@@ -541,7 +541,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
               <template v-if="learnTab === 'tm'">
                 <h5 class="train-sec">
                   기술머신으로 가르치기
-                  <span class="muted">보유 0이면 사서 바로 사용 · 소지금 {{ won(game.money) }} · 기술레코드는 사라짐</span>
+                  <span class="muted">소지금 {{ won(game.money) }}</span>
                 </h5>
                 <p v-if="!learnableMachines.length" class="msg">기술머신으로 새로 배울 수 있는 기술이 없습니다.</p>
                 <ul v-else class="rows mrows">
@@ -558,10 +558,11 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                     "
                     @click="teach(t)"
                   >
-                    <span class="grow">
-                      {{ t.info?.ko ?? t.move }}
-                      <small class="muted">{{ t.name }} · 보유 {{ t.n }}</small>
-                      <small v-if="t.n <= 0" class="buy-tag">구매 후 사용 {{ won(t.price) }}</small>
+                    <span class="tm-name">
+                      <span class="tm-move">{{ t.info?.ko ?? t.move }}</span>
+                      <small class="tm-meta">
+                        {{ t.name }} · 보유 {{ t.n }}<template v-if="t.n <= 0"> · <span class="buy-tag">구매 후 사용 {{ won(t.price) }}</span></template>
+                      </small>
                     </span>
                     <template v-if="t.info">
                       <span class="type" :style="{ background: TYPE_COLORS[t.info.type] }">{{ dexData.types[t.info.type] }}</span>
@@ -632,8 +633,26 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
   color: #fff;
 }
 
+/* 기술머신 줄: 기술 이름 / 머신·보유·가격 두 줄 */
+.tm-name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tm-move,
+.tm-meta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tm-meta {
+  color: #8a8a96;
+  font-size: 11px;
+}
+
 .buy-tag {
-  margin-left: 4px;
   color: #ffb74d;
 }
 
