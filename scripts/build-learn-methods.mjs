@@ -136,5 +136,7 @@ const out = {
 }
 await mkdir(OUT, { recursive: true })
 await writeFile(path.join(OUT, 'learn-methods.json'), JSON.stringify(out))
+// 성비는 포획·조우 때 바로 필요해 작은 파일로 따로 번들에 넣음
+await writeFile(path.join(ROOT, '..', 'src', 'data', 'genderRates.json'), JSON.stringify(gender) + '\n')
 console.log('egg', Object.keys(egg).length, 'tutor', Object.keys(tutor).length, 'levelBy', Object.keys(levelBy).length)
 

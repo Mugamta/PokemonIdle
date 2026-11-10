@@ -10,6 +10,8 @@ import {
   canLearnMachine,
   EGG_MOVE_PRICE,
   eggMoveOptions,
+  moveNumOf,
+  GENDER_SYMBOL,
   tutorOptions,
   evolutionCondText,
   evolutionMet,
@@ -28,6 +30,7 @@ import {
 import { formOf, megaFormFor, TERA_SHARD_COST } from '../core/gimmicks'
 import { abilityInfo } from '../core/abilities'
 import { josa } from '../core/battle'
+import { moveEffectText } from '../data/moveText'
 import { findStage } from '../data/stages'
 import { useStageViewStore } from '../stores/stageView'
 import BattleControls from './BattleControls.vue'
@@ -164,7 +167,7 @@ const eggRows = computed(() => {
   const m = member.value
   if (!m || !learnMethods.value) return []
   const known = m.learned ?? m.moves
-  return eggMoveOptions(m.species, (id) => game.ownsSpecies(id))
+  return eggMoveOptions(m.species, (id) => game.ownsSpecies(id), (id, g) => game.hasGender(id, g))
     .filter((o) => !known.includes(o.move))
     .map((o) => ({ ...o, info: moveInfo(o.move) }))
     .sort((a, b) => b.chance - a.chance || (a.info?.ko ?? a.move).localeCompare(b.info?.ko ?? b.move, 'ko'))
@@ -267,6 +270,19 @@ const learnableMachines = computed(() => {
 })
 type MachineRow = (typeof learnableMachines.value)[number]
 const won = (n: number) => `${n.toLocaleString()}원`
+/** 기술머신 사용 확인 다이얼로그 (기술 상세 정보 + 사용 / 구매 후 사용) */
+const tmDialog = ref<MachineRow | null>(null)
+const tmEffect = computed(() => {
+  const t = tmDialog.value
+  const num = t && moveNumOf(t.move)
+  return t && num != null ? moveEffectText(t.move, num) : ''
+})
+watch([memberIdx, pickedSlot], () => (tmDialog.value = null))
+function confirmTm() {
+  const t = tmDialog.value
+  tmDialog.value = null
+  if (t) teach(t)
+}
 function teach(t: MachineRow) {
   const s = picked.value
   if (!s || s.kind === 'locked' || game.faint) return
@@ -375,6 +391,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             <div>
               <span v-if="i === 0" class="lead-mark" title="싸우는 포켓몬">★</span>
               <strong>{{ species(m.species)?.ko ?? m.species }}</strong>
+              <span v-if="m.gender" class="gender" :class="m.gender"> {{ GENDER_SYMBOL[m.gender] }}</span>
               <small class="muted"> Lv.{{ m.level }}</small>
               <span v-if="m.pending?.length" class="pending-badge" :title="`배우려는 기술 ${m.pending.length}개`">새 기술 {{ m.pending.length }}</span>
             </div>
@@ -472,6 +489,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             <div class="head-main">
               <div class="head-title">
                 <strong class="head-name">{{ species(member!.species)?.ko }}</strong>
+                <span v-if="member!.gender" class="gender" :class="member!.gender">{{ GENDER_SYMBOL[member!.gender] }}</span>
                 <span class="lv-badge">Lv.{{ member!.level }}</span>
                 <span v-if="member!.hp === 0" class="faint-badge">기절</span>
               </div>
@@ -639,6 +657,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                 <span class="muted">{{ CLS_LABEL[pendingList[0]!.info.cls] }}</span>
                 <span class="muted num"><small>위력</small> {{ pendingList[0]!.info.power ?? '-' }}</span>
                 <span class="muted num"><small>명중</small> {{ pendingList[0]!.info.acc ?? '-' }}</span>
+                <span class="muted num"><small>PP</small> {{ pendingList[0]!.info.pp ?? '-' }}</span>
               </template>
             </div>
             <p class="item-text">위 기술칸에서 잊을 기술을 눌러 교체하거나, 배우지 않을 수 있습니다. 배우지 않은 기술은 잊은 기술이 되어 하트비늘로 되살릴 수 있습니다.</p>
@@ -690,7 +709,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
               <template v-if="learnTab === 'egg'">
                 <h5 class="train-sec">
                   알 기술 물려받기
-                  <span class="muted">1회 {{ won(EGG_MOVE_PRICE) }} (흉내허브) · 확률 = 이 포켓몬 암컷 비율 × 부모 수컷 비율 · 소지금 {{ won(game.money) }}</span>
+                  <span class="muted">1회 {{ won(EGG_MOVE_PRICE) }} (흉내허브) · 확률 = 이 포켓몬 암컷 비율 × 부모 수컷 비율 (도감에 등록된 성별은 100%) · 소지금 {{ won(game.money) }}</span>
                 </h5>
                 <p v-if="!learnMethods" class="msg">불러오는 중…</p>
                 <p v-else-if="!fEgg.length" class="msg">{{ filterOn && eggRows.length ? FILTER_EMPTY : '새로 물려받을 수 있는 알 기술이 없습니다.' }}</p>
@@ -711,6 +730,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                       <span class="muted">{{ CLS_LABEL[o.info.cls] }}</span>
                       <span class="muted num"><small>위력</small> {{ o.info.power ?? '-' }}</span>
                       <span class="muted num"><small>명중</small> {{ o.info.acc ?? '-' }}</span>
+                      <span class="muted num"><small>PP</small> {{ o.info.pp ?? '-' }}</span>
                     </template>
                   </li>
                 </ul>
@@ -744,6 +764,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                       <span class="muted">{{ CLS_LABEL[t.info.cls] }}</span>
                       <span class="muted num"><small>위력</small> {{ t.info.power ?? '-' }}</span>
                       <span class="muted num"><small>명중</small> {{ t.info.acc ?? '-' }}</span>
+                      <span class="muted num"><small>PP</small> {{ t.info.pp ?? '-' }}</span>
                     </template>
                   </li>
                 </ul>
@@ -758,20 +779,13 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                   <li
                     v-for="t in fMachines"
                     :key="t.move"
-                    :class="{ clickable: t.n > 0 || game.money >= t.price, disabled: t.n <= 0 && game.money < t.price }"
-                    :title="
-                      t.n > 0
-                        ? `${t.name}로 이 기술을 가르칩니다${t.record ? ' (1개 소모)' : ''}`
-                        : game.money >= t.price
-                          ? `${josa(t.name, '을', '를')} ${won(t.price)}에 사서 바로 가르칩니다`
-                          : `소지금이 부족합니다 (${won(t.price)})`
-                    "
-                    @click="teach(t)"
+                    class="clickable"
+                    @click="tmDialog = t"
                   >
                     <span class="tm-name">
                       <span class="tm-move">{{ t.info?.ko ?? t.move }}</span>
                       <small class="tm-meta">
-                        {{ t.name }} · 보유 {{ t.n }}<template v-if="t.n <= 0"> · <span class="buy-tag">구매 후 사용 {{ won(t.price) }}</span></template>
+                        {{ t.name }} · 보유 {{ t.n }}
                       </small>
                     </span>
                     <template v-if="t.info">
@@ -779,6 +793,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                       <span class="muted">{{ CLS_LABEL[t.info.cls] }}</span>
                       <span class="muted num"><small>위력</small> {{ t.info.power ?? '-' }}</span>
                       <span class="muted num"><small>명중</small> {{ t.info.acc ?? '-' }}</span>
+                      <span class="muted num"><small>PP</small> {{ t.info.pp ?? '-' }}</span>
                     </template>
                   </li>
                 </ul>
@@ -803,6 +818,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                       <span class="muted">{{ CLS_LABEL[m.info.cls] }}</span>
                       <span class="muted num"><small>위력</small> {{ m.info.power ?? '-' }}</span>
                       <span class="muted num"><small>명중</small> {{ m.info.acc ?? '-' }}</span>
+                      <span class="muted num"><small>PP</small> {{ m.info.pp ?? '-' }}</span>
                     </template>
                   </li>
                 </ul>
@@ -812,6 +828,43 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
               </div>
             </template>
           </section>
+
+          <!-- 기술머신 확인 다이얼로그 -->
+          <div v-if="tmDialog && picked" class="overlay" @click.self="tmDialog = null">
+            <div class="dialog" role="dialog" aria-modal="true">
+              <div class="dlg-head">
+                <strong class="dlg-title">{{ tmDialog.info?.ko ?? tmDialog.move }}</strong>
+                <span v-if="tmDialog.info" class="type" :style="{ background: TYPE_COLORS[tmDialog.info.type] }">{{ dexData.types[tmDialog.info.type] }}</span>
+              </div>
+              <dl v-if="tmDialog.info" class="dlg-stats">
+                <div><dt>분류</dt><dd>{{ CLS_LABEL[tmDialog.info.cls] }}</dd></div>
+                <div><dt>위력</dt><dd>{{ tmDialog.info.power ?? '-' }}</dd></div>
+                <div><dt>명중</dt><dd>{{ tmDialog.info.acc ?? '-' }}</dd></div>
+                <div><dt>PP</dt><dd>{{ tmDialog.info.pp ?? '-' }}</dd></div>
+              </dl>
+              <p class="dlg-desc">{{ tmEffect || '추가 효과 없음' }}</p>
+              <p class="muted dlg-line">
+                {{ tmDialog.name }} · 보유 {{ tmDialog.n }}<template v-if="tmDialog.record"> · 1개 소모</template>
+              </p>
+              <p class="muted dlg-line">
+                {{ species(member!.species)?.ko }}의 {{ pickedSlot! + 1 }}번 칸{{ picked.kind === 'move' ? ` (${picked.info?.ko ?? picked.id} 대신)` : ' (빈 칸)' }}에 가르칩니다.
+              </p>
+              <p v-if="tmDialog.n <= 0" class="dlg-line" :class="game.money >= tmDialog.price ? 'buy-tag' : 'warn'">
+                {{ game.money >= tmDialog.price ? `${won(tmDialog.price)}에 사서 바로 사용합니다.` : `소지금이 부족합니다 (${won(tmDialog.price)} 필요)` }}
+              </p>
+              <div class="dlg-actions">
+                <button type="button" class="small-btn" @click="tmDialog = null">취소</button>
+                <button
+                  type="button"
+                  class="small-btn primary"
+                  :disabled="!!game.faint || (tmDialog.n <= 0 && game.money < tmDialog.price)"
+                  @click="confirmTm"
+                >
+                  {{ tmDialog.n > 0 ? '사용' : `구매 후 사용 (${won(tmDialog.price)})` }}
+                </button>
+              </div>
+            </div>
+          </div>
         </template>
       </template>
     </template>
@@ -905,6 +958,95 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 
 .buy-tag {
   color: #ffb74d;
+}
+
+/* 기술머신 확인 다이얼로그 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(10, 10, 14, 0.7);
+}
+
+.dialog {
+  width: 100%;
+  max-width: 360px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid #3a3a44;
+  border-radius: 12px;
+  background: #1e1e24;
+  color: #eee;
+}
+
+.dlg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dlg-title {
+  font-size: 17px;
+}
+
+.dlg-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.dlg-stats div {
+  padding: 6px 4px;
+  border-radius: 6px;
+  background: #2a2a33;
+  text-align: center;
+}
+
+.dlg-stats dt {
+  color: #8a8a96;
+  font-size: 11px;
+}
+
+.dlg-stats dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dlg-desc {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #2a2a33;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dlg-line {
+  margin: 4px 0;
+  font-size: 12px;
+}
+
+.dlg-line.warn {
+  color: #ff8a80;
+}
+
+.dlg-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.small-btn.primary:not(:disabled) {
+  border-color: #ffcb05;
+  color: #ffcb05;
 }
 
 .item-text.why {
@@ -1279,6 +1421,18 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
   font-size: 17px;
 }
 
+.gender {
+  font-weight: 700;
+}
+
+.gender.M {
+  color: #6aa8ff;
+}
+
+.gender.F {
+  color: #ff7aa8;
+}
+
 .lv-badge {
   padding: 1px 6px;
   border-radius: 4px;
@@ -1513,8 +1667,8 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 .mrows li,
 .pending-head.mrow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 4.2em 2.4em 4.4em 4.4em;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 4.2em 2.4em 4em 4em 3.2em;
+  gap: 6px;
 }
 .mrows li > *,
 .mrow > * {

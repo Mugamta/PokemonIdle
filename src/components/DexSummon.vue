@@ -5,7 +5,7 @@ import { abilityName, hiddenAbility, normalAbilities } from '../core/abilities'
 import { dexData, STAT_LABELS, TYPE_COLORS } from '../data/dex'
 import { josa, ro } from '../core/battle'
 import { calcStats, NATURES, STAT_KEYS } from '../data/natures'
-import { HIDDEN_ABILITY_SLOT, PARTY_MAX, slotsAt, useGameStore, type SummonChoice } from '../stores/game'
+import { GENDER_SYMBOL, HIDDEN_ABILITY_SLOT, PARTY_MAX, slotsAt, useGameStore, type Gender, type SummonChoice } from '../stores/game'
 
 const props = defineProps<{ id: string }>()
 const game = useGameStore()
@@ -14,7 +14,8 @@ const record = computed(() => game.dexRecords[props.id])
 const entry = computed(() => dexData.value?.index.find((p) => p.id === props.id))
 const slots = computed(() => (record.value ? slotsAt(game.totalDefeats, { extraSlots: record.value.extraSlots }) : 1))
 
-const choice = reactive<SummonChoice>({ nature: '', ability: 0, level: 1, friendship: 0, ivs: [], evs: [], moves: [] })
+const GENDER_LABEL: Record<Gender, string> = { M: `${GENDER_SYMBOL.M} 수컷`, F: `${GENDER_SYMBOL.F} 암컷` }
+const choice = reactive<SummonChoice>({ gender: null, nature: '', ability: 0, level: 1, friendship: 0, ivs: [], evs: [], moves: [] })
 const message = ref('')
 
 /** 노력치를 합계 한계 안으로 줄임 (뒤 능력치부터) */
@@ -38,6 +39,7 @@ function pickBest() {
   if (!r) return
   if (!r.natures.includes(choice.nature)) choice.nature = r.natures[0]!
   if (!r.abilities.includes(choice.ability)) choice.ability = r.abilities[0]!
+  if (!choice.gender || !r.genders?.includes(choice.gender)) choice.gender = r.genders?.[0] ?? null
   choice.level = r.levelMax
   choice.friendship = r.friendshipMax
   choice.ivs = [...r.ivMax]
@@ -118,6 +120,21 @@ function summon() {
           {{ abilityLabel(a) }}
         </button>
       </div>
+
+      <template v-if="record.genders?.length">
+        <h4>성별</h4>
+        <div class="chips">
+          <button
+            v-for="g in record.genders"
+            :key="g"
+            type="button"
+            :class="{ active: choice.gender === g }"
+            @click="choice.gender = g"
+          >
+            {{ GENDER_LABEL[g] }}
+          </button>
+        </div>
+      </template>
 
       <h4>레벨 · 친밀도</h4>
       <div class="sliders">

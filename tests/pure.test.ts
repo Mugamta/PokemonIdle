@@ -220,3 +220,15 @@ describe('체력 회복 자동 사용 계획', () => {
     expect(planHealAfterBattle(opts, 100)).toEqual(['potion', 'potion'])
   })
 })
+
+describe('성별', () => {
+  test('성비: 폼 id는 기본 포켓몬으로, 무성·한쪽 성별 포켓몬', async () => {
+    const { genderRate, rollGender } = await import('../src/stores/game')
+    expect(genderRate('pikachu')).toBe(4)
+    expect(genderRate('raichu-alola')).toBe(4)
+    expect(genderRate('magnemite')).toBe(-1)
+    expect(rollGender('magnemite')).toBeNull()
+    expect(rollGender('chansey')).toBe('F')
+    expect(rollGender('tauros')).toBe('M')
+  })
+})

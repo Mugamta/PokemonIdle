@@ -147,6 +147,7 @@ import {
 import { BATTLE_HELD, POWER_ITEM_EV, POWER_ITEMS } from '../core/items'
 import { findStage, migrateLegacyRegionIds, migrateLegacyStageId, REGIONS, type Region, type Stage } from '../data/stages'
 import { useBattleLogStore } from './battleLog'
+import GENDER_RATES from '../data/genderRates.json'
 
 /** 이동 대기 시간 (공중날기 포켓몬이 없을 때) */
 export const TRAVEL_MS = 10_000
@@ -206,6 +207,27 @@ export const BOSS_INTRO_MS = 2400
 // 상대가 기술을 고르는 시간(내 기술 선택 후 턴 계산까지)은 battlePickMs,
 // 다음 상대 포켓몬을 찾는 시간은 searchMs (상점 속도 가속으로 줄어듦, SPEED_DELAY_MS)
 
+/** 성별: 수컷 / 암컷 (무성은 null) */
+export type Gender = 'M' | 'F'
+export const GENDER_SYMBOL: Record<Gender, string> = { M: '♂', F: '♀' }
+/** 암컷 비율 0~8 (8분의 n), -1 = 무성. 폼 id(예: raichu-alola)는 기본 포켓몬 id로 찾음 */
+export function genderRate(species: string): number | undefined {
+  const rates = GENDER_RATES as Record<string, number>
+  let id = species
+  for (;;) {
+    if (id in rates) return rates[id]
+    const cut = id.lastIndexOf('-')
+    if (cut < 0) return undefined
+    id = id.slice(0, cut)
+  }
+}
+/** 성비대로 성별 뽑기 (무성·정보 없음 = null) */
+export function rollGender(species: string): Gender | null {
+  const r = genderRate(species)
+  if (r == null || r < 0) return null
+  return Math.random() * 8 < r ? 'F' : 'M'
+}
+
 export interface PartyMember {
   /** 포켓몬 id (PokeAPI identifier) */
   species: string
@@ -258,6 +280,8 @@ export interface PartyMember {
   ball?: string
   /** 테라스탈 타입. 없으면 포켓몬의 첫 번째 타입 */
   teraType?: string
+  /** 성별 (null = 무성. 없으면 불러올 때 성비대로 정함) */
+  gender?: Gender | null
 }
 
 const STAGE_LABEL: Record<StageKey, string> = {
@@ -304,6 +328,8 @@ export interface DexRecord {
   /** 상점에서 늘린 지닌 도구 종류 수·같은 도구 개수 최대 */
   heldKinds?: number
   heldStack?: number
+  /** 얻은 성별 (알 기술: 등록된 성별은 성비 계산 없이 100%) */
+  genders?: Gender[]
 }
 
 /** 도감에서 파티로 불러올 때 고르는 값 */
@@ -317,6 +343,8 @@ export interface SummonChoice {
   evs: number[]
   /** 장착할 기술 (나머지 기록된 기술은 잊은 기술로 배운 상태) */
   moves: string[]
+  /** 성별 (기록된 성별 중) */
+  gender?: Gender | null
 }
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
@@ -407,13 +435,20 @@ export interface EggMoveOption {
  * 알 기술: 같은 알 그룹이고 그 기술을 레벨업으로 배우는 포켓몬이 유전 부모.
  * 알은 어미(이 포켓몬 계열의 암컷)에게서 나오고 기술은 아비(부모 후보 수컷)에게서 물려받으므로
  * 성공 확률 = 이 포켓몬의 암컷 비율 × 부모 후보의 수컷 비율
+ * (도감에 이 포켓몬의 암컷 / 부모 후보의 수컷이 등록돼 있으면 그쪽은 100%)
  */
-export function eggMoveOptions(species: string, owned: (id: string) => boolean): EggMoveOption[] {
+export function eggMoveOptions(
+  species: string,
+  owned: (id: string) => boolean,
+  hasGender: (id: string, g: Gender) => boolean = () => false,
+): EggMoveOption[] {
   const lm = learnMethods.value
   const dex = dexData.value
   if (!lm || !dex) return []
   const groups = (lm.eggGroups[species] ?? []).filter((g) => g !== NO_EGGS_GROUP)
-  const female = femaleRatio(lm.gender[species]) ?? 0
+  // 도감에 암컷/수컷이 등록돼 있으면 성비 계산 없이 100% (무성은 유전 불가)
+  const fr = femaleRatio(lm.gender[species])
+  const female = fr == null || fr === 0 ? 0 : hasGender(species, 'F') ? 1 : fr
   return (lm.egg[species] ?? []).flatMap((num) => {
     const move = dex.moves[num]?.id
     if (!move) return []
@@ -421,7 +456,8 @@ export function eggMoveOptions(species: string, owned: (id: string) => boolean):
       .filter((p) => (lm.eggGroups[p] ?? []).some((g) => g !== NO_EGGS_GROUP && groups.includes(g)))
       .map((p) => {
         const f = femaleRatio(lm.gender[p])
-        return { species: p, owned: owned(p), chance: f == null ? 0 : female * (1 - f) }
+        const male = f == null || f === 1 ? 0 : hasGender(p, 'M') ? 1 : 1 - f
+        return { species: p, owned: owned(p), chance: female * male }
       })
       .sort((a, b) => Number(b.owned) - Number(a.owned) || b.chance - a.chance)
     const best = parents.filter((p) => p.owned).sort((a, b) => b.chance - a.chance)[0] ?? null
@@ -455,7 +491,7 @@ const HIT_SFX_IMPACT = 0.14
 let turnSfxDelay = 0
 
 let moveNumCache: { src: unknown; map: Map<string, number> } | null = null
-function moveNumOf(id: string): number | undefined {
+export function moveNumOf(id: string): number | undefined {
   const dex = dexData.value
   if (!dex) return undefined
   if (moveNumCache?.src !== dex) moveNumCache = { src: dex, map: new Map(Object.entries(dex.moves).map(([n, v]) => [v.id, Number(n)])) }
@@ -516,6 +552,7 @@ export interface WildPokemon {
   species: string
   level: number
   nature: string
+  gender?: Gender | null
   ivs: number[]
   /** 현재 HP. null = 최대 HP */
   hp: number | null
@@ -613,6 +650,7 @@ function rollWild(set: EncounterSet | null, hidden: boolean): WildPokemon | null
     species: e.p,
     level,
     nature: randomNature(),
+    gender: rollGender(e.p),
     ivs: Array.from({ length: 6 }, () => randInt(0, 31)),
     hp: null,
     moves: wildMoveset(e.p, level, set.vg),
@@ -634,6 +672,7 @@ function makeBoss(set: EncounterSet | null): WildPokemon | null {
     species: top.p,
     level,
     nature: randomNature(),
+    gender: rollGender(top.p),
     ivs: Array.from({ length: 6 }, () => randInt(20, 31)),
     hp: null,
     moves: wildMoveset(top.p, level, set.vg),
@@ -1038,6 +1077,13 @@ export const useGameStore = defineStore('game', {
         return heldIds(s).length ? s : null
       })
       if (!this.slotHeldActive) for (const m of this.party) this.trimHeld(m)
+      // 이전 저장 데이터 호환: 성별이 없던 시절의 파티 포켓몬은 성비대로 정하고 도감에 성별 기록
+      for (const m of this.party)
+        if (m.gender === undefined) {
+          m.gender = rollGender(m.species)
+          const r = this.dexRecords?.[m.species]
+          if (r && m.gender && !(r.genders ??= []).includes(m.gender)) r.genders.push(m.gender)
+        }
       const firstRecords = !this.dexRecords || typeof this.dexRecords !== 'object' || !Object.keys(this.dexRecords).length
       if (!this.dexRecords || typeof this.dexRecords !== 'object') this.dexRecords = {}
       if (!Number.isInteger(this.totalDefeats) || this.totalDefeats < 0) this.totalDefeats = 0
@@ -1077,7 +1123,7 @@ export const useGameStore = defineStore('game', {
     /** 스타팅 포켓몬 결정 (파티가 비어 있을 때만) */
     chooseStarter(member: PartyMember) {
       if (this.party.length) return
-      this.party.push({ ...member, learned: [...member.moves] })
+      this.party.push({ ...member, gender: member.gender !== undefined ? member.gender : rollGender(member.species), learned: [...member.moves] })
       this.backfillLearned()
       if (!this.caught.includes(member.species)) this.caught.push(member.species)
       this.recordToDex(this.party[0]!)
@@ -1973,6 +2019,10 @@ export const useGameStore = defineStore('game', {
     ownsSpecies(id: string): boolean {
       return this.caught.includes(id) || this.party.some((m) => m.species === id)
     },
+    /** 그 성별이 도감에 등록돼 있는지 (파티 포켓몬 포함) */
+    hasGender(id: string, g: Gender): boolean {
+      return !!this.dexRecords[id]?.genders?.includes(g) || this.party.some((m) => m.species === id && m.gender === g)
+    },
     /** 그 작품 지방의 그 스테이지에 도착한 적 있는지 (지금 있는 곳 / 클리어 / 전투 기록) */
     stageVisited(regionKey: string, stageName: string): boolean {
       const region = REGIONS.find((r) => r.key === regionKey)
@@ -2111,9 +2161,11 @@ export const useGameStore = defineStore('game', {
           extraSlots: m.extraSlots ?? 0,
           heldKinds: m.heldKinds ?? 0,
           heldStack: m.heldStack ?? 0,
+          genders: m.gender ? [m.gender] : [],
         }
         return
       }
+      if (m.gender && !(r.genders ??= []).includes(m.gender)) r.genders.push(m.gender)
       if (!r.natures.includes(m.nature)) r.natures.push(m.nature)
       if (!r.abilities.includes(ability)) r.abilities.push(ability)
       for (let i = 0; i < 6; i++) {
@@ -2155,6 +2207,7 @@ export const useGameStore = defineStore('game', {
         pending: [],
         exp: expAtLevel(species, level),
         nature: c.nature,
+        gender: c.gender && r.genders?.includes(c.gender) ? c.gender : (r.genders?.[0] ?? rollGender(species)),
         ivs,
         evs,
         hp: null,
@@ -2269,6 +2322,7 @@ export const useGameStore = defineStore('game', {
         learned: [...new Set([...(e.moves ?? []), ...learned])],
         exp: expAtLevel(e.species, e.level),
         nature: e.nature,
+        gender: e.gender !== undefined ? e.gender : rollGender(e.species),
         ivs: [...e.ivs],
         evs: [0, 0, 0, 0, 0, 0],
         hp: e.hp,
