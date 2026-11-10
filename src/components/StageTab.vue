@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
-import { REGIONS, stageWeather } from '../data/stages'
+import { REGIONS, stageWeather, type Region } from '../data/stages'
 import { WEATHER_LABELS } from '../core/battle'
 import { useGameStore } from '../stores/game'
 import { useStageViewStore } from '../stores/stageView'
@@ -9,6 +9,11 @@ import StageDetail from './StageDetail.vue'
 const view = useStageViewStore()
 const game = useGameStore()
 const showStages = ref(false)
+
+/** 정복한 스테이지 수: 클리어 + 도감 완성 (출현 정보가 없는 스테이지는 클리어만) */
+function conquered(region: Region) {
+  return region.stages.filter((st) => game.clearedStages.includes(st.id) && game.stageDexDone(st) !== false).length
+}
 
 function openRegion(id: number) {
   view.selectRegion(id)
@@ -82,7 +87,7 @@ watch(
         <span v-if="region.hidden" class="tag hidden">히든</span>
         <span v-if="game.regionDexDone(region)" class="tag dex" title="모든 스테이지의 출현 포켓몬을 잡았습니다">도감 완성</span>
         <span v-if="game.regionCleared(region)" class="tag cleared" title="모든 스테이지를 클리어했습니다">전부 클리어</span>
-        <span class="count">{{ region.stages.length }}개</span>
+        <span class="count" title="정복한 스테이지 (클리어 + 도감 완성) / 전체 스테이지">정복 {{ conquered(region) }}/{{ region.stages.length }}개</span>
       </button>
     </li>
   </ul>
