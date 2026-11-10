@@ -20,6 +20,8 @@ import {
   EVO_ITEMS,
   extraSlotPrice,
   gimmickItemOf,
+  heldKindPrice,
+  heldStackPrice,
   gimmickShopItems,
   PERKS,
   SHOP_ITEMS,
@@ -37,15 +39,26 @@ import {
 import { BALL_NOTES, EXP_SHARE_ITEM, FISHING_ROD_ITEM, HELD_GROUP_LABELS, HELD_ITEMS, isRecord, tmShopList, type HeldGroup } from '../data/items'
 import ItemIcon from './ItemIcon.vue'
 import ShopRow from './ShopRow.vue'
-import { BASE_SLOTS_MAX, canLearnMachine, EXTRA_SLOTS, PP_START_STAGE, SLOT_DEFEATS, useGameStore } from '../stores/game'
+import {
+  BASE_SLOTS_MAX,
+  canLearnMachine,
+  EXTRA_SLOTS,
+  HELD_KINDS_MAX,
+  HELD_STACK_MAX,
+  heldKindsOf,
+  heldStackOf,
+  PP_START_STAGE,
+  SLOT_DEFEATS,
+  useGameStore,
+} from '../stores/game'
 import { GIMMICK_INFO, TERA_SHARD_COST, teraShardType, Z_CRYSTALS, type Gimmick } from '../core/gimmicks'
 import { regionOfGimmick } from '../data/stages'
 import { josa } from '../core/battle'
 
-type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'perks' | 'slots' | 'sell'
+type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'perks' | 'slots' | 'heldSlots' | 'sell'
 /** 하단 탭: 도구상점(item) / 강화상점(upgrade) */
 const props = defineProps<{ kind: 'item' | 'upgrade' }>()
-const UPGRADE_SUBS: Sub[] = ['growth', 'perks', 'slots']
+const UPGRADE_SUBS: Sub[] = ['growth', 'perks', 'slots', 'heldSlots']
 const ALL_SUBS: { id: Sub; label: string }[] = [
   { id: 'items', label: '회복' },
   { id: 'ball', label: '볼' },
@@ -58,6 +71,7 @@ const ALL_SUBS: { id: Sub; label: string }[] = [
   { id: 'growth', label: '육성 강화' },
   { id: 'perks', label: '편의성' },
   { id: 'slots', label: '기술칸' },
+  { id: 'heldSlots', label: '도구칸' },
   { id: 'sell', label: '판매' },
 ]
 const game = useGameStore()
@@ -218,6 +232,25 @@ function sell(id: string, n: number) {
   if (n > 1 && !confirm(`${itemName(id)} ${n}개를 ${won(sellPrice(id) * n)}에 팔까요?`)) return
   game.sellItem(id, n)
 }
+
+/** 지닌 도구 칸: 포켓몬별 도구 종류 수·같은 도구 개수 늘리기 */
+const heldSlotRows = computed(() =>
+  game.party.map((m, i) => {
+    const kinds = heldKindsOf(m)
+    const stack = heldStackOf(m)
+    return {
+      i,
+      name: dexData.value?.index.find((p) => p.id === m.species)?.ko ?? m.species,
+      level: m.level,
+      kinds,
+      stack,
+      kindsMaxed: kinds >= HELD_KINDS_MAX,
+      stackMaxed: stack >= HELD_STACK_MAX,
+      kindPrice: heldKindPrice((m.heldKinds ?? 0) + 1),
+      stackPrice: heldStackPrice((m.heldStack ?? 0) + 1),
+    }
+  }),
+)
 
 /** 기술칸 추가: 기본 4칸을 모두 연 포켓몬만 */
 const slotRows = computed(() =>
@@ -672,6 +705,44 @@ const slotRows = computed(() =>
               <button type="button" class="buy" :disabled="game.money < r.price" @click="game.buyExtraSlot(r.i)">
                 칸 추가
               </button>
+            </template>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <section v-else-if="sub === 'heldSlots'" class="card">
+      <p class="desc top">
+        포켓몬별로 지닐 수 있는 도구를 늘립니다 (도감으로 보내도 기록에 남음).
+        서로 다른 도구는 기본 1종류에서 최대 {{ HELD_KINDS_MAX }}종류, 같은 도구는 기본 1개에서 최대 {{ HELD_STACK_MAX }}개까지 지닐 수 있습니다.
+      </p>
+      <p class="desc">
+        같은 도구를 여러 개 지니면 효과가 합산됩니다: 배율은 더해지고(구애머리띠 2개 = 1.5배 → 2배, 생명의구슬 2개 = 1.3배 → 1.6배),
+        회복량·확률·급소 랭크는 개수만큼 늘어나며, 열매·주얼처럼 쓰면 사라지는 도구는 개수만큼 여러 번 발동합니다.
+        서로 다른 도구의 효과는 각각 곱해집니다.
+      </p>
+      <p v-if="!heldSlotRows.length" class="msg">파티에 포켓몬이 없습니다.</p>
+      <ul v-else class="rows">
+        <li v-for="r in heldSlotRows" :key="r.i">
+          <div class="main">
+            <span class="grow">
+              {{ r.name }} <small class="muted">Lv.{{ r.level }}</small>
+            </span>
+          </div>
+          <div class="main">
+            <span class="grow">도구 종류 <small class="muted">{{ r.kinds }}/{{ HELD_KINDS_MAX }}종류</small></span>
+            <span v-if="r.kindsMaxed" class="muted">최대</span>
+            <template v-else>
+              <span class="price">{{ won(r.kindPrice) }}</span>
+              <button type="button" class="buy" :disabled="game.money < r.kindPrice" @click="game.buyHeldKind(r.i)">종류 +1</button>
+            </template>
+          </div>
+          <div class="main">
+            <span class="grow">같은 도구 개수 <small class="muted">{{ r.stack }}/{{ HELD_STACK_MAX }}개</small></span>
+            <span v-if="r.stackMaxed" class="muted">최대</span>
+            <template v-else>
+              <span class="price">{{ won(r.stackPrice) }}</span>
+              <button type="button" class="buy" :disabled="game.money < r.stackPrice" @click="game.buyHeldStack(r.i)">개수 +1</button>
             </template>
           </div>
         </li>

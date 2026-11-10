@@ -589,6 +589,10 @@ export const AUTO_HEAL_THRESHOLDS = [25, 50, 75] as const
 
 /** 상점에서 여는 추가 기술칸 가격 (n번째 추가 칸) */
 export const extraSlotPrice = (n: number) => 10000 * n
+/** 지닐 수 있는 도구 종류 n번째 추가 가격 (포켓몬별) */
+export const heldKindPrice = (n: number) => 20000 * n
+/** 같은 도구를 지닐 수 있는 개수 n번째 추가 가격 (포켓몬별) */
+export const heldStackPrice = (n: number) => 50000 * n
 
 /** 전투 승리 상금 */
 export const prizeMoney = (level: number, boss: boolean) => level * (boss ? 100 : 10)

@@ -18,6 +18,8 @@ import {
   ro,
   selectableMoves,
   speciesOf,
+  stackMult,
+  takeHeld,
   wildMoveset,
   type Battler,
   type TurnResult,
@@ -35,6 +37,7 @@ import {
   formOf,
   GIMMICK_INFO,
   GIMMICKS,
+  holdsZCrystal,
   isMegaItem,
   maxMove,
   megaFormFor,
@@ -83,6 +86,8 @@ import {
   DEFAULT_AUTO_BUY,
   EVERSTONE_ITEM,
   extraSlotPrice,
+  heldKindPrice,
+  heldStackPrice,
   gimmickItemOf,
   PERKS,
   priceOf,
@@ -214,10 +219,14 @@ export interface PartyMember {
   abilitySlot?: number
   /** 숨겨진 특성 */
   hiddenAbility?: boolean
-  /** 지닌 도구 identifier */
-  heldItem?: string | null
-  /** 지닌 도구를 이번 전투에서 써서 사라짐 (다음 전투 시작 때 가방에 있으면 다시 지님) */
-  heldSpent?: boolean
+  /** 지닌 도구: identifier → 개수 (종류 수는 heldKindsOf, 같은 도구 개수는 heldStackOf 까지) */
+  held?: Record<string, number>
+  /** 지닌 도구 중 이번 전투에서 써서 사라진 개수 (다음 전투 시작 때 가방에 있으면 다시 지님) */
+  heldSpent?: Record<string, number>
+  /** 상점에서 늘린 지닐 수 있는 도구 종류 수 (0~HELD_KINDS_MAX-1) */
+  heldKinds?: number
+  /** 상점에서 늘린 같은 도구를 지닐 수 있는 개수 (0~HELD_STACK_MAX-1) */
+  heldStack?: number
   /** 잡은 볼 (스타팅·진화 포켓몬은 없음) */
   ball?: string
   /** 테라스탈 타입. 없으면 포켓몬의 첫 번째 타입 */
@@ -265,6 +274,9 @@ export interface DexRecord {
   ppUps: Record<string, number>
   /** 상점에서 연 추가 기술칸 최대 */
   extraSlots: number
+  /** 상점에서 늘린 지닌 도구 종류 수·같은 도구 개수 최대 */
+  heldKinds?: number
+  heldStack?: number
 }
 
 /** 도감에서 파티로 불러올 때 고르는 값 */
@@ -282,8 +294,40 @@ export interface SummonChoice {
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
 
-/** 지금 효과가 있는 지닌 도구 (써서 사라졌으면 null) */
-export const heldOf = (m: Pick<PartyMember, 'heldItem' | 'heldSpent'>): string | null => (m.heldSpent ? null : (m.heldItem ?? null))
+/** 이전 저장 데이터 호환: 지닌 도구 하나(heldItem·heldSpent: boolean) → 여러 개(held·heldSpent: 개수) */
+function migrateHeld(m: PartyMember) {
+  const old = m as unknown as { heldItem?: string | null; heldSpent?: unknown }
+  if ('heldItem' in old) {
+    const id = old.heldItem
+    const spent = old.heldSpent === true
+    delete old.heldItem
+    m.held = id ? { [id]: 1 } : {}
+    m.heldSpent = id && spent ? { [id]: 1 } : undefined
+  }
+  if (typeof m.heldSpent !== 'object' || m.heldSpent === null) m.heldSpent = undefined
+}
+/** 지닐 수 있는 도구 종류 수 최대 (기본 1종류, 상점에서 늘림) */
+export const HELD_KINDS_MAX = 6
+/** 같은 도구를 지닐 수 있는 개수 최대 (기본 1개, 상점에서 늘림) */
+export const HELD_STACK_MAX = 3
+/** 이 포켓몬이 지닐 수 있는 도구 종류 수 */
+export const heldKindsOf = (m: Pick<PartyMember, 'heldKinds'>) => Math.min(HELD_KINDS_MAX, 1 + (m.heldKinds ?? 0))
+/** 이 포켓몬이 같은 도구를 지닐 수 있는 개수 */
+export const heldStackOf = (m: Pick<PartyMember, 'heldStack'>) => Math.min(HELD_STACK_MAX, 1 + (m.heldStack ?? 0))
+/** 지금 효과가 있는 지닌 도구: identifier → 개수 (써서 사라진 것 제외, 새 객체) */
+export function heldOf(m: Pick<PartyMember, 'held' | 'heldSpent'>): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [id, n] of Object.entries(m.held ?? {})) {
+    const left = n - (m.heldSpent?.[id] ?? 0)
+    if (left > 0) out[id] = left
+  }
+  return out
+}
+/** 지금 효과가 있는 그 도구의 개수 */
+export const heldN = (m: Pick<PartyMember, 'held' | 'heldSpent'>, id: string): number =>
+  Math.max(0, (m.held?.[id] ?? 0) - (m.heldSpent?.[id] ?? 0))
+/** 지닌 도구 identifier 목록 (써서 사라진 것 포함, 지닌 순서) */
+export const heldIds = (m: Pick<PartyMember, 'held'>): string[] => Object.keys(m.held ?? {}).filter((id) => (m.held![id] ?? 0) > 0)
 
 /** 지닐 수 있는(효과가 있는) 도구인지: 전투 효과 또는 경험치·돈·친밀도·노력치 도구 */
 export function isHoldable(id: string): boolean {
@@ -792,6 +836,7 @@ export const useGameStore = defineStore('game', {
         if (shopItem(this.autoBuyItem[k])?.category !== k) this.autoBuyItem[k] = DEFAULT_AUTO_BUY[k]
       // 이전 저장 데이터 호환: 박스 시절 → 박스 포켓몬은 도감 기록으로, 포켓몬별 격파 수 → 계정 격파 수
       const oldBox = Array.isArray(st.box) ? (st.box as PartyMember[]) : []
+      for (const m of [...this.party, ...oldBox]) migrateHeld(m)
       delete st.box
       const firstRecords = !this.dexRecords || typeof this.dexRecords !== 'object' || !Object.keys(this.dexRecords).length
       if (!this.dexRecords || typeof this.dexRecords !== 'object') this.dexRecords = {}
@@ -804,7 +849,6 @@ export const useGameStore = defineStore('game', {
       for (const m of oldBox) this.sendToDexMember(m)
       // 파티가 넘치면 도감으로
       while (this.party.length > PARTY_MAX) this.sendToDexMember(this.party.pop()!)
-      for (const m of this.party) if (!m.heldItem) m.heldSpent = false
       // 장착하지 않은 기술은 잊은 기술(learned 에만 있음)로 취급. 대기열은 배운 기술과 겹치지 않게
       for (const m of this.party) {
         const learned = (m.learned ??= [...m.moves])
@@ -896,7 +940,7 @@ export const useGameStore = defineStore('game', {
           sleep: m.sleep,
           toxic: 0,
           ability: memberAbility(m),
-          item: heldOf(m),
+          held: heldOf(m),
           vol: {},
         }
         b.hp = m.hp ?? maxHpOf(b)
@@ -916,7 +960,7 @@ export const useGameStore = defineStore('game', {
         sleep: m.sleep,
         toxic: m.toxic,
         ability: memberAbility(m),
-        item: heldOf(m),
+        held: heldOf(m),
         vol: { ...this.playerVol },
         intel: this.playerIntel ? { cands: [...this.playerIntel.cands], known: this.playerIntel.known } : undefined,
       }
@@ -952,7 +996,7 @@ export const useGameStore = defineStore('game', {
       return GIMMICKS.filter((g) => {
         if (!this.gimmickUnlocked(g)) return false
         if (g === 'mega') return !!megaFormFor(m.species, held, m.learned ?? m.moves)
-        if (g === 'z') return !!held && held in Z_CRYSTALS && this.usableMoves().some((id) => zEligible(moveData(id), held))
+        if (g === 'z') return holdsZCrystal(held) && this.usableMoves().some((id) => zEligible(moveData(id), held))
         return true
       })
     },
@@ -1047,7 +1091,7 @@ export const useGameStore = defineStore('game', {
         sleep: e.sleep,
         toxic: e.toxic,
         ability: e.ability ?? null,
-        item: e.item ?? null,
+        held: e.item ? { [e.item]: 1 } : {},
         vol: { ...e.vol },
         intel: e.intel ? { cands: [...e.intel.cands], known: e.intel.known } : undefined,
       }
@@ -1095,26 +1139,40 @@ export const useGameStore = defineStore('game', {
       this.playerIntel = me.intel ?? null
       // 전투 중 써서 사라진 지닌 도구
       const m = this.party[0]
-      if (m && heldOf(m) && !me.item) m.heldSpent = true
+      if (m) {
+        for (const [id, n] of Object.entries(heldOf(m))) {
+          const used = n - (me.held?.[id] ?? 0)
+          if (used > 0) (m.heldSpent ??= {})[id] = (m.heldSpent[id] ?? 0) + used
+        }
+      }
       const e = this.enemy
       if (!e) return
       e.stages = foe.stages
       e.vol = foe.vol
       e.intel = foe.intel
-      e.item = foe.item ?? null
+      e.item = Object.keys(foe.held ?? {}).find((id) => (foe.held![id] ?? 0) > 0) ?? null
     },
     /** 써서 사라진 지닌 도구: 가방에 같은 도구가 있으면 다시 지님, 없으면 비움 */
     refillHeld() {
       const log = useBattleLogStore()
       for (const m of this.party) {
-        if (!m.heldSpent) continue
-        m.heldSpent = false
-        const id = m.heldItem
-        if (id && (this.items[id] ?? 0) > 0) {
-          this.takeFromBag(id)
-          const name = speciesOf(m.species)?.ko ?? m.species
-          log.push(`가방의 ${josa(dexData.value?.items[id]?.ko ?? id, '을', '를')} ${name}에게 다시 지니게 했다.`, 'info')
-        } else m.heldItem = null
+        const spent = m.heldSpent
+        if (!spent) continue
+        m.heldSpent = undefined
+        const held = (m.held ??= {})
+        for (const [id, n] of Object.entries(spent)) {
+          if (n <= 0) continue
+          const refill = Math.min(n, this.items[id] ?? 0)
+          for (let i = 0; i < refill; i++) this.takeFromBag(id)
+          if (refill > 0) {
+            const name = speciesOf(m.species)?.ko ?? m.species
+            const itemName = dexData.value?.items[id]?.ko ?? id
+            log.push(`가방의 ${josa(itemName, '을', '를')}${refill > 1 ? ` ${refill}개` : ''} ${name}에게 다시 지니게 했다.`, 'info')
+          }
+          const left = (held[id] ?? 0) - (n - refill)
+          if (left > 0) held[id] = left
+          else delete held[id]
+        }
       }
     },
     /** 가방에서 1개 꺼냄 */
@@ -1262,9 +1320,9 @@ export const useGameStore = defineStore('game', {
         const left = ppOf(member, playerMove)
         if (left != null) (member.pp ??= {})[playerMove] = Math.max(0, left - result.ppCost)
         // 과사열매(지닌 도구): PP가 0이 된 기술의 PP 10 회복
-        if (member.pp?.[playerMove] === 0 && me.item === 'leppa-berry' && me.hp > 0) {
+        if (member.pp?.[playerMove] === 0 && (me.held?.['leppa-berry'] ?? 0) > 0 && me.hp > 0) {
           member.pp[playerMove] = Math.min(maxPpOf(playerMove, member) ?? 10, 10)
-          me.item = null
+          takeHeld(me, 'leppa-berry')
           const name = speciesOf(member.species)?.ko ?? member.species
           const move = dexData.value?.movesById[playerMove]?.ko ?? playerMove
           log.push(`${josa(name, '은', '는')} ${ro(dexData.value?.items['leppa-berry']?.ko ?? '과사열매')} ${move}의 PP를 회복했다!`)
@@ -1582,24 +1640,46 @@ export const useGameStore = defineStore('game', {
     },
 
     // ---------- 지닌 도구 ----------
-    /** 가방의 도구를 지니게 함 (지니던 도구는 가방으로) */
-    giveHeld(memberIndex: number, itemId: string): boolean {
+    /** 이 도구를 1개 더 지니게 할 수 있는지 (종류 수·같은 도구 개수 한도) */
+    canGiveHeld(memberIndex: number, itemId: string): boolean {
       const m = this.party[memberIndex]
       if (!m || (this.items[itemId] ?? 0) <= 0 || this.faint) return false
-      this.takeHeld(memberIndex)
+      const n = m.held?.[itemId] ?? 0
+      if (n > 0) return n < heldStackOf(m)
+      return heldIds(m).length < heldKindsOf(m)
+    },
+    /** 가방의 도구를 1개 지니게 함 (종류 수·같은 도구 개수 한도 안에서) */
+    giveHeld(memberIndex: number, itemId: string): boolean {
+      if (!this.canGiveHeld(memberIndex, itemId)) return false
+      const m = this.party[memberIndex]!
       this.takeFromBag(itemId)
-      m.heldItem = itemId
-      m.heldSpent = false
+      const held = (m.held ??= {})
+      held[itemId] = (held[itemId] ?? 0) + 1
+      if (memberIndex === 0) this.playerVol = { ...this.playerVol, choice: undefined }
       return true
     },
-    /** 지닌 도구를 가방으로 */
-    takeHeld(memberIndex: number) {
+    /** 지닌 도구를 가방으로. n = 개수 (없으면 그 도구 전부). 써서 사라진 것부터 뺌 */
+    takeHeld(memberIndex: number, itemId: string, n?: number) {
       const m = this.party[memberIndex]
-      if (!m) return
-      if (m.heldItem && !m.heldSpent) this.addToBag(m.heldItem)
-      m.heldItem = null
-      m.heldSpent = false
+      const have = m?.held?.[itemId] ?? 0
+      if (!m || have <= 0 || this.faint) return
+      const take = Math.min(have, n ?? have)
+      const spent = m.heldSpent?.[itemId] ?? 0
+      const fromSpent = Math.min(spent, take)
+      this.addToBag(itemId, take - fromSpent)
+      if (fromSpent) {
+        if (spent - fromSpent > 0) m.heldSpent![itemId] = spent - fromSpent
+        else delete m.heldSpent![itemId]
+      }
+      if (have - take > 0) m.held![itemId] = have - take
+      else delete m.held![itemId]
       if (memberIndex === 0) this.playerVol = { ...this.playerVol, choice: undefined }
+    },
+    /** 지닌 도구를 모두 가방으로 */
+    takeAllHeld(memberIndex: number) {
+      const m = this.party[memberIndex]
+      if (!m || this.faint) return
+      for (const id of Object.keys(m.held ?? {})) this.takeHeld(memberIndex, id)
     },
 
     // ---------- 기술머신 ----------
@@ -1696,6 +1776,8 @@ export const useGameStore = defineStore('game', {
           moves,
           ppUps: { ...(m.ppUps ?? {}) },
           extraSlots: m.extraSlots ?? 0,
+          heldKinds: m.heldKinds ?? 0,
+          heldStack: m.heldStack ?? 0,
         }
         return
       }
@@ -1714,6 +1796,8 @@ export const useGameStore = defineStore('game', {
       for (const id of moves) if (!r.moves.includes(id)) r.moves.push(id)
       for (const [id, n] of Object.entries(m.ppUps ?? {})) r.ppUps[id] = Math.max(r.ppUps[id] ?? 0, n)
       r.extraSlots = Math.max(r.extraSlots, m.extraSlots ?? 0)
+      r.heldKinds = Math.max(r.heldKinds ?? 0, m.heldKinds ?? 0)
+      r.heldStack = Math.max(r.heldStack ?? 0, m.heldStack ?? 0)
     },
     /** 도감에서 파티로 불러오기: 기록된 범위 밖의 값은 범위 안으로 맞춤. 성공 여부 반환 */
     summonFromDex(species: string, c: SummonChoice): boolean {
@@ -1744,20 +1828,22 @@ export const useGameStore = defineStore('game', {
         pp: {},
         ppUps: Object.fromEntries(Object.entries(r.ppUps).filter(([id]) => r.moves.includes(id))),
         extraSlots,
+        heldKinds: r.heldKinds ?? 0,
+        heldStack: r.heldStack ?? 0,
         status: null,
         friendship: clamp(Math.round(c.friendship), r.friendshipMin, r.friendshipMax),
         abilitySlot: c.ability === HIDDEN_ABILITY_SLOT ? 0 : c.ability,
         hiddenAbility: c.ability === HIDDEN_ABILITY_SLOT,
-        heldItem: null,
+        held: {},
       })
       this.backfillLearned()
       return true
     },
     /** 파티에서 빠지는 포켓몬의 지닌 도구는 가방으로 */
     takeHeldFrom(m: PartyMember) {
-      if (m.heldItem && !m.heldSpent) this.addToBag(m.heldItem)
-      m.heldItem = null
-      m.heldSpent = false
+      for (const [id, n] of Object.entries(heldOf(m))) this.addToBag(id, n)
+      m.held = {}
+      m.heldSpent = undefined
     },
 
     /** 잡은 포켓몬: 도감에 기록 + 파티에 자리가 있으면 파티로 */
@@ -1795,7 +1881,7 @@ export const useGameStore = defineStore('game', {
         status: e.status ?? null,
         abilitySlot: slot,
         hiddenAbility: hidden,
-        heldItem: e.item ?? null,
+        held: e.item ? { [e.item]: 1 } : {},
         ball: ballId,
         // 테라스탈 타입: 그 포켓몬의 타입 중 하나
         teraType: (() => {
@@ -1815,8 +1901,8 @@ export const useGameStore = defineStore('game', {
         log.push(`${josa(name, '은', '는')} 파티에 들어갔다!`, 'info')
       } else {
         log.push(`파티가 가득 차서 ${name}의 정보는 도감에 기록되었다.`, 'info')
-        if (caught.heldItem) {
-          const itemName = dexData.value?.items[caught.heldItem]?.ko ?? caught.heldItem
+        if (e.item) {
+          const itemName = dexData.value?.items[e.item]?.ko ?? e.item
           log.push(`${josa(name, '이', '가')} 지니고 있던 ${josa(itemName, '은', '는')} 가방에 넣었다.`, 'info')
         }
         this.takeHeldFrom(caught)
@@ -1831,7 +1917,7 @@ export const useGameStore = defineStore('game', {
     rewardExp(enemy: WildPokemon): number {
       const lead = this.party[0]!
       const base = expGain(enemy.species, enemy.level, lead.level, !!enemy.boss, DIFFICULTY_EXP[this.difficulty])
-      const egg = (m: PartyMember) => (heldOf(m) === LUCKY_EGG ? LUCKY_EGG_MULT : 1)
+      const egg = (m: PartyMember) => stackMult(LUCKY_EGG_MULT, heldN(m, LUCKY_EGG))
       const leadExp = Math.floor(base * egg(lead))
       this.gainExp(lead, leadExp)
       this.gainEvs(lead, enemy.species)
@@ -1850,9 +1936,12 @@ export const useGameStore = defineStore('game', {
       const ev = battleData.value?.species[foe]?.ev
       if (!ev) return
       const held = heldOf(member)
-      const gain = [...ev].map((v) => v * (held === MACHO_BRACE ? 2 : 1))
-      const power = held ? POWER_ITEMS[held] : undefined
-      if (power != null) gain[power] = (gain[power] ?? 0) + POWER_ITEM_EV
+      const brace = stackMult(2, held[MACHO_BRACE] ?? 0)
+      const gain = [...ev].map((v) => Math.floor(v * brace))
+      for (const [id, n] of Object.entries(held)) {
+        const power = POWER_ITEMS[id]
+        if (power != null) gain[power] = (gain[power] ?? 0) + POWER_ITEM_EV * n
+      }
       const evs = (member.evs ??= [0, 0, 0, 0, 0, 0])
       this.keepHpRatio(member, () => {
         gain.forEach((v, i) => {
@@ -1951,6 +2040,26 @@ export const useGameStore = defineStore('game', {
     setEverstone(on: boolean) {
       if (this.everstoneOwned) this.everstone = on
     },
+    /** 지닐 수 있는 도구 종류 +1 구매 */
+    buyHeldKind(memberIndex: number): boolean {
+      const m = this.party[memberIndex]
+      if (!m || heldKindsOf(m) >= HELD_KINDS_MAX) return false
+      const price = heldKindPrice((m.heldKinds ?? 0) + 1)
+      if (this.money < price) return false
+      this.money -= price
+      m.heldKinds = (m.heldKinds ?? 0) + 1
+      return true
+    },
+    /** 같은 도구를 지닐 수 있는 개수 +1 구매 */
+    buyHeldStack(memberIndex: number): boolean {
+      const m = this.party[memberIndex]
+      if (!m || heldStackOf(m) >= HELD_STACK_MAX) return false
+      const price = heldStackPrice((m.heldStack ?? 0) + 1)
+      if (this.money < price) return false
+      this.money -= price
+      m.heldStack = (m.heldStack ?? 0) + 1
+      return true
+    },
     buyExtraSlot(memberIndex: number): boolean {
       const m = this.party[memberIndex]
       if (!m) return false
@@ -1976,7 +2085,8 @@ export const useGameStore = defineStore('game', {
 
       // 상금 (부적금화·행운의향로를 지니고 싸우면 2배)
       const held = heldOf(member)
-      const prize = prizeMoney(enemy.level, !!enemy.boss) * (held && MONEY_ITEMS.has(held) ? 2 : 1)
+      const prizeMult = Object.entries(held).reduce((a, [id, n]) => a * (MONEY_ITEMS.has(id) ? stackMult(2, n) : 1), 1)
+      const prize = Math.floor(prizeMoney(enemy.level, !!enemy.boss) * prizeMult)
       this.money += prize
       log.push(`상금으로 ${prize.toLocaleString()}원을 받았다!`)
       log.recordReward(expGot, prize)
@@ -2084,7 +2194,7 @@ export const useGameStore = defineStore('game', {
     /** 친밀도 변화. 오를 때: 평온의방울 1.5배, 럭셔리볼 +1 */
     addFriendship(member: PartyMember, delta: number) {
       if (delta > 0) {
-        if (heldOf(member) === SOOTHE_BELL) delta = Math.ceil(delta * 1.5)
+        delta = Math.ceil(delta * stackMult(1.5, heldN(member, SOOTHE_BELL)))
         if (member.ball === LUXURY_BALL) delta += 1
       }
       member.friendship = Math.max(0, Math.min(FRIENDSHIP_MAX, friendshipOf(member) + delta))

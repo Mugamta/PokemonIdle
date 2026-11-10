@@ -44,7 +44,8 @@ const foe = computed(() => {
 /** 다음 기술과 함께 쓰려고 고른 특수 기능 */
 const armed = ref<Gimmick | null>(null)
 const options = computed(() => {
-  void game.party[0]?.heldItem
+  void game.party[0]?.held
+  void game.party[0]?.heldSpent
   void game.party[0]?.moves.length
   void game.enemy
   return game.gimmickOptions()

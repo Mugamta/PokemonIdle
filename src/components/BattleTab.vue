@@ -21,7 +21,10 @@ import {
   evolutionCondText,
   evolutionMet,
   friendshipOf,
+  heldIds,
+  heldKindsOf,
   heldOf,
+  heldStackOf,
   isHoldable,
   MAX_MOVE_SLOTS,
   memberAbility,
@@ -234,9 +237,26 @@ function useShopItem(cat: ItemCategory, id: string) {
   game.useItem(id, catTarget(cat))
 }
 
-// 지닌 도구: 고른 포켓몬이 지닌 도구와 가방의 지닐 수 있는 도구
-const heldNow = computed(() => targetMember.value?.heldItem ?? null)
-const heldSpent = computed(() => !!targetMember.value?.heldSpent)
+// 지닌 도구: 고른 포켓몬이 지닌 도구(여러 종류·같은 도구 여러 개)와 가방의 지닐 수 있는 도구
+const heldList = computed(() => {
+  const m = targetMember.value
+  if (!m) return []
+  return heldIds(m).map((id) => ({ id, n: m.held![id]!, spent: m.heldSpent?.[id] ?? 0 }))
+})
+const heldLimits = computed(() => {
+  const m = targetMember.value
+  return m ? { kinds: heldKindsOf(m), stack: heldStackOf(m) } : { kinds: 1, stack: 1 }
+})
+/** 고른 도구를 더 지니게 할 수 없는 이유 (없으면 '') */
+const giveBlock = computed(() => {
+  const m = targetMember.value
+  const id = heldPick.value
+  if (!m || !id) return ''
+  const n = m.held?.[id] ?? 0
+  if (n > 0 && n >= heldStackOf(m)) return `같은 도구는 ${heldStackOf(m)}개까지 지닐 수 있습니다. 강화상점에서 늘릴 수 있습니다.`
+  if (!n && heldIds(m).length >= heldKindsOf(m)) return `도구는 ${heldKindsOf(m)}종류까지 지닐 수 있습니다. 강화상점에서 늘릴 수 있습니다.`
+  return ''
+})
 const holdables = computed(() =>
   Object.entries(game.items)
     .filter(([id, n]) => n > 0 && isHoldable(id))
@@ -421,9 +441,12 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             </div>
             <div class="muted held-line">
               {{ hpText(m) }} · 지닌 도구
-              <template v-if="m.heldItem">
-                <ItemIcon :id="m.heldItem" :size="16" />
-                {{ itemKo(m.heldItem) }}<template v-if="m.heldSpent"> (사용함)</template>
+              <template v-if="heldIds(m).length">
+                <span v-for="id in heldIds(m)" :key="id" class="held-chip">
+                  <ItemIcon :id="id" :size="16" />
+                  {{ itemKo(id) }}<template v-if="m.held![id]! > 1"> ×{{ m.held![id] }}</template
+                  ><template v-if="m.heldSpent?.[id]"> (사용함{{ m.held![id]! > 1 ? ` ${m.heldSpent[id]}개` : '' }})</template>
+                </span>
               </template>
               <template v-else> 없음</template>
             </div>
@@ -499,7 +522,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             >
               <span v-if="i === 0" class="lead-mark" title="싸우는 포켓몬">★</span>
               {{ species(m.species)?.ko ?? m.species }} <small>Lv.{{ m.level }}</small>
-              <ItemIcon v-if="heldOf(m)" :id="heldOf(m)!" :size="16" />
+              <ItemIcon v-for="id in Object.keys(heldOf(m))" :key="id" :id="id" :size="16" />
               <span v-if="m.pending?.length" class="pending-badge" :title="`배우려는 기술 ${m.pending.length}개`">새 기술 {{ m.pending.length }}</span>
             </button>
           </div>
@@ -512,9 +535,12 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             </div>
             <p class="muted held-line">
               지닌 도구
-              <template v-if="member!.heldItem">
-                <ItemIcon :id="member!.heldItem" :size="18" />
-                {{ itemKo(member!.heldItem) }}<template v-if="member!.heldSpent"> (사용함)</template>
+              <template v-if="heldIds(member!).length">
+                <span v-for="id in heldIds(member!)" :key="id" class="held-chip">
+                  <ItemIcon :id="id" :size="18" />
+                  {{ itemKo(id) }}<template v-if="member!.held![id]! > 1"> ×{{ member!.held![id] }}</template
+                  ><template v-if="member!.heldSpent?.[id]"> (사용함{{ member!.held![id]! > 1 ? ` ${member!.heldSpent[id]}개` : '' }})</template>
+                </span>
               </template>
               <template v-else> 없음</template>
             </p>
@@ -780,26 +806,37 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 
         <!-- 지닌 도구 -->
         <template v-if="targetMember">
-          <h4 class="sec">지닌 도구 <small>{{ species(targetMember.species)?.ko }}</small></h4>
-          <div class="held-box">
-            <template v-if="heldNow">
-              <ItemIcon :id="heldNow" />
-              <span class="grow">
-                {{ itemKo(heldNow) }}
-                <span v-if="heldSpent" class="muted">(이번 전투에서 사용함 · 다음 전투에 가방에 있으면 다시 지님)</span>
-              </span>
-              <button type="button" class="small-btn" :disabled="!!game.faint" @click="game.takeHeld(targetIdx)">가방에 넣기</button>
-            </template>
-            <span v-else class="muted grow">지니고 있는 도구가 없습니다.</span>
+          <h4 class="sec">
+            지닌 도구 <small>{{ species(targetMember.species)?.ko }} · {{ heldList.length }}/{{ heldLimits.kinds }}종류 · 같은 도구 {{ heldLimits.stack }}개까지</small>
+          </h4>
+          <div v-for="h in heldList" :key="h.id" class="held-box">
+            <ItemIcon :id="h.id" />
+            <span class="grow">
+              {{ itemKo(h.id) }} <strong v-if="h.n > 1">×{{ h.n }}</strong>
+              <span v-if="h.spent" class="muted"
+                >({{ h.n > 1 ? `${h.spent}개 ` : '' }}이번 전투에서 사용함 · 다음 전투에 가방에 있으면 다시 지님)</span
+              >
+            </span>
+            <button type="button" class="small-btn" :disabled="!!game.faint" @click="game.takeHeld(targetIdx, h.id, 1)">
+              {{ h.n > 1 ? '1개 빼기' : '가방에 넣기' }}
+            </button>
+            <button v-if="h.n > 1" type="button" class="small-btn" :disabled="!!game.faint" @click="game.takeHeld(targetIdx, h.id)">모두 빼기</button>
           </div>
+          <div v-if="!heldList.length" class="held-box"><span class="muted grow">지니고 있는 도구가 없습니다.</span></div>
           <div v-if="holdables.length" class="held-box">
             <select v-model="heldPick" class="train-select grow">
               <option v-for="h in holdables" :key="h.id" :value="h.id">{{ h.info?.ko ?? h.id }} (×{{ h.n }})</option>
             </select>
-            <button type="button" class="small-btn" :disabled="!heldPick || !!game.faint" @click="game.giveHeld(targetIdx, heldPick)">
-              {{ heldNow ? '바꿔 지니기' : '지니게 하기' }}
+            <button
+              type="button"
+              class="small-btn"
+              :disabled="!heldPick || !!game.faint || !game.canGiveHeld(targetIdx, heldPick)"
+              @click="game.giveHeld(targetIdx, heldPick)"
+            >
+              {{ targetMember.held?.[heldPick] ? '1개 더 지니기' : '지니게 하기' }}
             </button>
           </div>
+          <p v-if="giveBlock" class="item-text">{{ giveBlock }}</p>
           <p v-if="heldPick && dexData.items[heldPick]?.text" class="item-text">{{ dexData.items[heldPick]!.text }}</p>
           <p v-if="!holdables.length" class="item-text">가방에 지닐 수 있는 도구가 없습니다. 상점의 지닌 도구·나무열매를 사거나 야생 포켓몬에게서 얻을 수 있습니다.</p>
         </template>
@@ -1094,9 +1131,21 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 
 .held-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   margin: 6px 0;
+}
+
+.held-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.held-chip + .held-chip::before {
+  content: '·';
+  margin-right: 2px;
 }
 
 .party-list {

@@ -166,6 +166,60 @@ describe('상점', () => {
   })
 })
 
+describe('지닌 도구 여러 개', () => {
+  test('종류·개수 한도 안에서만 지니고, 강화상점에서 한도를 늘림', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    game.items = { leftovers: 5, 'choice-band': 2 }
+    expect(game.giveHeld(0, 'leftovers')).toBe(true)
+    expect(game.giveHeld(0, 'leftovers')).toBe(false) // 같은 도구 1개까지
+    expect(game.giveHeld(0, 'choice-band')).toBe(false) // 1종류까지
+    game.money = 1_000_000
+    expect(game.buyHeldKind(0)).toBe(true)
+    expect(game.buyHeldStack(0)).toBe(true)
+    expect(game.giveHeld(0, 'choice-band')).toBe(true)
+    expect(game.giveHeld(0, 'leftovers')).toBe(true)
+    expect(game.party[0]!.held).toEqual({ leftovers: 2, 'choice-band': 1 })
+    expect(game.items.leftovers).toBe(3)
+    game.takeHeld(0, 'leftovers', 1)
+    expect(game.party[0]!.held!.leftovers).toBe(1)
+    expect(game.items.leftovers).toBe(4)
+    game.takeAllHeld(0)
+    expect(game.party[0]!.held).toEqual({})
+    expect(game.items).toEqual({ leftovers: 5, 'choice-band': 2 })
+    // 도감 기록에 남아 다시 불러와도 유지
+    expect(game.dexRecords.charmander!.heldKinds ?? 0).toBe(0)
+    game.recordToDex(game.party[0]!)
+    expect(game.dexRecords.charmander!.heldKinds).toBe(1)
+    expect(game.dexRecords.charmander!.heldStack).toBe(1)
+  })
+
+  test('써서 사라진 도구는 가방에 있는 만큼 다시 지님', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    const m = game.party[0]!
+    m.heldStack = 2
+    m.held = { 'sitrus-berry': 3 }
+    m.heldSpent = { 'sitrus-berry': 2 }
+    game.items = { 'sitrus-berry': 1 }
+    game.refillHeld()
+    expect(m.held).toEqual({ 'sitrus-berry': 2 })
+    expect(m.heldSpent).toBeUndefined()
+    expect(game.items['sitrus-berry']).toBeUndefined()
+  })
+
+  test('이전 저장 데이터(지닌 도구 하나) 변환', () => {
+    const game = useGameStore()
+    game.$patch({ party: [{ ...starter(), heldItem: 'leftovers', heldSpent: true } as unknown as PartyMember] })
+    game.validate()
+    expect(game.party[0]!.held).toEqual({ leftovers: 1 })
+    expect(game.party[0]!.heldSpent).toEqual({ leftovers: 1 })
+    expect('heldItem' in game.party[0]!).toBe(false)
+  })
+})
+
 describe('상대 PP', () => {
   const wild = (moves: string[]) => ({
     species: 'rattata',

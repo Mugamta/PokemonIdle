@@ -128,8 +128,8 @@ export interface Battler {
   toxic?: number
   /** 특성 identifier */
   ability?: string | null
-  /** 지닌 도구 identifier (전투 중 사라지면 null) */
-  item?: string | null
+  /** 지닌 도구: identifier → 개수 (여러 종류·같은 도구 여러 개. 전투 중 쓰면 줄어듦) */
+  held?: Record<string, number>
   vol?: Volatile
   /** 상대가 아는 이 포켓몬의 특성 정보 */
   intel?: AbilityIntel
@@ -190,7 +190,7 @@ export function activeAbility(b: Battler, foe: Battler): string | null {
   const a = abilityOf(b)
   if (!a) return null
   // 특성가드: 화학변화가스의 영향을 받지 않음
-  if (abilityOf(foe) === 'neutralizing-gas' && a !== 'neutralizing-gas' && b.item !== 'ability-shield') return null
+  if (abilityOf(foe) === 'neutralizing-gas' && a !== 'neutralizing-gas' && !holds(b, 'ability-shield')) return null
   return a
 }
 const ab = activeAbility
@@ -199,46 +199,75 @@ function defAb(def: Battler, att: Battler): string | null {
   const d = ab(def, att)
   if (!d) return null
   const a = ab(att, def)
-  if (a && BREAKERS.has(a) && !UNBREAKABLE.has(d) && def.item !== 'ability-shield') return null
+  if (a && BREAKERS.has(a) && !UNBREAKABLE.has(d) && !holds(def, 'ability-shield')) return null
   return d
 }
 
 // ---------- 지닌 도구 ----------
+// 여러 종류를 함께 지닐 수 있고(서로 다른 도구의 배율은 곱연산), 같은 도구도 여러 개 지닐 수 있음:
+// 같은 도구의 배율은 합연산(1.5배 2개 = 2배), 고정량·확률·랭크는 개수만큼, 소모형은 개수만큼 여러 번 발동
 const itemKo = (id: string) => dexData.value?.items[id]?.ko ?? id
-/** 효과가 있는 지닌 도구 (서투름 특성이면 없음) */
-function itemOf(b: Battler, foe?: Battler): string | null {
-  if (!b.item) return null
-  if ((foe ? ab(b, foe) : abilityOf(b)) === 'klutz') return null
-  return b.item
+/** 그 도구를 지니고 있는지 (서투름과 관계없이) */
+function holds(b: Battler, id: string): boolean {
+  return (b.held?.[id] ?? 0) > 0
 }
+/** 지닌 도구 개수 합 */
+export const heldTotal = (held: Record<string, number> | undefined | null): number =>
+  Object.values(held ?? {}).reduce((a, n) => a + Math.max(0, n), 0)
+const klutzed = (b: Battler, foe?: Battler) => (foe ? ab(b, foe) : abilityOf(b)) === 'klutz'
+/** 효과가 있는 지닌 도구 목록 (서투름 특성이면 없음) */
+function itemsOf(b: Battler, foe?: Battler): string[] {
+  if (!b.held || klutzed(b, foe)) return []
+  return Object.keys(b.held).filter((id) => b.held![id]! > 0)
+}
+/** 효과가 있는 그 도구의 개수 (서투름 특성이면 0) */
+function nItem(b: Battler, id: string, foe?: Battler): number {
+  const n = b.held?.[id] ?? 0
+  return n > 0 && !klutzed(b, foe) ? n : 0
+}
+/** 같은 도구 n개의 배율 (합연산): 1.5배 2개 = 2배. 1보다 작은 배율은 나누는 값을 합연산 (0.5배 2개 = 1/3배) */
+export function stackMult(m: number, n: number): number {
+  if (n <= 0) return 1
+  return m >= 1 ? 1 + (m - 1) * n : 1 / (1 + (1 / m - 1) * n)
+}
+/** 그 도구 배율 (지닌 개수 반영, 없으면 1) */
+const itemMult = (b: Battler, id: string, m: number, foe?: Battler) => stackMult(m, nItem(b, id, foe))
+/** 조건에 맞는 도구들의 개수 합 */
+const nItems = (b: Battler, foe: Battler | undefined, test: (id: string) => boolean) =>
+  itemsOf(b, foe).reduce((a, id) => a + (test(id) ? b.held![id]! : 0), 0)
 const isBerry = (id: string) => id.endsWith('-berry')
 /** 열매를 먹을 수 있는지 (상대가 긴장감이면 없음) */
 function canEat(b: Battler, foe?: Battler): boolean {
   return !foe || !UNNERVE.has(ab(foe, b) ?? '')
 }
-/** 도구 사용 후 사라짐. 볼주머니: 열매를 먹으면 HP 1/3 회복, 곡예: 스피드 2배 */
-function consumeItem(b: Battler, foe: Battler | undefined, log: string[]) {
-  const id = b.item
-  if (!id) return
-  b.item = null
+/** 도구 1개 사용 후 사라짐. 볼주머니: 열매를 먹으면 HP 1/3 회복, 곡예: 도구가 모두 사라지면 스피드 2배 */
+function consumeItem(b: Battler, id: string, foe: Battler | undefined, log: string[]) {
+  if (!takeHeld(b, id)) return
   const a = foe ? ab(b, foe) : abilityOf(b)
-  if (a === 'unburden') (b.vol ??= {}).unburden = true
+  if (a === 'unburden' && !heldTotal(b.held)) (b.vol ??= {}).unburden = true
   if (isBerry(id) && a === 'cheek-pouch' && b.hp > 0 && b.hp < maxHpOf(b)) {
     announce(b, log)
     heal(b, Math.floor(maxHpOf(b) / 3))
     log.push(`${josa(b.name, '은', '는')} 체력을 회복했다!`)
   }
 }
+/** 지닌 도구 1개를 없앰 (효과 없이). 없앴으면 true */
+export function takeHeld(b: Pick<Battler, 'held'>, id: string): boolean {
+  const n = b.held?.[id] ?? 0
+  if (n <= 0) return false
+  if (n === 1) delete b.held![id]
+  else b.held![id] = n - 1
+  return true
+}
 /** 진화할 수 있는 포켓몬인지 (진화의휘석) */
 const canEvolve = (species: string) => evolutionsOf(species).length > 0
 /** 기술을 고를 수 있는지 (구애 도구로 고정 / 돌격조끼면 변화기 불가) */
 export function selectableMoves(b: Battler, moves: string[]): string[] {
-  const item = itemOf(b)
   let list = moves
-  if (item === 'assault-vest') list = list.filter((id) => moveData(id)?.cls !== 'status')
+  if (nItem(b, 'assault-vest')) list = list.filter((id) => moveData(id)?.cls !== 'status')
   // 다이맥스 중에는 구애 도구 고정이 풀림
   const lock = b.dynamax ? undefined : b.vol?.choice
-  if (lock && item && CHOICE_ITEMS.has(item) && list.includes(lock)) list = [lock]
+  if (lock && itemsOf(b).some((id) => CHOICE_ITEMS.has(id)) && list.includes(lock)) list = [lock]
   return list
 }
 
@@ -298,11 +327,13 @@ export function speedOf(b: Battler, foe?: Battler): number {
   if (a === 'quick-feet' && b.status) s = Math.floor(s * 1.5)
   else if (b.status === 'par') s = Math.floor(s * 0.5)
   if (a === 'slow-start' && (b.vol?.turns ?? 0) < 5) s = Math.floor(s * 0.5)
-  if (a === 'unburden' && b.vol?.unburden && !b.item) s *= 2
-  const item = itemOf(b, foe)
-  if (item === 'choice-scarf') s = Math.floor(s * 1.5)
-  else if (item && SLOW_ITEMS.has(item)) s = Math.floor(s * 0.5)
-  else if (item === 'quick-powder' && b.species === 'ditto') s *= 2
+  if (a === 'unburden' && b.vol?.unburden && !heldTotal(b.held)) s *= 2
+  for (const id of itemsOf(b, foe)) {
+    const n = b.held![id]!
+    if (id === 'choice-scarf') s = Math.floor(s * stackMult(1.5, n))
+    else if (SLOW_ITEMS.has(id)) s = Math.floor(s * stackMult(0.5, n))
+    else if (id === 'quick-powder' && b.species === 'ditto') s = Math.floor(s * stackMult(2, n))
+  }
   return s
 }
 
@@ -330,11 +361,11 @@ function effOf(att: Battler, def: Battler, type: string): number {
   const a = ab(att, def)
   const scrappy = (a === 'scrappy' || a === 'minds-eye') && (type === 'normal' || type === 'fighting')
   // 겨냥표적: 타입 무효 없음 / 검은철구: 땅 타입 기술이 비행 타입에게 맞음
-  const item = itemOf(def, att)
-  const grounded = item === 'iron-ball' && type === 'ground'
+  const grounded = !!nItem(def, 'iron-ball', att) && type === 'ground'
+  const target = !!nItem(def, 'ring-target', att)
   return typesOf(def).reduce((acc, t) => {
     const x = chart?.[t] ?? 1
-    const ignore = x === 0 && ((scrappy && t === 'ghost') || item === 'ring-target' || (grounded && t === 'flying'))
+    const ignore = x === 0 && ((scrappy && t === 'ghost') || target || (grounded && t === 'flying'))
     return acc * (ignore ? 1 : x)
   }, 1)
 }
@@ -364,13 +395,13 @@ type AbsorbFx = (typeof ABSORB)[string][1]
 function blockOf(att: Battler, def: Battler, m: MoveData, type: string, eff: number): Block | null {
   if (isSelfMove(m)) return null
   const d = defAb(def, att)
-  const item = itemOf(def, att)
-  if (item === 'air-balloon' && type === 'ground' && isDamaging(m)) return { by: 'item', item }
-  if (item === 'safety-goggles' && hasFlag(m, 'powder')) return { by: 'item', item }
+  if (nItem(def, 'air-balloon', att) && type === 'ground' && isDamaging(m)) return { by: 'item', item: 'air-balloon' }
+  if (nItem(def, 'safety-goggles', att) && hasFlag(m, 'powder')) return { by: 'item', item: 'safety-goggles' }
+  const ironBall = !!nItem(def, 'iron-ball', att)
   if (d) {
     const abs = ABSORB[d]
     // 부유는 공격기만 막음 (검은철구를 지니면 막지 못함)
-    if (abs && abs[0] === type && (d !== 'levitate' || (isDamaging(m) && item !== 'iron-ball'))) return { by: 'ability', fx: abs[1] }
+    if (abs && abs[0] === type && (d !== 'levitate' || (isDamaging(m) && !ironBall))) return { by: 'ability', fx: abs[1] }
     if (d === 'wind-rider' && hasFlag(m, 'wind')) return { by: 'ability', fx: { stat: 'atk', n: 1 } }
     if (d === 'wonder-guard' && isDamaging(m) && type !== 'typeless' && eff <= 1) return { by: 'ability' }
     if (FLAG_IMMUNE[d] && hasFlag(m, FLAG_IMMUNE[d]!)) return { by: 'ability' }
@@ -446,15 +477,20 @@ export function damageOf(att: Battler, def: Battler, m: MoveData, rand: number, 
   if (a === 'sheer-force' && hasSecondary(m)) power *= 1.3
   if (a === 'analytic' && opts.last) power *= 1.3
   // 도구: 타입 강화·전용 구슬·주얼·힘의머리띠·박식안경·펀치글러브
-  const ai = itemOf(att, def)
-  if (ai) {
-    if (TYPE_BOOST[ai] === type) power *= 1.2
-    const orb = ORBS[ai]
-    if (orb && orb.species.includes(att.species) && orb.types.includes(type)) power *= 1.2
-    if (GEMS[ai] === type && fx == null) power *= 1.3
-    if (ai === 'muscle-band' && physical) power *= 1.1
-    if (ai === 'wise-glasses' && m.cls === 'special') power *= 1.1
-    if (ai === 'punching-glove' && hasFlag(m, 'punch')) power *= 1.1
+  // (주얼은 소모형이라 여러 개여도 한 번에 하나만 1.3배)
+  let gem = false
+  for (const id of itemsOf(att, def)) {
+    const n = att.held![id]!
+    if (TYPE_BOOST[id] === type) power *= stackMult(1.2, n)
+    const orb = ORBS[id]
+    if (orb && orb.species.includes(att.species) && orb.types.includes(type)) power *= stackMult(1.2, n)
+    if (GEMS[id] === type && !gem) {
+      power *= 1.3
+      gem = true
+    }
+    if (id === 'muscle-band' && physical) power *= stackMult(1.1, n)
+    if (id === 'wise-glasses' && m.cls === 'special') power *= stackMult(1.1, n)
+    if (id === 'punching-glove' && hasFlag(m, 'punch')) power *= stackMult(1.1, n)
   }
   power = Math.max(1, Math.floor(power))
 
@@ -479,15 +515,14 @@ export function damageOf(att: Battler, def: Battler, m: MoveData, rand: number, 
   if (dRaw === (physical ? 'tablets-of-ruin' : 'vessel-of-ruin') && a !== dRaw) A *= 0.75
   if (a === (physical ? 'sword-of-ruin' : 'beads-of-ruin') && dRaw !== a) D *= 0.75
   // 도구: 구애머리띠·구애안경·전용 도구 / 진화의휘석·돌격조끼·전용 도구
-  if (ai === (physical ? 'choice-band' : 'choice-specs')) A *= 1.5
-  if (ai === 'light-ball' && att.species.startsWith('pikachu')) A *= 2
-  if (ai === 'thick-club' && physical && (att.species.startsWith('cubone') || att.species.startsWith('marowak'))) A *= 2
-  if (ai === 'deep-sea-tooth' && !physical && att.species === 'clamperl') A *= 2
-  const di = itemOf(def, att)
-  if (di === 'eviolite' && canEvolve(def.species)) D *= 1.5
-  if (di === 'assault-vest' && !physical) D *= 1.5
-  if (di === 'deep-sea-scale' && !physical && def.species === 'clamperl') D *= 2
-  if (di === 'metal-powder' && physical && def.species === 'ditto') D *= 2
+  A *= itemMult(att, physical ? 'choice-band' : 'choice-specs', 1.5, def)
+  if (att.species.startsWith('pikachu')) A *= itemMult(att, 'light-ball', 2, def)
+  if (physical && (att.species.startsWith('cubone') || att.species.startsWith('marowak'))) A *= itemMult(att, 'thick-club', 2, def)
+  if (!physical && att.species === 'clamperl') A *= itemMult(att, 'deep-sea-tooth', 2, def)
+  if (canEvolve(def.species)) D *= itemMult(def, 'eviolite', 1.5, att)
+  if (!physical) D *= itemMult(def, 'assault-vest', 1.5, att)
+  if (!physical && def.species === 'clamperl') D *= itemMult(def, 'deep-sea-scale', 2, att)
+  if (physical && def.species === 'ditto') D *= itemMult(def, 'metal-powder', 2, att)
   A = Math.max(1, Math.floor(A))
   D = Math.max(1, Math.floor(D))
 
@@ -502,18 +537,20 @@ export function damageOf(att: Battler, def: Battler, m: MoveData, rand: number, 
   if (physical && att.status === 'brn' && a !== 'guts') dmg = Math.floor(dmg / 2)
   dmg = Math.floor(dmg * defMult(d, def, m, type, eff))
   // 도구: 달인의띠·생명의구슬·메트로놈 / 반감 열매
-  if (ai === 'expert-belt' && eff > 1) dmg = Math.floor(dmg * 1.2)
-  if (ai === 'life-orb') dmg = Math.floor(dmg * 1.3)
-  if (ai === 'metronome') dmg = Math.floor(dmg * Math.min(2, 1 + 0.2 * (att.vol?.streak ?? 0)))
-  if (resistBerryActive(att, def, type, eff)) dmg = Math.floor(dmg / 2)
+  if (eff > 1) dmg = Math.floor(dmg * itemMult(att, 'expert-belt', 1.2, def))
+  dmg = Math.floor(dmg * itemMult(att, 'life-orb', 1.3, def))
+  dmg = Math.floor(dmg * itemMult(att, 'metronome', Math.min(2, 1 + 0.2 * (att.vol?.streak ?? 0)), def))
+  if (resistBerryOf(att, def, type, eff)) dmg = Math.floor(dmg / 2)
   return Math.max(1, dmg)
 }
 
-/** 반감 열매가 이번 공격에 발동하는지 */
-function resistBerryActive(att: Battler, def: Battler, type: string, eff: number): boolean {
-  const di = itemOf(def, att)
-  const t = di ? RESIST_BERRY[di] : undefined
-  return !!t && t === type && (eff > 1 || t === 'normal') && canEat(def, att)
+/** 이번 공격에 발동하는 반감 열매 (없으면 undefined) */
+function resistBerryOf(att: Battler, def: Battler, type: string, eff: number): string | undefined {
+  if (!canEat(def, att)) return undefined
+  return itemsOf(def, att).find((id) => {
+    const t = RESIST_BERRY[id]
+    return t === type && (eff > 1 || t === 'normal')
+  })
 }
 
 function avgHits(att: Battler, def: Battler, m: MoveData) {
@@ -521,7 +558,7 @@ function avgHits(att: Battler, def: Battler, m: MoveData) {
   if (!h) return 1
   if (ab(att, def) === 'skill-link') return h[1]
   // 2~5회: 2·3회 35%, 4·5회 15% (속임수주사위: 4~5회)
-  if (h[0] === 2 && h[1] === 5) return itemOf(att, def) === 'loaded-dice' ? 4.5 : 3.1
+  if (h[0] === 2 && h[1] === 5) return nItem(att, 'loaded-dice', def) ? 4.5 : 3.1
   return (h[0] + h[1]) / 2
 }
 
@@ -537,12 +574,10 @@ function accuracyOf(att: Battler, def: Battler, m: MoveData, last = false): numb
   if (a === 'victory-star') acc *= 1.1
   if (a === 'hustle' && m.cls === 'physical') acc *= 0.8
   if (d === 'wonder-skin' && m.cls === 'status') acc = Math.min(acc, 0.5)
-  const ai = itemOf(att, def)
-  if (ai === 'wide-lens') acc *= 1.1
-  if (ai === 'zoom-lens' && last) acc *= 1.2
+  acc *= itemMult(att, 'wide-lens', 1.1, def)
+  if (last) acc *= itemMult(att, 'zoom-lens', 1.2, def)
   if (att.vol?.micle) acc *= 1.2
-  const di = itemOf(def, att)
-  if (di && EVASION_ITEMS.has(di)) acc *= 0.9
+  for (const id of itemsOf(def, att)) if (EVASION_ITEMS.has(id)) acc *= stackMult(0.9, def.held![id]!)
   return Math.min(1, acc)
 }
 
@@ -665,7 +700,7 @@ function changeStage(target: Battler, key: StageKey, delta: number, log: string[
   if (t === 'simple') delta *= 2
   if (source && delta < 0) {
     // 클리어참·이펙트가드: 상대에 의한 능력 하락을 막음
-    const guard = itemOf(target, source) === 'clear-amulet' ? itemKo('clear-amulet') : (target.vol?.mist ?? 0) > 0 ? itemKo('guard-spec') : null
+    const guard = nItem(target, 'clear-amulet', source) ? itemKo('clear-amulet') : (target.vol?.mist ?? 0) > 0 ? itemKo('guard-spec') : null
     if (guard) {
       log.push(`${target.name}의 ${josa(STAGE_NAMES[key], '은', '는')} ${guard}의 효과로 떨어지지 않는다!`)
       return
@@ -699,10 +734,9 @@ function changeStage(target: Battler, key: StageKey, delta: number, log: string[
 const CRIT_CHANCE = [1 / 24, 1 / 8, 1 / 2, 1]
 /** 급소 랭크 (기술·특성·도구·크리티컬커터) */
 function critStageOf(att: Battler, def: Battler, m: MoveData): number {
-  const item = itemOf(att, def)
   let s = (m.extra.crit ?? 0) + (ab(att, def) === 'super-luck' ? 1 : 0) + (att.vol?.critBoost ?? 0)
-  if (item && CRIT_ITEMS.has(item)) s += 1
-  if (item && CRIT_SPECIES_ITEMS[item]?.includes(att.species)) s += 2
+  s += nItems(att, def, (id) => CRIT_ITEMS.has(id))
+  s += 2 * nItems(att, def, (id) => !!CRIT_SPECIES_ITEMS[id]?.includes(att.species))
   return Math.min(3, s)
 }
 const rollHits = (h: [number, number], dice = false) => {
@@ -785,17 +819,21 @@ export function inflictStatus(target: Battler, s: Status, log: string[], direct:
 
 /** 상태이상을 고치는 열매 */
 function checkStatusBerry(b: Battler, foe: Battler | undefined, log: string[]) {
-  const item = itemOf(b, foe)
-  if (!item || !b.status || !STATUS_BERRY[item]?.includes(b.status) || !canEat(b, foe)) return
-  log.push(`${josa(b.name, '은', '는')} ${josa(itemKo(item), '을', '를')} 먹고 ${STATUS_LABELS[b.status]} 상태가 나았다!`)
+  const status = b.status
+  if (!status || !canEat(b, foe)) return
+  const item = itemsOf(b, foe).find((id) => STATUS_BERRY[id]?.includes(status))
+  if (!item) return
+  log.push(`${josa(b.name, '은', '는')} ${josa(itemKo(item), '을', '를')} 먹고 ${STATUS_LABELS[status]} 상태가 나았다!`)
   cureStatus(b)
-  consumeItem(b, foe, log)
+  consumeItem(b, item, foe, log)
 }
 
-/** HP가 줄었을 때 발동하는 도구 (회복 열매·핀치 열매) */
+/** HP가 줄었을 때 발동하는 도구 (회복 열매·핀치 열매). 종류마다 한 번에 1개씩 */
 function checkHpItems(b: Battler, foe: Battler, log: string[]) {
-  const item = itemOf(b, foe)
-  if (!item || b.hp <= 0 || (isBerry(item) && !canEat(b, foe))) return
+  for (const id of itemsOf(b, foe)) hpItem(b, foe, id, log)
+}
+function hpItem(b: Battler, foe: Battler, item: string, log: string[]) {
+  if (b.hp <= 0 || (isBerry(item) && !canEat(b, foe))) return
   const max = maxHpOf(b)
   const gluttony = ab(b, foe) === 'gluttony'
   const pinch = b.hp * (gluttony ? 2 : 4) <= max
@@ -805,7 +843,7 @@ function checkHpItems(b: Battler, foe: Battler, log: string[]) {
     const amount = h.frac ? Math.floor(max * h.frac) : h.hp!
     heal(b, amount)
     log.push(`${josa(b.name, '은', '는')} ${ro(itemKo(item))} 체력을 회복했다!`)
-    consumeItem(b, foe, log)
+    consumeItem(b, item, foe, log)
     return
   }
   if (!pinch) return
@@ -814,34 +852,34 @@ function checkHpItems(b: Battler, foe: Battler, log: string[]) {
     if ((b.stages[stat] ?? 0) >= 6) return
     log.push(`${josa(b.name, '은', '는')} ${josa(itemKo(item), '을', '를')} 먹었다!`)
     changeStage(b, stat, 1, log)
-    consumeItem(b, foe, log)
+    consumeItem(b, item, foe, log)
   } else if (item === 'starf-berry') {
     const keys = (['atk', 'def', 'spa', 'spd', 'spe'] as StageKey[]).filter((k) => (b.stages[k] ?? 0) < 6)
     const k = keys[Math.floor(Math.random() * keys.length)]
     if (!k) return
     log.push(`${josa(b.name, '은', '는')} ${josa(itemKo(item), '을', '를')} 먹었다!`)
     changeStage(b, k, 2, log)
-    consumeItem(b, foe, log)
+    consumeItem(b, item, foe, log)
   } else if (item === 'lansat-berry') {
     const vol = (b.vol ??= {})
     vol.critBoost = (vol.critBoost ?? 0) + 2
     log.push(`${josa(b.name, '은', '는')} ${josa(itemKo(item), '을', '를')} 먹고 기합이 들어갔다!`)
-    consumeItem(b, foe, log)
+    consumeItem(b, item, foe, log)
   } else if (item === 'micle-berry') {
     ;(b.vol ??= {}).micle = true
     log.push(`${josa(b.name, '은', '는')} ${josa(itemKo(item), '을', '를')} 먹고 다음 기술의 명중률이 올라갔다!`)
-    consumeItem(b, foe, log)
+    consumeItem(b, item, foe, log)
   }
 }
 
 /** 하양허브: 떨어진 능력을 원래대로 */
 function checkWhiteHerb(b: Battler, foe: Battler, log: string[]) {
-  if (itemOf(b, foe) !== 'white-herb' || b.hp <= 0) return
+  if (!nItem(b, 'white-herb', foe) || b.hp <= 0) return
   const low = (Object.keys(b.stages) as StageKey[]).filter((k) => (b.stages[k] ?? 0) < 0)
   if (!low.length) return
   for (const k of low) b.stages[k] = 0
   log.push(`${josa(b.name, '은', '는')} ${ro(itemKo('white-herb'))} 떨어진 능력을 원래대로 되돌렸다!`)
-  consumeItem(b, foe, log)
+  consumeItem(b, 'white-herb', foe, log)
 }
 
 export function cureStatus(b: Pick<Battler, 'status' | 'sleep' | 'toxic'>) {
@@ -916,15 +954,19 @@ function endOfTurn(b: Battler, foe: Battler, log: string[]) {
   }
   if (b.hp <= 0) return
   // 도구: 먹다남은음식·검은오물·끈적끈적바늘
-  const item = itemOf(b, foe)
-  if (item === 'leftovers' || (item === 'black-sludge' && typesOf(b).includes('poison'))) {
-    if (b.hp < max) {
-      heal(b, Math.floor(max / 16))
-      log.push(`${josa(b.name, '은', '는')} ${ro(itemKo(item))} 조금 회복했다!`)
+  for (const item of itemsOf(b, foe)) {
+    if (b.hp <= 0) break
+    const n = b.held![item]!
+    if (item === 'leftovers' || (item === 'black-sludge' && typesOf(b).includes('poison'))) {
+      if (b.hp < max) {
+        heal(b, Math.floor((max * n) / 16))
+        log.push(`${josa(b.name, '은', '는')} ${ro(itemKo(item))} 조금 회복했다!`)
+      }
+    } else if (item === 'black-sludge' || item === 'sticky-barb') {
+      if (indirect(b, foe, Math.floor((max * n) / 8))) log.push(`${josa(b.name, '은', '는')} ${ro(itemKo(item))} 데미지를 입었다!`)
     }
-  } else if (item === 'black-sludge' || item === 'sticky-barb') {
-    if (indirect(b, foe, Math.floor(max / 8))) log.push(`${josa(b.name, '은', '는')} ${ro(itemKo(item))} 데미지를 입었다!`)
   }
+  if (b.hp <= 0) return
   checkHpItems(b, foe, log)
   if (b.hp <= 0) return
   const vol = (b.vol ??= {})
@@ -959,8 +1001,9 @@ function endOfTurn(b: Battler, foe: Battler, log: string[]) {
     log.push(`${josa(b.name, '은', '는')} 드디어 제 컨디션을 되찾았다!`)
   }
   // 맹독구슬·화염구슬: 턴이 끝날 때 상태이상
-  if (item === 'toxic-orb' || item === 'flame-orb') {
-    const s: Status = item === 'toxic-orb' ? 'tox' : 'brn'
+  const orb = nItem(b, 'toxic-orb', foe) ? 'toxic-orb' : nItem(b, 'flame-orb', foe) ? 'flame-orb' : null
+  if (orb) {
+    const s: Status = orb === 'toxic-orb' ? 'tox' : 'brn'
     if (canInflict(b, s)) inflictStatus(b, s, log, false)
   }
 }
@@ -1016,13 +1059,13 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
   const ex = m.extra
   const a = ab(att, def)
   const vol = (att.vol ??= {})
-  const ai = itemOf(att, def)
+  const aHas = (id: string) => nItem(att, id, def)
 
   // 메트로놈(도구): 같은 기술을 연속으로 쓴 횟수
   vol.streak = vol.lastMove === m.id ? (vol.streak ?? 0) + 1 : 0
   vol.lastMove = m.id
   // 구애 도구: 처음 쓴 기술로 고정
-  if (ai && CHOICE_ITEMS.has(ai) && m.id !== 'struggle' && !vol.choice && !att.dynamax) vol.choice = moveId
+  if (itemsOf(att, def).some((id) => CHOICE_ITEMS.has(id)) && m.id !== 'struggle' && !vol.choice && !att.dynamax) vol.choice = moveId
 
   // 변환자재·리베로: 기술을 쓰기 전에 그 기술의 타입으로 (전투마다 한 번)
   if ((a === 'protean' || a === 'libero') && !vol.protean && m.type !== 'typeless' && !att.tera) {
@@ -1053,10 +1096,10 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
   if (!hit) {
     log.push(`그러나 ${att.name}의 공격은 빗나갔다!`)
     // 허탕보험: 빗나가면 스피드 +2
-    if (ai === 'blunder-policy' && m.acc != null) {
-      log.push(`${josa(itemKo(ai), '이', '가')} 발동했다!`)
+    if (aHas('blunder-policy') && m.acc != null) {
+      log.push(`${josa(itemKo('blunder-policy'), '이', '가')} 발동했다!`)
       changeStage(att, 'spe', 2, log)
-      consumeItem(att, def, log)
+      consumeItem(att, 'blunder-policy', def, log)
     }
     return
   }
@@ -1097,9 +1140,9 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
   const d = defAb(def, att)
   const contact = hasFlag(m, 'contact')
   // 방호패드: 접촉으로 생기는 효과를 받지 않음
-  const contactFx = contact && ai !== 'protective-pads'
+  const contactFx = contact && !aHas('protective-pads')
   const physical = m.cls === 'physical'
-  const hits = ex.hits ? (a === 'skill-link' ? ex.hits[1] : rollHits(ex.hits, ai === 'loaded-dice')) : 1
+  const hits = ex.hits ? (a === 'skill-link' ? ex.hits[1] : rollHits(ex.hits, !!aHas('loaded-dice'))) : 1
   const post: string[] = []
   const halfBefore = def.hp * 2 > maxHpOf(def)
   const before: Battler = { ...def, stages: { ...def.stages } }
@@ -1124,16 +1167,16 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
     const noCrit = d === 'battle-armor' || d === 'shell-armor'
     const merciless = a === 'merciless' && (def.status === 'psn' || def.status === 'tox')
     const crit = ex.fixed == null && !noCrit && (merciless || Math.random() < CRIT_CHANCE[critStageOf(att, def, m)]!)
-    const berry = resistBerryActive(att, def, type, eff) ? def.item : null
-    const gem = att.item && GEMS[att.item] === type && ai === att.item && ex.fixed == null ? att.item : null
+    const berry = resistBerryOf(att, def, type, eff)
+    const gem = ex.fixed == null ? itemsOf(att, def).find((id) => GEMS[id] === type) : undefined
     let dmg = Math.min(def.hp, damageOf(att, def, m, 85 + Math.floor(Math.random() * 16), crit, { last }))
     if (gem) {
       log.push(`${ro(itemKo(gem))} ${m.ko}의 위력이 올라갔다!`)
-      consumeItem(att, def, log)
+      consumeItem(att, gem, def, log)
     }
     if (berry) {
       log.push(`${ro(itemKo(berry))} ${def.name}에게 주는 데미지가 줄었다!`)
-      consumeItem(def, att, log)
+      consumeItem(def, berry, att, log)
       resisted = true
     }
     const full = def.hp >= maxHpOf(def)
@@ -1145,11 +1188,16 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
       revealed = true
     } else if (dmg >= def.hp) {
       // 기합의띠 (HP가 가득할 때) · 기합의머리띠 (10%)
-      const di = itemOf(def, att)
-      if ((di === 'focus-sash' && full) || (di === 'focus-band' && Math.random() < 0.1)) {
+      const di =
+        full && nItem(def, 'focus-sash', att)
+          ? 'focus-sash'
+          : Math.random() < 0.1 * nItem(def, 'focus-band', att)
+            ? 'focus-band'
+            : null
+      if (di) {
         dmg = def.hp - 1
         post.push(`${josa(def.name, '은', '는')} ${ro(itemKo(di))} 버텼다!`)
-        if (di === 'focus-sash') consumeItem(def, att, post)
+        if (di === 'focus-sash') consumeItem(def, di, att, post)
       }
     }
     if (defMult(d, def, m, type, eff) !== 1) revealed = true
@@ -1159,12 +1207,13 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
     landed++
     if (crit) crits++
     // 풍선: 공격을 받으면 터짐
-    if (def.item === 'air-balloon' && dmg > 0) {
+    if (holds(def, 'air-balloon') && dmg > 0) {
       post.push(`${def.name}의 ${josa(itemKo('air-balloon'), '이', '가')} 터졌다!`)
-      consumeItem(def, att, post)
+      consumeItem(def, 'air-balloon', att, post)
     }
     // 울퉁불퉁멧: 접촉한 상대에게 최대 HP 1/6 데미지
-    if (contactFx && itemOf(def, att) === 'rocky-helmet' && indirect(att, def, Math.floor(maxHpOf(att) / 6)))
+    const helmets = contactFx ? nItem(def, 'rocky-helmet', att) : 0
+    if (helmets && indirect(att, def, Math.floor((maxHpOf(att) * helmets) / 6)))
       post.push(`${josa(att.name, '은', '는')} ${ro(itemKo('rocky-helmet'))} 데미지를 입었다!`)
     if (def.hp <= 0) break
     // 맞을 때 능력이 변하는 특성
@@ -1186,13 +1235,15 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
       revealed = true
     }
     // 맞을 때 능력이 오르는 도구 (구근·충전지·눈덩이·빛이끼·악키열매·타라프열매)
-    const di = itemOf(def, att)
-    const hb = di ? HIT_BOOST[di] : undefined
-    if (hb && (hb.type ? hb.type === type : hb.cls === m.cls) && (!isBerry(di!) || canEat(def, att)) && (def.stages[hb.stat] ?? 0) < 6) {
-      post.push(`${def.name}의 ${josa(itemKo(di!), '이', '가')} 발동했다!`)
-      changeStage(def, hb.stat, 1, post)
-      consumeItem(def, att, post)
+    for (const hi of itemsOf(def, att)) {
+      const hb = HIT_BOOST[hi]
+      if (hb && (hb.type ? hb.type === type : hb.cls === m.cls) && (!isBerry(hi) || canEat(def, att)) && (def.stages[hb.stat] ?? 0) < 6) {
+        post.push(`${def.name}의 ${josa(itemKo(hi), '이', '가')} 발동했다!`)
+        changeStage(def, hb.stat, 1, post)
+        consumeItem(def, hi, att, post)
+      }
     }
+    const cloak = !!nItem(def, 'covert-cloak', att)
     // 접촉 반격 (공격 측 특성은 무시되지 않음)
     const dd = ab(def, att)
     if (contactFx && dd) {
@@ -1208,7 +1259,7 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
         (dd === 'mummy' || dd === 'lingering-aroma') &&
         abilityOf(att) !== dd &&
         !UNCOPYABLE.has(abilityOf(att) ?? '') &&
-        att.item !== 'ability-shield'
+        !holds(att, 'ability-shield')
       ) {
         announce(def, post)
         ;(att.vol ??= {}).ability = dd
@@ -1221,7 +1272,7 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
         dd === 'effect-spore' &&
         !typesOf(att).includes('grass') &&
         ab(att, def) !== 'overcoat' &&
-        ai !== 'safety-goggles' &&
+        !aHas('safety-goggles') &&
         Math.random() < 0.3
       ) {
         const s = (['psn', 'par', 'slp'] as Status[])[Math.floor(Math.random() * 3)]!
@@ -1233,7 +1284,7 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
     }
     // 공격 측 특성: 독수(접촉)·독사슬 (은밀망토면 막힘)
     const chain = (contactFx && a === 'poison-touch' ? 'psn' : a === 'toxic-chain' ? 'tox' : null) as Status | null
-    if (chain && d !== 'shield-dust' && di !== 'covert-cloak' && canInflict(def, chain, att) && Math.random() < 0.3) {
+    if (chain && d !== 'shield-dust' && !cloak && canInflict(def, chain, att) && Math.random() < 0.3) {
       announce(att, post)
       inflictStatus(def, chain, post, false, att)
     }
@@ -1264,22 +1315,23 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
   }
 
   // 맞은 쪽 도구: 약점보험 / 자보열매·애터열매 / 의문열매
-  const di = itemOf(def, att)
-  if (total > 0 && di) {
-    if (di === 'weakness-policy' && eff > 1 && def.hp > 0 && ex.fixed == null) {
-      log.push(`${def.name}의 ${josa(itemKo(di), '이', '가')} 발동했다!`)
+  const dHas = (id: string) => nItem(def, id, att)
+  if (total > 0) {
+    if (dHas('weakness-policy') && eff > 1 && def.hp > 0 && ex.fixed == null) {
+      log.push(`${def.name}의 ${josa(itemKo('weakness-policy'), '이', '가')} 발동했다!`)
       changeStage(def, 'atk', 2, log)
       changeStage(def, 'spa', 2, log)
-      consumeItem(def, att, log)
-    } else if ((di === 'jaboca-berry' && physical) || (di === 'rowap-berry' && m.cls === 'special')) {
-      if (canEat(def, att)) {
-        consumeItem(def, att, log)
-        if (indirect(att, def, Math.floor(maxHpOf(att) / 8))) log.push(`${josa(att.name, '은', '는')} ${def.name}의 ${ro(itemKo(di))} 데미지를 입었다!`)
-      }
-    } else if (di === 'enigma-berry' && eff > 1 && def.hp > 0 && canEat(def, att)) {
+      consumeItem(def, 'weakness-policy', att, log)
+    }
+    const counter = physical ? 'jaboca-berry' : m.cls === 'special' ? 'rowap-berry' : null
+    if (counter && dHas(counter) && canEat(def, att)) {
+      consumeItem(def, counter, att, log)
+      if (indirect(att, def, Math.floor(maxHpOf(att) / 8))) log.push(`${josa(att.name, '은', '는')} ${def.name}의 ${ro(itemKo(counter))} 데미지를 입었다!`)
+    }
+    if (dHas('enigma-berry') && eff > 1 && def.hp > 0 && canEat(def, att)) {
       heal(def, Math.floor(maxHpOf(def) / 4))
-      log.push(`${josa(def.name, '은', '는')} ${ro(itemKo(di))} 체력을 회복했다!`)
-      consumeItem(def, att, log)
+      log.push(`${josa(def.name, '은', '는')} ${ro(itemKo('enigma-berry'))} 체력을 회복했다!`)
+      consumeItem(def, 'enigma-berry', att, log)
     }
   }
 
@@ -1291,7 +1343,7 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
         announce(def, log)
         if (indirect(att, def, amount)) log.push(`${josa(att.name, '은', '는')} 해감액을 흡수했다!`)
       } else {
-        heal(att, ai === 'big-root' ? Math.floor(amount * 1.3) : amount)
+        heal(att, Math.floor(amount * itemMult(att, 'big-root', 1.3, def)))
         log.push(`${ro(def.name)}부터 체력을 흡수했다!`)
       }
     } else if (a !== 'rock-head' && indirect(att, def, amount)) {
@@ -1303,11 +1355,13 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
   }
   // 조개껍질방울: 준 데미지의 1/8 회복 / 생명의구슬: 최대 HP 1/10 반동 (우격다짐으로 부가 효과가 사라지면 없음)
   if (total > 0 && att.hp > 0) {
-    if (ai === 'shell-bell' && att.hp < maxHpOf(att)) {
-      heal(att, Math.floor(total / 8))
-      log.push(`${josa(att.name, '은', '는')} ${ro(itemKo(ai))} 체력을 조금 회복했다!`)
+    const bells = aHas('shell-bell')
+    if (bells && att.hp < maxHpOf(att)) {
+      heal(att, Math.floor((total * bells) / 8))
+      log.push(`${josa(att.name, '은', '는')} ${ro(itemKo('shell-bell'))} 체력을 조금 회복했다!`)
     }
-    if (ai === 'life-orb' && !(a === 'sheer-force' && hasSecondary(m)) && indirect(att, def, Math.floor(maxHpOf(att) / 10)))
+    const orbs = aHas('life-orb')
+    if (orbs && !(a === 'sheer-force' && hasSecondary(m)) && indirect(att, def, Math.floor((maxHpOf(att) * orbs) / 10)))
       log.push(`${josa(att.name, '은', '는')} 생명이 조금 깎였다!`)
   }
 
@@ -1347,15 +1401,16 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
       }
     }
     // 왕의징표석·예리한이빨: 먼저 행동했으면 10% 확률로 풀죽음 (정신력이면 무효)
-    if (ai && FLINCH_ITEMS.has(ai) && !last && ab(def, att) !== 'inner-focus' && d !== 'shield-dust' && di !== 'covert-cloak') {
-      if (Math.random() < 0.1 * (a === 'serene-grace' ? 2 : 1)) (def.vol ??= {}).flinch = true
+    const flinch = nItems(att, def, (id) => FLINCH_ITEMS.has(id))
+    if (flinch && !last && ab(def, att) !== 'inner-focus' && d !== 'shield-dust' && !dHas('covert-cloak')) {
+      if (Math.random() < 0.1 * flinch * (a === 'serene-grace' ? 2 : 1)) (def.vol ??= {}).flinch = true
     }
   }
 
   // 부가 효과 (우격다짐 = 없음, 인분·은밀망토 = 상대에게 거는 효과 없음, 하늘의은총 = 확률 2배)
   if (!(a === 'sheer-force' && hasSecondary(m))) {
     const chanceMult = a === 'serene-grace' ? 2 : 1
-    const shield = d === 'shield-dust' || itemOf(def, att) === 'covert-cloak'
+    const shield = d === 'shield-dust' || !!dHas('covert-cloak')
     if (ex.stats && (ex.chance == null || Math.random() * 100 < ex.chance * chanceMult)) {
       const target = ex.self ? att : def
       if (target.hp > 0 && (ex.self || !shield)) {
@@ -1376,10 +1431,10 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
 
 /** 기술을 쓴 뒤: 목스프레이, 양쪽의 회복 열매·핀치 열매·하양허브 */
 function afterMove(att: Battler, def: Battler, m: MoveData, log: string[]) {
-  if (itemOf(att, def) === 'throat-spray' && hasFlag(m, 'sound') && att.hp > 0 && (att.stages.spa ?? 0) < 6) {
+  if (nItem(att, 'throat-spray', def) && hasFlag(m, 'sound') && att.hp > 0 && (att.stages.spa ?? 0) < 6) {
     log.push(`${att.name}의 ${josa(itemKo('throat-spray'), '이', '가')} 발동했다!`)
     changeStage(att, 'spa', 1, log)
-    consumeItem(att, def, log)
+    consumeItem(att, 'throat-spray', def, log)
   }
   for (const [b, foe] of [[def, att], [att, def]] as const) {
     checkHpItems(b, foe, log)
@@ -1398,7 +1453,7 @@ export function onEntry(player: Battler, enemy: Battler): string[] {
   for (const b of [player, enemy]) ruleOut(b, (c) => ENTRY_ABILITIES.has(abilityOf(c) ?? ''))
   // 도구: 풍선 / 하양허브 (위협 등으로 떨어진 능력)
   for (const [b, foe] of order) {
-    if (itemOf(b, foe) === 'air-balloon') log.push(`${josa(b.name, '은', '는')} ${ro(itemKo('air-balloon'))} 떠 있다!`)
+    if (nItem(b, 'air-balloon', foe)) log.push(`${josa(b.name, '은', '는')} ${ro(itemKo('air-balloon'))} 떠 있다!`)
     checkWhiteHerb(b, foe, log)
   }
   return log
@@ -1435,10 +1490,10 @@ function entryEffect(b: Battler, foe: Battler, log: string[]) {
           }
         }
         // 주눅구슬: 위협을 받으면 스피드 +1
-        if (itemOf(foe, b) === 'adrenaline-orb' && (foe.stages.spe ?? 0) < 6) {
+        if (nItem(foe, 'adrenaline-orb', b) && (foe.stages.spe ?? 0) < 6) {
           log.push(`${foe.name}의 ${josa(itemKo('adrenaline-orb'), '이', '가')} 발동했다!`)
           changeStage(foe, 'spe', 1, log)
-          consumeItem(foe, b, log)
+          consumeItem(foe, 'adrenaline-orb', b, log)
         }
         break
       }
@@ -1588,17 +1643,16 @@ export function runTurn(
   // 같은 우선도 안에서 먼저/나중에 행동하는 도구: 애슈열매·선제공격손톱 (+1) / 느림보꼬리·만복향로 (-1)
   const itemOrder = (b: Battler, foe: Battler, id: string | null) => {
     if (b.vol) b.vol.flinch = false
-    const item = itemOf(b, foe)
-    if (!id || !item) return 0
-    if (LAST_ITEMS.has(item)) return -1
+    if (!id || !itemsOf(b, foe).length) return 0
+    if (nItems(b, foe, (x) => LAST_ITEMS.has(x))) return -1
     const pinch = b.hp * (ab(b, foe) === 'gluttony' ? 2 : 4) <= maxHpOf(b)
-    if (item === 'custap-berry' && pinch && canEat(b, foe)) {
-      log.push(`${josa(b.name, '은', '는')} ${josa(itemKo(item), '을', '를')} 먹고 행동이 빨라졌다!`)
-      consumeItem(b, foe, log)
+    if (nItem(b, 'custap-berry', foe) && pinch && canEat(b, foe)) {
+      log.push(`${josa(b.name, '은', '는')} ${josa(itemKo('custap-berry'), '을', '를')} 먹고 행동이 빨라졌다!`)
+      consumeItem(b, 'custap-berry', foe, log)
       return 1
     }
-    if (item === 'quick-claw' && Math.random() < 0.2) {
-      log.push(`${josa(b.name, '은', '는')} ${ro(itemKo(item))} 행동이 빨라졌다!`)
+    if (Math.random() < 0.2 * nItem(b, 'quick-claw', foe)) {
+      log.push(`${josa(b.name, '은', '는')} ${ro(itemKo('quick-claw'))} 행동이 빨라졌다!`)
       return 1
     }
     return 0

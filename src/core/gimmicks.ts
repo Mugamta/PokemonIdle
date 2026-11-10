@@ -47,10 +47,12 @@ export const DYNAMAX_TURNS = 3
 export const formOf = (id: string): FormEntry | undefined => dexData.value?.forms[id]
 
 /** 이 포켓몬이 지닌 도구·배운 기술로 메가진화할 수 있는 폼 (없으면 undefined) */
-export function megaFormFor(species: string, item: string | null | undefined, learned: string[]): FormEntry | undefined {
+export function megaFormFor(species: string, held: Record<string, number> | null | undefined, learned: string[]): FormEntry | undefined {
   const forms = dexData.value?.forms
   if (!forms) return undefined
-  return Object.values(forms).find((f) => f.base === species && (f.item ? f.item === item : !!f.move && learned.includes(f.move)))
+  return Object.values(forms).find(
+    (f) => f.base === species && (f.item ? (held?.[f.item] ?? 0) > 0 : !!f.move && learned.includes(f.move)),
+  )
 }
 
 /** 메가스톤·원시회귀 구슬인지 */
@@ -119,10 +121,13 @@ export function zPower(power: number | null): number {
 }
 
 /** Z크리스탈로 Z기술이 되는 기술인지 (같은 타입 공격기) */
-export function zEligible(m: MoveData | null | undefined, crystal: string | null | undefined): boolean {
-  const type = crystal ? Z_CRYSTALS[crystal] : undefined
-  return !!m && !!type && m.type === type && m.cls !== 'status' && m.id !== 'struggle'
+export function zEligible(m: MoveData | null | undefined, held: Record<string, number> | null | undefined): boolean {
+  if (!m || m.cls === 'status' || m.id === 'struggle' || !held) return false
+  return Object.keys(held).some((id) => (held[id] ?? 0) > 0 && Z_CRYSTALS[id] === m.type)
 }
+/** Z크리스탈을 지니고 있는지 */
+export const holdsZCrystal = (held: Record<string, number> | null | undefined): boolean =>
+  !!held && Object.keys(held).some((id) => (held[id] ?? 0) > 0 && id in Z_CRYSTALS)
 
 /** Z기술 (반드시 맞고 부가 효과·접촉 없음, 우선도 0) */
 export function zMove(m: MoveData): MoveData {

@@ -12,6 +12,7 @@ import {
   movesUpToLevel,
   runTurn,
   speedOf,
+  stackMult,
   typeEffect,
   wildMoveset,
   type Battler,
@@ -93,7 +94,54 @@ describe('스피드', () => {
     const b = full(battler('jolteon', 50, []))
     const s = speedOf(b)
     expect(speedOf({ ...b, status: 'par' })).toBe(Math.floor(s * 0.5))
-    expect(speedOf({ ...b, item: 'choice-scarf' })).toBe(Math.floor(s * 1.5))
+    expect(speedOf({ ...b, held: { 'choice-scarf': 1 } })).toBe(Math.floor(s * 1.5))
+  })
+})
+
+describe('지닌 도구 여러 개', () => {
+  const att = () => full(battler('machamp', 50, ['cross-chop']))
+  const def = () => full(battler('snorlax', 50, ['splash']))
+
+  test('같은 도구 배율은 합연산, 1보다 작은 배율은 나누는 값을 합연산', () => {
+    expect(stackMult(1.5, 1)).toBe(1.5)
+    expect(stackMult(1.5, 2)).toBe(2)
+    expect(stackMult(1.3, 2)).toBeCloseTo(1.6)
+    expect(stackMult(0.5, 2)).toBeCloseTo(1 / 3)
+    expect(stackMult(2, 0)).toBe(1)
+  })
+
+  test('구애스카프 2개 = 스피드 2배', () => {
+    const b = full(battler('jolteon', 50, []))
+    expect(speedOf({ ...b, held: { 'choice-scarf': 2 } })).toBe(Math.floor(speedOf(b) * 2))
+  })
+
+  test('구애머리띠 2개는 2배, 다른 도구(생명의구슬)와는 곱연산', () => {
+    const m = mv('cross-chop')
+    const base = damageOf(att(), def(), m, 100, false)
+    const band2 = damageOf({ ...att(), held: { 'choice-band': 2 } }, def(), m, 100, false)
+    const band1orb1 = damageOf({ ...att(), held: { 'choice-band': 1, 'life-orb': 1 } }, def(), m, 100, false)
+    expect(band2 / base).toBeGreaterThan(1.9)
+    expect(band2 / base).toBeLessThan(2.1)
+    expect(band1orb1 / base).toBeGreaterThan(1.5 * 1.3 - 0.1)
+    expect(band1orb1 / base).toBeLessThan(1.5 * 1.3 + 0.1)
+  })
+
+  test('소모형 도구는 개수만큼 발동 (기합의띠 2개)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      const me = full(battler('mewtwo', 100, ['psychic']))
+      const foe = full(battler('caterpie', 5, ['tackle']))
+      foe.held = { 'focus-sash': 2 }
+      runTurn(me, foe, 'psychic', 'tackle')
+      expect(foe.hp).toBe(1)
+      expect(foe.held['focus-sash']).toBe(1)
+      foe.hp = maxHpOf(foe)
+      runTurn(me, foe, 'psychic', 'tackle')
+      expect(foe.hp).toBe(1)
+      expect(foe.held['focus-sash']).toBeUndefined()
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 })
 
