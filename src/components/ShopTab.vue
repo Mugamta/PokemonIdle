@@ -345,7 +345,7 @@ const slotRows = computed(() =>
     <template v-else-if="sub === 'gimmick'">
       <section class="card">
         <p v-if="!game.gimmickUnlocked(gimmickCur)" class="msg">
-          🔒 {{ josa(GIMMICK_INFO[gimmickCur].label, '은', '는') }} {{ regionOfGimmick(gimmickCur)?.name }}에 들어가면 해금됩니다.
+          🔒 {{ josa(GIMMICK_INFO[gimmickCur].label, '은', '는') }} {{ regionOfGimmick(gimmickCur)?.title }}에 들어가면 해금됩니다.
         </p>
         <ul v-else class="rows">
           <ShopRow v-for="r in gimmickRows" :key="r.id" :id="r.id" :price="r.price" :multi="gimmickCur === 'tera'">

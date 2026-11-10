@@ -34,7 +34,7 @@ watch(
   <div v-if="showStages">
     <header class="header">
       <button type="button" class="back" @click="showStages = false">‹ 지방 목록</button>
-      <h2 class="title">{{ view.region.id }}. {{ view.region.name }}</h2>
+      <h2 class="title">{{ view.region.id }}. {{ view.region.title }}</h2>
     </header>
     <ul ref="listEl" class="list">
       <li v-for="stage in view.region.stages" :key="stage.id" :data-id="stage.id" class="stage">
@@ -74,7 +74,7 @@ watch(
         @click="openRegion(region.id)"
       >
         <span class="num">{{ region.id }}</span>
-        <span class="name">{{ region.name }}</span>
+        <span class="name">{{ region.name }} <small class="ver">{{ region.version }}</small></span>
         <span v-if="region.hidden" class="tag hidden">히든</span>
         <span class="count">{{ region.stages.length }}개</span>
       </button>
@@ -155,6 +155,11 @@ watch(
   font-size: 14px;
 }
 
+.ver {
+  margin-left: 4px;
+  font-size: 0.8em;
+  opacity: 0.7;
+}
 .name {
   flex: 1;
   font-size: 16px;

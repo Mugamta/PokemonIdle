@@ -1,4 +1,4 @@
-// 관동·성도 타일맵. 서쪽 = 성도, 동쪽 = 관동 (26·27·28번도로로 연결)
+// 관동·성도 타일맵. 서쪽 = 성도, 동쪽 = 관동 (26·27·28번도로로 연결). 관동만 쓰는 지방은 KANTO_MAP
 // 실제 지리 배치를 대략 따른 도식. 좌표는 [x, y, 너비, 높이] 타일 단위
 import type { MapPlace, PlaceKind, Rect, RegionMap } from './types'
 
@@ -113,4 +113,12 @@ export const KANTO_JOHTO_MAP: RegionMap = {
   width: 66,
   height: 37,
   places: [...JOHTO, ...KANTO],
+}
+
+/** 관동만 (적·녹·청·피카츄, 파이어레드·리프그린, 레츠고): 관동·성도 지도에서 관동 부분을 왼쪽으로 붙임 */
+const KANTO_X = Math.min(...KANTO.flatMap((p) => p.rects.map((r) => r[0])))
+export const KANTO_MAP: RegionMap = {
+  width: KANTO_JOHTO_MAP.width - KANTO_X,
+  height: KANTO_JOHTO_MAP.height,
+  places: KANTO.map((p) => ({ ...p, rects: p.rects.map(([x, y, w, h]): Rect => [x - KANTO_X, y, w, h]) })),
 }

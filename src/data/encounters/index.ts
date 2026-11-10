@@ -1,5 +1,5 @@
 // 스테이지별 야생 출현표. JSON은 scripts/build-encounters.mjs 로 생성 (직접 수정 금지)
-import kantoJohto from './kantoJohto.json'
+// 파일 이름 = 지방 key (예: kanto-rby.json)
 
 export interface EncounterEntry {
   /** 포켓몬 id (PokeAPI 이름) */
@@ -22,13 +22,17 @@ export type EncounterSet = {
 
 export interface RegionEncounters {
   species: Record<string, { num: number; ko: string }>
+  /** 스테이지 이름 (스토리 진행 순서) */
+  order: string[]
   stages: Record<string, EncounterSet>
 }
 
+const files = import.meta.glob<RegionEncounters>('./*.json', { eager: true, import: 'default' })
+
 /** 키 = 지방 key */
-export const ENCOUNTERS: Record<string, RegionEncounters> = {
-  'kanto-johto': kantoJohto as RegionEncounters,
-}
+export const ENCOUNTERS: Record<string, RegionEncounters> = Object.fromEntries(
+  Object.entries(files).map(([file, data]) => [file.replace(/^\.\/|\.json$/g, ''), data]),
+)
 
 export function encountersAt(set: EncounterSet, phase: 'day' | 'night'): EncounterEntry[] {
   return 'all' in set ? set.all : set[phase]

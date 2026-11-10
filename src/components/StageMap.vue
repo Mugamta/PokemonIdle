@@ -40,7 +40,7 @@ const travelLeft = computed(() =>
       :label="label"
       @select="view.selectPlace"
     />
-    <div v-else class="empty">{{ region.name }} 지도 준비 중</div>
+    <div v-else class="empty">{{ region.title }} 지도 준비 중</div>
 
     <!-- 상태 표시: 낮/밤, 현재 위치/이동 -->
     <div class="status">

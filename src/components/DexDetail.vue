@@ -11,7 +11,7 @@ import {
   type LearnEntry,
 } from '../data/dex'
 import { artistNames, loadSprites, resolveVariant, spriteData } from '../data/sprites'
-import { regionOfGen } from '../data/stages'
+import { regionsOfGen } from '../data/stages'
 import { useGameStore } from '../stores/game'
 import PokeSprite from './PokeSprite.vue'
 import DexSummon from './DexSummon.vue'
@@ -56,7 +56,7 @@ function genUnlocked(gens: number[]) {
 }
 /** 잠긴 세대 한정 기술: 해금에 필요한 지방 이름들 */
 function requiredRegions(gens: number[]) {
-  const names = gens.map((g) => regionOfGen(g)?.name).filter((n): n is string => !!n)
+  const names = gens.flatMap((g) => regionsOfGen(g).map((r) => r.title))
   return [...new Set(names)].join(' / ')
 }
 function genLevels(lv?: Record<string, number>) {

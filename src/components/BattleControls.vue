@@ -69,7 +69,7 @@ const gimmickButtons = computed(() =>
 /** 아직 해금하지 않은 특수 기능 안내 (다음 하나만) */
 const nextGimmick = computed(() => {
   const g = GIMMICKS.find((x) => !game.gimmickUnlocked(x))
-  return g && game.anyGimmickUnlocked ? `${GIMMICK_INFO[g].label}: ${regionOfGimmick(g)?.name ?? '?'} 입장 시 해금` : ''
+  return g && game.anyGimmickUnlocked ? `${GIMMICK_INFO[g].label}: ${regionOfGimmick(g)?.title ?? '?'} 입장 시 해금` : ''
 })
 /** 지금 이어지고 있는 특수 기능 효과 */
 const activeText = computed(() => {

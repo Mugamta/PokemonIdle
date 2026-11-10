@@ -111,7 +111,7 @@ import {
   type CatchContext,
 } from '../data/items'
 import { BATTLE_HELD, POWER_ITEM_EV, POWER_ITEMS } from '../core/items'
-import { findStage, migrateStageId, REGIONS, type Region, type Stage } from '../data/stages'
+import { findStage, migrateLegacyRegionIds, migrateLegacyStageId, REGIONS, type Region, type Stage } from '../data/stages'
 import { useBattleLogStore } from './battleLog'
 
 /** 이동 대기 시간 (공중날기 포켓몬이 없을 때) */
@@ -163,8 +163,8 @@ export type StageMode = 'advance' | 'repeat'
 export type AutoGimmick = 'off' | 'boss' | 'always'
 export const AUTO_GIMMICK_LABELS: Record<AutoGimmick, string> = { off: '안 씀', boss: '보스전만', always: '매 전투' }
 
-/** 스테이지 순서 버전. 2 = 수상 스테이지를 레벨에 맞게 뒤로 옮김 */
-const STAGE_ORDER = 2
+/** 스테이지 순서 버전. 2 = 수상 스테이지를 레벨에 맞게 뒤로 옮김, 3 = 같은 지방도 작품별로 나눔 */
+const STAGE_ORDER = 3
 
 /** 보스 등장 연출 시간 */
 export const BOSS_INTRO_MS = 2400
@@ -692,20 +692,22 @@ export const useGameStore = defineStore('game', {
       }
     },
 
-    /** 수상 스테이지 재배치 전 저장 데이터의 스테이지 id를 현재 id로 변환 */
-    migrateStageIds() {
-      const m = migrateStageId
+    /** 지방을 작품별로 나누기 전 저장 데이터의 스테이지·지방 번호를 현재 번호로 변환 */
+    migrateStageIds(savedStageOrder: number) {
+      const m = (id: string) => migrateLegacyStageId(id, savedStageOrder)
+      this.unlockedRegions = migrateLegacyRegionIds(this.unlockedRegions)
+      if (!this.unlockedRegions.includes(1)) this.unlockedRegions.unshift(1)
       this.currentStageId = m(this.currentStageId)
       if (this.travel) this.travel.to = m(this.travel.to)
       if (this.faint) this.faint.returnTo = m(this.faint.returnTo)
-      this.clearedStages = this.clearedStages.map(m)
+      this.clearedStages = [...new Set(this.clearedStages.map(m))]
       this.stageProgress = Object.fromEntries(Object.entries(this.stageProgress).map(([k, v]) => [m(k), v]))
     },
     /** 불러온 저장 데이터 보정 */
     /** savedStageOrder = 저장 데이터의 stageOrder (없으면 이전 순서) */
     validate(savedStageOrder: number | undefined = STAGE_ORDER) {
-      // 이전 저장 데이터 호환: 수상 스테이지 순서 변경 전 스테이지 id 변환
-      if (savedStageOrder !== STAGE_ORDER) this.migrateStageIds()
+      // 이전 저장 데이터 호환: 지방을 작품별로 나누기 전(수상 스테이지 재배치 전 포함) 스테이지 id 변환
+      if (savedStageOrder < STAGE_ORDER) this.migrateStageIds(savedStageOrder)
       this.stageOrder = STAGE_ORDER
       if (!findStage(this.currentStageId)) this.currentStageId = '1-1'
       if (this.travel && !findStage(this.travel.to)) this.travel = null
@@ -822,9 +824,11 @@ export const useGameStore = defineStore('game', {
       this.nextEncounterAt = 0
       const region = findStage(stageId)?.region
       if (region && !this.unlockedRegions.includes(region.id)) {
+        // 같은 특수 기능을 해금하는 지방이 여럿 (칼로스·호연 ORAS·관동 레츠고 = 메가진화 등) → 처음 해금할 때만 알림
+        const newGimmick = !!region.unlocks && !this.gimmickUnlocked(region.unlocks)
         this.unlockedRegions.push(region.id)
         this.backfillLearned()
-        if (region.unlocks) {
+        if (region.unlocks && newGimmick) {
           const info = GIMMICK_INFO[region.unlocks]
           useBattleLogStore().push(`${ro(region.name)} 들어와 ${josa(info.label, '이', '가')} 해금되었다! ${info.desc}`, 'good')
         }

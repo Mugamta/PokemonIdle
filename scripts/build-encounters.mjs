@@ -1,16 +1,17 @@
-// scripts/.cache/encounters-raw.json (fetch-encounters.mjs 결과) → src/data/encounters/kantoJohto.json
-// 사용: node scripts/build-encounters.mjs
+// scripts/.cache/encounters-raw.json (fetch-encounters.mjs 결과) → src/data/encounters/<지방 key>.json
+// 사용: node scripts/build-encounters.mjs   (지방·장소 정의는 scripts/encounter-groups.mjs)
 //
 // 규칙
 // - 육지 스테이지 = 풀숲/동굴(walk) + 박치기 + 바위깨기, 수상 스테이지 "OO (수상)" = 파도타기 + 낚시
 // - 낮/밤 출현표를 따로 만듦. 원작 아침+낮 → 낮, 밤 → 밤. 시간 구분 없는 게임(FRLG)은 낮=밤
-// - 구역(층)·버전별 출현표는 평균내어 하나로 합침. 레벨 차이가 큰 구역은 SPLITS로 별도 스테이지
+// - 구역(층)·버전별 출현표는 평균내어 하나로 합침 (같은 지방으로 묶은 버전들의 출현표를 섞음). 레벨 차이가 큰 구역은 SPLITS로 별도 스테이지
 // - vg: 출현 데이터를 가져온 게임의 버전 그룹 (야생 포켓몬 기술 배치 기준)
 // - 특수 조건(대량발생, 라디오, 요일, 벌레잡기대회, 도감 완성 후, 고정 심볼 등)으로만 나오는
 //   일반 포켓몬은 출현율 0.1% 고정. 전설/환상, 선물/교환 포켓몬은 제외
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { GROUPS } from './encounter-groups.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url))
 const raw = JSON.parse(await readFile(path.join(ROOT, '.cache', 'encounters-raw.json'), 'utf8'))
@@ -20,8 +21,10 @@ const SPECIAL_RATE = 0.1
 // 조우 방법별 가중치 (스테이지 내 방법이 여러 개일 때 비율)
 const LAND_WEIGHTS = { walk: 0.8, headbutt: 0.1, 'rock-smash': 0.1 }
 const WATER_WEIGHTS = { surf: 0.4, 'old-rod': 0.2, 'good-rod': 0.2, 'super-rod': 0.2 }
-const SPECIAL_METHODS = new Set(['static', 'pokeflute', 'squirt-bottle'])
-const EXCLUDED_METHODS = new Set(['gift', 'npc-trade'])
+const SPECIAL_METHODS = new Set(['static', 'pokeflute', 'squirt-bottle', 'honey-tree', 'feebas-tile-fishing', 'devon-scope', 'seaweed'])
+const EXCLUDED_METHODS = new Set(['gift', 'gift-egg', 'npc-trade'])
+// 같은 방법으로 묶어서 계산 (하트골드·소울실버 박치기 나무 높이별 구분)
+const METHOD_ALIAS = { 'headbutt-low': 'headbutt', 'headbutt-normal': 'headbutt', 'headbutt-high': 'headbutt' }
 
 // 레벨 차이가 커서 분리하는 구역. 키 = 원래 스테이지(장소) 이름
 const SPLITS = {
@@ -55,6 +58,11 @@ const dimOf = (c) =>
   : c.startsWith('headbutt-tree-') ? 'tree'
   : c.startsWith('story-progress-') ? 'story'
   : c.startsWith('weekday-') ? 'weekday'
+  : c.startsWith('radar-') ? 'radar'
+  : c.startsWith('slot2-') ? 'slot2'
+  : c.startsWith('johto-safari-blocks-') ? 'safari-blocks'
+  : c.startsWith('great-marsh-daily-') ? 'marsh-daily'
+  : c.startsWith('backlot-') ? 'backlot'
   : c
 
 // 일반(비특수) 상황에서 각 조건 차원이 가질 수 있는 값. 여러 개면 평균
@@ -66,6 +74,11 @@ function normalOptions(dim, phase) {
     case 'contest': return ['bug-catching-contest-no']
     case 'tree': return ['headbutt-tree-common', 'headbutt-tree-rare']
     case 'story': return ['story-progress-before-national-dex']
+    case 'radar': return ['radar-off']
+    case 'slot2': return ['slot2-none']
+    case 'safari-blocks': return ['johto-safari-blocks-inactive']
+    case 'marsh-daily': return ['great-marsh-daily-slot-none']
+    case 'backlot': return ['backlot-not-mentioned']
     default: return [null] // weekday 등: 일반 상황에서는 해당 조건이 성립하지 않음
   }
 }
@@ -158,31 +171,37 @@ function buildStage(rows, weights) {
   return tables
 }
 
-// 출현 데이터의 게임 → 버전 그룹 (야생 포켓몬 기술 배치에 사용)
-const VG = { firered: 'firered-leafgreen', leafgreen: 'firered-leafgreen', heartgold: 'heartgold-soulsilver', soulsilver: 'heartgold-soulsilver' }
-
-const stages = {}
-const usedSpecies = new Set()
-for (const [place, { rows: allRows, versions }] of Object.entries(raw.stages)) {
-  const vg = VG[versions[0]]
-  const rows = allRows.filter((r) => !EXCLUDED_METHODS.has(r.method))
-  const parts = SPLITS[place] ?? [{ name: place, areas: null }]
-  for (const part of parts) {
-    const partRows = part.areas ? rows.filter((r) => part.areas.includes(r.area)) : rows
-    const land = buildStage(partRows, LAND_WEIGHTS)
-    if (land) stages[part.name] = { place, kind: 'land', vg, ...land }
-  }
-  const water = buildStage(rows, WATER_WEIGHTS)
-  if (water) stages[`${place} (수상)`] = { place, kind: 'water', vg, ...water }
-}
-for (const s of Object.values(stages))
-  for (const t of [s.all, s.day, s.night]) t?.forEach((e) => usedSpecies.add(e.p))
-
-const species = {}
-for (const p of [...usedSpecies].sort((a, b) => raw.species[a].num - raw.species[b].num))
-  species[p] = { num: raw.species[p].num, ko: raw.species[p].ko }
-
 const outDir = path.join(ROOT, '..', 'src', 'data', 'encounters')
 await mkdir(outDir, { recursive: true })
-await writeFile(path.join(outDir, 'kantoJohto.json'), JSON.stringify({ species, stages }))
-console.log('stages', Object.keys(stages).length, 'species', Object.keys(species).length)
+for (const group of GROUPS) {
+  const stages = {}
+  const order = []
+  const usedSpecies = new Set()
+  for (const [place, slugs] of group.stages) {
+    const rows = [slugs].flat().flatMap((slug) => raw.locations[slug] ?? [])
+      .filter((r) => group.versions.includes(r.version) && !EXCLUDED_METHODS.has(r.method))
+      .map((r) => (METHOD_ALIAS[r.method] ? { ...r, method: METHOD_ALIAS[r.method] } : r))
+    const parts = SPLITS[place] ?? [{ name: place, areas: null }]
+    const before = order.length
+    for (const part of parts) {
+      const partRows = part.areas ? rows.filter((r) => part.areas.includes(r.area)) : rows
+      const land = buildStage(partRows, LAND_WEIGHTS)
+      if (land) { stages[part.name] = { place, kind: 'land', vg: group.vg, ...land }; order.push(part.name) }
+    }
+    const water = buildStage(rows, WATER_WEIGHTS)
+    if (water) {
+      const name = `${place} (수상)`
+      stages[name] = { place, kind: 'water', vg: group.vg, ...water }
+      // 육지가 없는 장소(바닷길 등)는 장소 자리에, 있으면 육지 뒤에
+      order.push(name)
+    }
+    if (order.length === before) console.warn(`${group.key}: 일반 출현 없음 → 제외: ${place}`)
+  }
+  for (const s of Object.values(stages))
+    for (const t of [s.all, s.day, s.night]) t?.forEach((e) => usedSpecies.add(e.p))
+  const species = {}
+  for (const p of [...usedSpecies].sort((a, b) => raw.species[a].num - raw.species[b].num))
+    species[p] = { num: raw.species[p].num, ko: raw.species[p].ko }
+  await writeFile(path.join(outDir, `${group.key}.json`), JSON.stringify({ species, order, stages }))
+  console.log(group.key.padEnd(12), 'stages', String(Object.keys(stages).length).padStart(3), 'species', Object.keys(species).length)
+}
