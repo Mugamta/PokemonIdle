@@ -58,28 +58,34 @@ import { josa } from '../core/battle'
 type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'perks' | 'slots' | 'heldSlots' | 'sell'
 /** 하단 탭: 도구상점(item) / 강화상점(upgrade) */
 const props = defineProps<{ kind: 'item' | 'upgrade' }>()
-const UPGRADE_SUBS: Sub[] = ['growth', 'perks', 'slots', 'heldSlots']
-const ALL_SUBS: { id: Sub; label: string }[] = [
-  { id: 'items', label: '회복' },
-  { id: 'ball', label: '볼' },
-  { id: 'battle', label: '배틀' },
-  { id: 'held', label: '지닌 도구' },
-  { id: 'tm', label: '기술머신' },
-  { id: 'evo', label: '진화' },
-  { id: 'train', label: '육성' },
-  { id: 'gimmick', label: '특수 기능' },
-  { id: 'growth', label: '육성 강화' },
-  { id: 'perks', label: '편의성' },
-  { id: 'slots', label: '기술칸' },
-  { id: 'heldSlots', label: '도구칸' },
-  { id: 'sell', label: '판매' },
+const SUB_LABELS: Record<Sub, string> = {
+  items: '회복',
+  ball: '볼',
+  battle: '배틀',
+  held: '지닌 도구',
+  tm: '기술머신',
+  evo: '진화',
+  train: '육성',
+  gimmick: '특수 기능',
+  growth: '육성 강화',
+  perks: '편의성',
+  slots: '기술칸',
+  heldSlots: '도구칸',
+  sell: '판매',
+}
+/** 상단 탭: 비슷한 기능(Sub)을 묶은 것. 묶인 Sub의 분류는 아래 작은 탭으로 나옴 */
+const GROUPS: { id: string; label: string; kind: 'item' | 'upgrade'; subs: Sub[] }[] = [
+  { id: 'consumable', label: '소모품', kind: 'item', subs: ['items', 'ball', 'battle'] },
+  { id: 'held', label: '지닌 도구', kind: 'item', subs: ['held'] },
+  { id: 'tm', label: '기술머신', kind: 'item', subs: ['tm'] },
+  { id: 'evo', label: '진화·변신', kind: 'item', subs: ['evo', 'gimmick'] },
+  { id: 'train', label: '육성', kind: 'item', subs: ['train'] },
+  { id: 'sell', label: '판매', kind: 'item', subs: ['sell'] },
+  { id: 'growth', label: '육성 강화', kind: 'upgrade', subs: ['growth'] },
+  { id: 'perks', label: '편의성', kind: 'upgrade', subs: ['perks'] },
+  { id: 'slots', label: '칸 추가', kind: 'upgrade', subs: ['slots', 'heldSlots'] },
 ]
 const game = useGameStore()
-// 특수 기능 탭은 메가진화·Z기술·다이맥스·테라스탈 중 하나라도 해금한 뒤에 나옴
-const SUBS = computed(() =>
-  ALL_SUBS.filter((t) => UPGRADE_SUBS.includes(t.id) === (props.kind === 'upgrade') && (t.id !== 'gimmick' || game.anyGimmickUnlocked)),
-)
-const sub = ref<Sub>(SUBS.value[0]!.id)
 onMounted(() => {
   loadDex().catch(() => {})
   loadLearnsets().catch(() => {})
@@ -123,12 +129,29 @@ const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
     { id: 'tera', label: '테라피스' },
   ],
 }
-/** 상단 탭별로 선택한 작은 탭 (탭을 오가도 유지) */
-const mini = ref<Partial<Record<Sub, string>>>(
-  Object.fromEntries(Object.entries(MINI).map(([k, v]) => [k, v![0]!.id])),
+type Entry = { key: string; sub: Sub; mini?: string; label: string }
+/** Sub 하나를 작은 탭 항목들로 펼침 (분류가 있으면 분류마다, 없으면 Sub 자체) */
+const entriesOf = (s: Sub): Entry[] =>
+  MINI[s]?.map((m) => ({ key: `${s}:${m.id}`, sub: s, mini: m.id, label: m.label })) ?? [
+    { key: s, sub: s, label: SUB_LABELS[s] },
+  ]
+// 특수 기능은 메가진화·Z기술·다이맥스·테라스탈 중 하나라도 해금한 뒤에 나옴
+const groups = computed(() =>
+  GROUPS.filter((g) => g.kind === props.kind)
+    .map((g) => ({
+      ...g,
+      entries: g.subs.filter((s) => s !== 'gimmick' || game.anyGimmickUnlocked).flatMap(entriesOf),
+    }))
+    .filter((g) => g.entries.length > 0),
 )
-const miniTabs = computed(() => MINI[sub.value])
-const cur = computed(() => mini.value[sub.value])
+const group = ref(groups.value[0]!.id)
+/** 상단 탭별로 선택한 작은 탭 (탭을 오가도 유지) */
+const picked = ref<Record<string, string>>({})
+const curGroup = computed(() => groups.value.find((g) => g.id === group.value) ?? groups.value[0]!)
+const curEntry = computed(() => curGroup.value.entries.find((e) => e.key === picked.value[curGroup.value.id]) ?? curGroup.value.entries[0]!)
+const miniTabs = computed(() => (curGroup.value.entries.length > 1 ? curGroup.value.entries : null))
+const sub = computed(() => curEntry.value.sub)
+const cur = computed(() => curEntry.value.mini)
 const catItems = computed(() => SHOP_ITEMS.filter((i) => i.category === cur.value))
 const balls = SHOP_ITEMS.filter((i) => i.category === 'ball')
 const battleItems = SHOP_ITEMS.filter((i) => i.category === 'battle')
@@ -277,13 +300,13 @@ const slotRows = computed(() =>
   <div class="shop">
     <div class="tabs-head">
       <nav class="sub-tabs">
-        <button v-for="t in SUBS" :key="t.id" type="button" :class="{ active: sub === t.id }" @click="sub = t.id">
-          {{ t.label }}
+        <button v-for="g in groups" :key="g.id" type="button" :class="{ active: curGroup.id === g.id }" @click="group = g.id">
+          {{ g.label }}
         </button>
       </nav>
       <!-- 상단 탭 안의 작은 탭 (분류) -->
       <nav v-if="miniTabs" class="mini-tabs">
-        <button v-for="m in miniTabs" :key="m.id" type="button" :class="{ active: cur === m.id }" @click="mini[sub] = m.id">
+        <button v-for="m in miniTabs" :key="m.key" type="button" :class="{ active: curEntry.key === m.key }" @click="picked[curGroup.id] = m.key">
           {{ m.label }}
         </button>
       </nav>
