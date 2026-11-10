@@ -382,17 +382,50 @@ describe('체력 자동 회복 (전투 중·전투 후)', () => {
   })
 })
 
-describe('체력·PP 자동 사용에 합쳐진 자동 구매', () => {
-  test('이전 저장 데이터: 체력·PP 자동 구매 기능은 없애고 산 값을 돌려줌', () => {
+describe('체력·PP·상태이상 자동 사용에 합쳐진 자동 구매', () => {
+  test('이전 저장 데이터: 체력·PP·상태이상 자동 구매 기능은 없애고 산 값을 돌려줌', () => {
     const game = useGameStore()
-    ;(game.perks as string[]).push('autoBuy:heal', 'autoBuy:pp', 'autoBuy:ball')
+    ;(game.perks as string[]).push('autoBuy:heal', 'autoBuy:pp', 'autoBuy:status', 'autoBuy:ball')
     ;(game.autoBuy as Record<string, boolean>).heal = true
+    ;(game.autoBuy as Record<string, boolean>).status = true
     game.money = 0
     game.validate()
     expect(game.perks).toEqual(['autoBuy:ball'])
-    expect(game.money).toBe(10000)
+    expect(game.money).toBe(15000)
     expect(Object.keys(game.autoBuy)).not.toContain('heal')
-    expect(Object.keys(game.autoBuyItem).sort()).toEqual(['ball', 'status'])
+    expect(Object.keys(game.autoBuy)).not.toContain('status')
+    expect(Object.keys(game.autoBuyItem)).toEqual(['ball'])
+  })
+
+  test('상태이상: 가방에 없으면 고칠 수 있는 것 중 가장 싼 아이템을 사서 씀', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    game.clearedStages.push('1-1')
+    const m = game.party[0]!
+    m.status = 'psn'
+    game.perks.push('autoUse:status')
+    game.autoUse.status = true
+    game.money = 10000
+    expect(game.autoUseItem()).toBe(true)
+    expect(m.status).toBeFalsy()
+    expect(game.money).toBe(10000 - 100) // 복숭열매
+  })
+
+  test('상태이상: 가진 것이 있으면 사지 않고 씀', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    const m = game.party[0]!
+    m.status = 'psn'
+    game.items['full-heal'] = 1
+    game.perks.push('autoUse:status')
+    game.autoUse.status = true
+    game.money = 10000
+    expect(game.autoUseItem()).toBe(true)
+    expect(m.status).toBeFalsy()
+    expect(game.money).toBe(10000)
+    expect(game.items['full-heal'] ?? 0).toBe(0)
   })
 
   test('PP: 가방에 없으면 가장 싼 아이템을 사서 씀', () => {

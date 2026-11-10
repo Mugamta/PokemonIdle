@@ -94,6 +94,7 @@ import {
   healAmountOf,
   pickHealInBattle,
   planHealAfterBattle,
+  pickCheapestItem,
   DEFAULT_AUTO_BUY,
   AUTO_USE_KEYS,
   AUTO_BUY_CATS,
@@ -958,8 +959,8 @@ export const useGameStore = defineStore('game', {
         }
       }
       this.autoRevive = sanitizeAutoRevive(this.autoRevive)
-      // 이전 저장 데이터 호환: 체력·PP·기절 회복 자동 구매가 따로 있던 시절 → 자동 사용에 합쳐졌으므로 산 값을 돌려줌
-      for (const old of ['autoBuy:heal', 'autoBuy:pp', 'autoBuy:revive']) {
+      // 이전 저장 데이터 호환: 체력·PP·기절·상태이상 회복 자동 구매가 따로 있던 시절 → 자동 사용에 합쳐졌으므로 산 값을 돌려줌
+      for (const old of ['autoBuy:heal', 'autoBuy:pp', 'autoBuy:revive', 'autoBuy:status']) {
         const i = (this.perks as string[]).indexOf(old)
         if (i < 0) continue
         this.perks.splice(i, 1)
@@ -1725,13 +1726,11 @@ export const useGameStore = defineStore('game', {
       if (!m || !me || this.faint) return false
       // 0. 전투 후: 기절한 파티 포켓몬 살리기
       if (!this.enemy && this.autoReviveRun('reviveAfter', false)) return true
-      const owned = (cat: ItemCategory) =>
-        SHOP_ITEMS.filter((i) => i.category === cat && (this.items[i.id] ?? 0) > 0 && this.itemEffect(i))
       const on = (cat: AutoUseKey) => this.perks.includes(`autoUse:${cat}`) && !!this.autoUse[cat]
       // 전투 중 상대를 타격할 기술이 하나도 없으면 (PP와 무관하게) 회복약·PP 회복은 쓰지 않음
       const useless = !!this.enemy && this.bestDamageVsFoe(0, false) <= 0
 
-      // 가방에 없으면 사서 씀 (체력·PP 회복 자동 사용에 포함된 자동 구매)
+      // 가방에 없으면 사서 씀 (체력·상태이상·PP 회복 자동 사용에 포함된 자동 구매)
       const ready = (id: string) => (this.items[id] ?? 0) > 0 || this.buyItem(id, 1)
       // 1. 체력: 시작 기준 아래면 목표까지 채움 (없는 아이템은 사서 씀).
       //    전투 중 = 한 개로 가장 잘 채우는 아이템, 전투 후 = 돈이 가장 적게 드는 조합을 한꺼번에
@@ -1760,10 +1759,18 @@ export const useGameStore = defineStore('game', {
           if (used) return true
         }
       }
-      // 2. 상태이상: 고칠 수 있는 가장 싼 아이템
+      // 2. 상태이상: 고칠 수 있는 아이템 중 돈이 가장 적게 드는 것 (가진 것은 공짜, 없으면 사서 씀)
       if (on('status') && m.status) {
-        const pick = [...owned('status')].sort((a, b) => a.price - b.price)[0]
-        if (pick && this.useItem(pick.id)) return true
+        const pick = pickCheapestItem(
+          SHOP_ITEMS.filter((i) => i.category === 'status' && this.itemEffect(i)).map((i) => ({
+            id: i.id,
+            price: i.price,
+            owned: this.items[i.id] ?? 0,
+            // 친밀도가 떨어지는 아이템은 사지 않음
+            buyable: !i.friendship && this.money >= i.price,
+          })),
+        )
+        if (pick && ready(pick) && this.useItem(pick)) return true
       }
       // 3. PP: PP가 0인 기술이 있으면. 2개 이상이면 전체 회복 아이템 우선 (없으면 가장 싼 것을 사서 씀)
       if (!useless && on('pp') && this.ppActive) {
