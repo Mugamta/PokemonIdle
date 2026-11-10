@@ -4,7 +4,9 @@ import { dexData, loadDex, STAT_LABELS, TYPE_COLORS } from '../data/dex'
 import { calcStats, NATURES, STAT_KEYS } from '../data/natures'
 import { evolutionsOf, FRIENDSHIP_EVOLVE, FRIENDSHIP_MAX } from '../data/evolutions'
 import { HEART_SCALE } from '../data/shop'
+import { isMachine, isRecord } from '../data/items'
 import {
+  canLearnMachine,
   evolutionCondText,
   evolutionMet,
   friendshipOf,
@@ -137,6 +139,29 @@ const forgotten = computed(() => {
 /** 레벨업으로 배우려는 기술 대기열 (맨 앞만 처리 가능) */
 const pendingList = computed(() => (member.value?.pending ?? []).map((id) => ({ id, info: moveInfo(id) })))
 const heartScales = computed(() => game.items[HEART_SCALE] ?? 0)
+/** 기술 교체 하위 탭: 자력기(잊은 기술 되살리기) / 기술머신 */
+const learnTab = ref<'self' | 'tm'>('self')
+/** 가지고 있는 기술머신 중 이 포켓몬이 새로 배울 수 있는 것 */
+const learnableMachines = computed(() => {
+  const m = member.value
+  if (!m || !dexData.value) return []
+  const known = m.learned ?? m.moves
+  const seen = new Set<string>()
+  return Object.entries(game.items)
+    .flatMap(([id, n]) => {
+      const move = n > 0 && isMachine(id) ? dexData.value!.items[id]?.move : undefined
+      if (!move || known.includes(move) || seen.has(move) || !canLearnMachine(m, move)) return []
+      seen.add(move)
+      return [{ id, n, name: dexData.value!.items[id]?.ko ?? id, move, info: moveInfo(move), record: isRecord(id) }]
+    })
+    .sort((a, b) => (a.info?.ko ?? a.move).localeCompare(b.info?.ko ?? b.move, 'ko'))
+})
+function teach(itemId: string) {
+  const s = picked.value
+  if (!s || s.kind === 'locked') return
+  game.useMachine(memberIdx.value, itemId, s.kind === 'move' ? s.id : undefined)
+  pickedSlot.value = null
+}
 
 function clickSlot(i: number) {
   const s = moveSlots.value[i]
@@ -486,28 +511,62 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                   {{ picked.info?.ko ?? picked.id }} 잊고 {{ pendingList[0]!.info?.ko ?? pendingList[0]!.id }} 배우기
                 </button>
               </div>
-              <h5 class="train-sec">
-                잊은 기술 되살리기
-                <span class="muted">하트비늘 ×{{ heartScales }} (1개 소모<template v-if="!heartScales"> · 상점 → 육성 → 기술 떠올리기</template>)</span>
-              </h5>
-              <p v-if="!forgotten.length" class="msg">잊은 기술이 없습니다.</p>
-              <ul v-else class="rows mrows">
-                <li
-                  v-for="m in forgotten"
-                  :key="m.id"
-                  :class="{ clickable: heartScales > 0, disabled: !heartScales }"
-                  :title="heartScales ? '하트비늘 1개를 써서 이 기술을 장착합니다' : '하트비늘이 없습니다'"
-                  @click="heartScales && recall(m.id)"
-                >
-                  <span class="grow">{{ m.info?.ko ?? m.id }}</span>
-                  <template v-if="m.info">
-                    <span class="type" :style="{ background: TYPE_COLORS[m.info.type] }">{{ dexData.types[m.info.type] }}</span>
-                    <span class="muted">{{ CLS_LABEL[m.info.cls] }}</span>
-                    <span class="muted num"><small>위력</small> {{ m.info.power ?? '-' }}</span>
-                    <span class="muted num"><small>명중</small> {{ m.info.acc ?? '-' }}</span>
-                  </template>
-                </li>
-              </ul>
+              <div class="learn-tabs">
+                <button type="button" :class="{ active: learnTab === 'self' }" @click="learnTab = 'self'">
+                  자력기 <small>{{ forgotten.length }}</small>
+                </button>
+                <button type="button" :class="{ active: learnTab === 'tm' }" @click="learnTab = 'tm'">
+                  기술머신 <small>{{ learnableMachines.length }}</small>
+                </button>
+              </div>
+              <template v-if="learnTab === 'tm'">
+                <h5 class="train-sec">
+                  기술머신으로 가르치기
+                  <span class="muted">가지고 있는 기술머신 중 배울 수 있는 기술 · 기술레코드는 사라짐</span>
+                </h5>
+                <p v-if="!learnableMachines.length" class="msg">배울 수 있는 기술머신이 없습니다. 상점 → 기술머신에서 살 수 있습니다.</p>
+                <ul v-else class="rows mrows">
+                  <li
+                    v-for="t in learnableMachines"
+                    :key="t.move"
+                    class="clickable"
+                    :title="`${t.name}${t.record ? ` ×${t.n} (1개 소모)` : ''}로 이 기술을 가르칩니다`"
+                    @click="teach(t.id)"
+                  >
+                    <span class="grow">{{ t.info?.ko ?? t.move }} <small class="muted">{{ t.name }}<template v-if="t.record"> ×{{ t.n }}</template></small></span>
+                    <template v-if="t.info">
+                      <span class="type" :style="{ background: TYPE_COLORS[t.info.type] }">{{ dexData.types[t.info.type] }}</span>
+                      <span class="muted">{{ CLS_LABEL[t.info.cls] }}</span>
+                      <span class="muted num"><small>위력</small> {{ t.info.power ?? '-' }}</span>
+                      <span class="muted num"><small>명중</small> {{ t.info.acc ?? '-' }}</span>
+                    </template>
+                  </li>
+                </ul>
+              </template>
+              <template v-else>
+                <h5 class="train-sec">
+                  잊은 기술 되살리기
+                  <span class="muted">하트비늘 ×{{ heartScales }} (1개 소모<template v-if="!heartScales"> · 상점 → 육성 → 기술 떠올리기</template>)</span>
+                </h5>
+                <p v-if="!forgotten.length" class="msg">잊은 기술이 없습니다.</p>
+                <ul v-else class="rows mrows">
+                  <li
+                    v-for="m in forgotten"
+                    :key="m.id"
+                    :class="{ clickable: heartScales > 0, disabled: !heartScales }"
+                    :title="heartScales ? '하트비늘 1개를 써서 이 기술을 장착합니다' : '하트비늘이 없습니다'"
+                    @click="heartScales && recall(m.id)"
+                  >
+                    <span class="grow">{{ m.info?.ko ?? m.id }}</span>
+                    <template v-if="m.info">
+                      <span class="type" :style="{ background: TYPE_COLORS[m.info.type] }">{{ dexData.types[m.info.type] }}</span>
+                      <span class="muted">{{ CLS_LABEL[m.info.cls] }}</span>
+                      <span class="muted num"><small>위력</small> {{ m.info.power ?? '-' }}</span>
+                      <span class="muted num"><small>명중</small> {{ m.info.acc ?? '-' }}</span>
+                    </template>
+                  </li>
+                </ul>
+              </template>
               <div class="picker-actions">
                 <button type="button" class="small-btn" @click="pickedSlot = null">취소</button>
               </div>
@@ -520,6 +579,30 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 </template>
 
 <style scoped>
+/* 기술 교체: 자력기 / 기술머신 탭 */
+.learn-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.learn-tabs button {
+  flex: 1;
+  padding: 6px;
+  border: 1px solid #3a3a44;
+  border-radius: 6px;
+  background: transparent;
+  color: #9a9aa6;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.learn-tabs button.active {
+  border-color: #ffcb05;
+  color: #fff;
+}
+
 .item-text.why {
   color: #ffb74d;
 }
