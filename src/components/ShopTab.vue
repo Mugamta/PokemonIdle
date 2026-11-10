@@ -15,6 +15,7 @@ import {
   SPEED_PERKS,
   STAT_VIEW_PERKS,
   AUTO_HEAL_STEPS,
+  AUTO_BALL_STEPS,
   AUTO_ASH_STEPS,
   SACRED_ASH,
   isAutoReviveItem,
@@ -39,7 +40,6 @@ import {
   TRAIN_ITEMS,
   BOTTLE_CAP_LEVEL,
   VITAMIN_EV,
-  type AutoBuyCategory,
   type AutoHealKey,
   type AutoUseKey,
   type ChainPerk,
@@ -152,7 +152,6 @@ const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
   perks: [
     { id: 'battle', label: '전투·탐색' },
     { id: 'autoUse', label: '자동 사용' },
-    { id: 'autoBuy', label: '자동 구매' },
     { id: 'info', label: '정보 표시' },
   ],
   gimmick: [
@@ -265,8 +264,8 @@ const CHAIN_BY_MINI: Record<string, ChainPerk[]> = {
   info: [...DISPLAY_PERKS, ...STAT_VIEW_PERKS],
 }
 const perkList = computed(() => CHAIN_BY_MINI[cur.value ?? ''] ?? [])
-/** 자동 사용·자동 구매 탭에 나오는 아이템 편의성 */
-const itemPerks = computed(() => PERKS.filter((p) => perkKind(p).kind === cur.value))
+/** 자동 사용 탭에 나오는 아이템 편의성 */
+const itemPerks = computed(() => (cur.value === 'autoUse' ? PERKS : []))
 /** 노력치 한계 돌파 2 다음 구매 정보 */
 const evBreak2 = computed(() => ({
   price: evBreak2Price(game.evBreaks + 1),
@@ -274,15 +273,7 @@ const evBreak2 = computed(() => ({
   next: evStatCap(game.evBreaks + 1),
 }))
 
-function perkKind(p: Perk) {
-  const [kind, cat] = p.id.split(':') as ['autoUse' | 'autoBuy', AutoBuyCategory]
-  return { kind, cat }
-}
-function togglePerk(p: Perk, on: boolean) {
-  const { kind, cat } = perkKind(p)
-  if (kind === 'autoUse') game.setAutoUse(cat as AutoUseKey, on)
-  else game.setAutoBuy(cat, on)
-}
+const autoKeyOf = (p: Perk) => p.id.split(':')[1] as AutoUseKey
 /** 기절 회복 자동 사용 설정이 있는 기능이면 그 키 */
 const reviveKeyOf = (p: Perk): AutoReviveKey | null =>
   p.id === 'autoUse:revive' ? 'revive' : p.id === 'autoUse:reviveAfter' ? 'reviveAfter' : null
@@ -734,8 +725,8 @@ const slotRows = computed(() =>
               <label class="toggle">
                 <input
                   type="checkbox"
-                  :checked="!!game[perkKind(p).kind][perkKind(p).cat]"
-                  @change="togglePerk(p, ($event.target as HTMLInputElement).checked)"
+                  :checked="!!game.autoUse[autoKeyOf(p)]"
+                  @change="game.setAutoUse(autoKeyOf(p), ($event.target as HTMLInputElement).checked)"
                 />
                 켜기
               </label>
@@ -747,16 +738,12 @@ const slotRows = computed(() =>
           </div>
           <p class="desc">{{ p.desc }}</p>
           <!-- 세부 설정 -->
-          <div v-if="game.hasPerk(p.id) && perkKind(p).kind === 'autoBuy'" class="opt">
-            구매할 아이템
-            <select
-              :value="game.autoBuyItem[perkKind(p).cat]"
-              @change="game.setAutoBuyItem(perkKind(p).cat, ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="it in SHOP_ITEMS.filter((i) => i.category === perkKind(p).cat)" :key="it.id" :value="it.id">
-                {{ itemName(it.id) }} ({{ won(it.price) }})
-              </option>
+          <div v-if="game.hasPerk(p.id) && p.id === 'autoUse:ball'" class="opt">
+            목표 포획률
+            <select :value="game.autoBall" @change="game.setAutoBall(Number(($event.target as HTMLSelectElement).value))">
+              <option v-for="t in AUTO_BALL_STEPS" :key="t" :value="t">{{ t }}%</option>
             </select>
+            이상인 볼 중 가성비 좋은 볼 사용
           </div>
           <div v-if="game.hasPerk(p.id) && healKeyOf(p)" class="opt">
             HP가

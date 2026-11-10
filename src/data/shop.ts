@@ -14,14 +14,11 @@ export const CATEGORY_LABELS: Record<ItemCategory, string> = {
   ball: '몬스터볼',
   battle: '배틀용 도구',
 }
-/** 자동 사용·자동 구매 기능이 있는 분류 */
+/** 자동 사용 기능이 있는 분류 */
 export type AutoCategory = 'heal' | 'revive' | 'pp' | 'status' | 'ball'
 /** 자동 사용 기능: 분류별 + 체력·기절 회복은 전투 중(heal·revive)·전투 후(healAfter·reviveAfter)로 나뉨 */
 export type AutoUseKey = AutoCategory | 'healAfter' | 'reviveAfter'
 export const AUTO_USE_KEYS: AutoUseKey[] = ['pp', 'heal', 'healAfter', 'revive', 'reviveAfter', 'status', 'ball']
-/** 자동 구매 기능이 따로 있는 분류 (체력·PP·기절·상태이상 회복은 자동 사용이 필요할 때 사서 씀) */
-export type AutoBuyCategory = 'ball'
-export const AUTO_BUY_CATS: AutoBuyCategory[] = ['ball']
 /** 체력 자동 회복 설정이 있는 기능 */
 export type AutoHealKey = 'heal' | 'healAfter'
 /** 기절 회복 자동 사용 설정이 있는 기능 */
@@ -368,13 +365,8 @@ export function sellPrice(id: string): number {
   return Math.floor(Math.min(cost, price ?? Infinity) / 2)
 }
 
-/** 자동 구매 기본 품목 */
-export const DEFAULT_AUTO_BUY: Record<AutoBuyCategory, string> = {
-  ball: 'poke-ball',
-}
-
 /** 편의성 기능 */
-export type ItemPerkId = `autoUse:${AutoUseKey}` | `autoBuy:${AutoBuyCategory}`
+export type ItemPerkId = `autoUse:${AutoUseKey}`
 /** 자동 전투 AI 개선: strong = 가장 강한 기술, smart = 특성까지 고려 (strong 필요) */
 export type AiPerkId = 'ai:strong' | 'ai:smart'
 /** 전투 화면 표시 개선: ratio = 비율, full = 현재/최대와 비율 (ratio 필요) / 상대 기술: list = 기술, pp = 남은 PP (list 필요) */
@@ -404,7 +396,7 @@ export interface Perk {
   desc: string
   price: number
 }
-/** 자동 구매 기능 가격 (체력·PP·기절·상태이상 회복 자동 구매가 따로 있던 시절에 산 것은 이 값을 돌려줌) */
+/** 자동 구매 기능 가격 (자동 구매가 자동 사용과 따로 있던 시절에 산 것은 이 값을 돌려줌) */
 export const AUTO_BUY_PRICE = 5000
 const AUTO_USE_DESC: Record<AutoUseKey, string> = {
   pp: '자동 전투 중 PP가 0인 기술이 생기면 PP 회복 아이템을 씁니다. 가방에 없으면 돈이 있을 때 가장 싼 아이템을 사서 씁니다. (0인 기술이 2개 이상이면 전체 회복 아이템)',
@@ -417,7 +409,7 @@ const AUTO_USE_DESC: Record<AutoUseKey, string> = {
     '자동 전투 중 전투가 끝났을 때 기절한 파티 포켓몬을 모두 살립니다. 가방에 있는 것 중 가장 싼 것을 쓰고, 없으면 고른 아이템을 사서 씁니다. 기절한 포켓몬이 기준 이상이면 성스러운분으로 모두 살립니다.',
   status:
     '자동 전투 중 상태이상에 걸리면 그 상태이상을 고치는 아이템 중 돈이 가장 적게 드는 것을 씁니다. 가방에 없으면 돈이 있을 때 사서 씁니다. (가진 것 먼저, 친밀도가 떨어지는 아이템은 사지 않음)',
-  ball: '자동 전투 중 도감에 없는 야생 포켓몬을 만나면 몬스터볼을 던집니다. (가장 잡기 쉬운 볼부터)',
+  ball: '자동 전투 중 도감에 없는 야생 포켓몬을 만나면 몬스터볼을 던집니다. 포획률이 목표 이상인 볼 중 한 마리 잡는 데 돈이 가장 적게 드는(가성비가 좋은) 것을 쓰고, 가방에 없으면 돈이 있을 때 사서 씁니다. 목표에 닿는 볼이 없으면 가장 잡기 쉬운 볼을 씁니다. (가진 것 먼저, 마스터볼·파크볼은 쓰지 않음)',
 }
 const AUTO_USE_LABELS: Record<AutoUseKey, string> = {
   pp: 'PP 회복 아이템 자동 사용·구매',
@@ -426,21 +418,14 @@ const AUTO_USE_LABELS: Record<AutoUseKey, string> = {
   revive: '기절 회복 아이템 자동 사용·구매 (전투 중)',
   reviveAfter: '기절 회복 아이템 자동 사용·구매 (전투 후)',
   status: '상태이상 회복 아이템 자동 사용·구매',
-  ball: '몬스터볼 자동 사용 (자동 포획)',
+  ball: '몬스터볼 자동 사용·구매 (자동 포획)',
 }
-const AUTO_BUY_LABELS: Record<AutoBuyCategory, string> = { ball: '몬스터볼' }
 export const PERKS: Perk[] = [
   ...AUTO_USE_KEYS.map((c) => ({
     id: `autoUse:${c}` as ItemPerkId,
     label: AUTO_USE_LABELS[c],
     desc: AUTO_USE_DESC[c],
     price: c === 'ball' ? 10000 : 3000,
-  })),
-  ...AUTO_BUY_CATS.map((c) => ({
-    id: `autoBuy:${c}` as ItemPerkId,
-    label: `${AUTO_BUY_LABELS[c]} 아이템 자동 구매`,
-    desc: '고른 아이템이 다 떨어지면 돈이 있을 때 1개씩 자동으로 삽니다.',
-    price: AUTO_BUY_PRICE,
   })),
 ]
 
@@ -642,6 +627,12 @@ export const DEFAULT_AUTO_HEAL: Record<AutoHealKey, AutoHealRange> = {
   healAfter: { start: 50, target: 100 },
 }
 
+/** 몬스터볼 자동 사용 목표 포획률 선택지 (%) */
+export const AUTO_BALL_STEPS = Array.from({ length: 10 }, (_, i) => (i + 1) * 10)
+export const DEFAULT_AUTO_BALL = 50
+/** 몬스터볼 자동 사용에 쓰지 않는 볼 */
+export const NO_AUTO_BALLS = ['master-ball', 'park-ball']
+
 /** 파티 전원을 살리는 기절 회복 아이템 (자동 사용은 따로 정한 기준일 때만) */
 export const SACRED_ASH = 'sacred-ash'
 /** 기절 회복 자동 사용 설정: item = 가방에 없을 때 살 아이템, ashAt = 기절한 포켓몬이 이만큼 이상이면 성스러운분 (0 = 안 씀) */
@@ -687,6 +678,28 @@ const costOf = (o: Pick<HealOption, 'price' | 'owned'>): HealCost => ({ spent: o
 export function pickCheapestItem(opts: Omit<HealOption, 'amount'>[]): string | null {
   const usable = opts.filter((o) => o.owned > 0 || o.buyable)
   return usable.sort((a, b) => cheaper(costOf(a), costOf(b)))[0]?.id ?? null
+}
+
+/** 몬스터볼 자동 사용 후보: 지금 상대에 대한 포획률 (0~1) */
+export interface BallOption extends Omit<HealOption, 'amount'> {
+  chance: number
+}
+
+/**
+ * 몬스터볼 자동 사용: 포획률이 target(0~1) 이상인 볼 중 한 마리 잡는 데 드는 돈(가격 ÷ 포획률)이
+ * 가장 적은 것 (가진 것은 공짜, 같으면 값어치 ÷ 포획률이 낮은 것). 목표에 닿는 볼이 없으면 가장 잡기 쉬운 것.
+ * 쓸 수 있는 게 없으면 null
+ */
+export function pickAutoBall(opts: BallOption[], target: number): string | null {
+  const usable = opts.filter((o) => o.chance > 0 && (o.owned > 0 || o.buyable))
+  const perCatch = (o: BallOption): HealCost => {
+    const c = costOf(o)
+    return { spent: c.spent / o.chance, value: c.value / o.chance }
+  }
+  const byCost = (a: BallOption, b: BallOption) => cheaper(perCatch(a), perCatch(b))
+  const enough = usable.filter((o) => o.chance >= target).sort(byCost)
+  if (enough.length) return enough[0]!.id
+  return usable.sort((a, b) => b.chance - a.chance || byCost(a, b))[0]?.id ?? null
 }
 
 /**

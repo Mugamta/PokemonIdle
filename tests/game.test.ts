@@ -7,6 +7,8 @@ import { load, save } from '../src/core/save'
 import { findStage } from '../src/data/stages'
 import { EGG_MOVE_PRICE, eggMoveOptions, PARTY_MAX, tutorOptions, useGameStore, type PartyMember } from '../src/stores/game'
 import { loadLearnMethods } from '../src/data/dex'
+import { pickAutoBall } from '../src/data/shop'
+import { useBattleLogStore } from '../src/stores/battleLog'
 import { REGIONS } from '../src/data/stages'
 
 beforeAll(loadAllData)
@@ -382,19 +384,59 @@ describe('체력 자동 회복 (전투 중·전투 후)', () => {
   })
 })
 
-describe('체력·PP·상태이상 자동 사용에 합쳐진 자동 구매', () => {
-  test('이전 저장 데이터: 체력·PP·상태이상 자동 구매 기능은 없애고 산 값을 돌려줌', () => {
+describe('자동 사용에 합쳐진 자동 구매', () => {
+  test('이전 저장 데이터: 자동 구매 기능은 모두 없애고 산 값을 돌려줌', () => {
     const game = useGameStore()
+    const st = game.$state as unknown as Record<string, unknown>
+    game.perks.push('autoUse:ball')
     ;(game.perks as string[]).push('autoBuy:heal', 'autoBuy:pp', 'autoBuy:status', 'autoBuy:ball')
-    ;(game.autoBuy as Record<string, boolean>).heal = true
-    ;(game.autoBuy as Record<string, boolean>).status = true
+    st.autoBuy = { heal: true, status: true, ball: true }
+    st.autoBuyItem = { ball: 'great-ball', status: 'full-heal' }
     game.money = 0
     game.validate()
-    expect(game.perks).toEqual(['autoBuy:ball'])
-    expect(game.money).toBe(15000)
-    expect(Object.keys(game.autoBuy)).not.toContain('heal')
-    expect(Object.keys(game.autoBuy)).not.toContain('status')
-    expect(Object.keys(game.autoBuyItem)).toEqual(['ball'])
+    expect(game.perks).toEqual(['autoUse:ball'])
+    expect(game.money).toBe(20000)
+    expect(st.autoBuy).toBeUndefined()
+    expect(st.autoBuyItem).toBeUndefined()
+  })
+
+  const ballOpt = (id: string, chance: number, price: number, owned = 0) => ({ id, chance, price, owned, buyable: true })
+  test('몬스터볼 고르기: 목표 포획률 이상 중 한 마리 잡는 데 드는 돈이 가장 적은 것', () => {
+    const opts = [ballOpt('poke', 0.3, 200), ballOpt('great', 0.5, 600), ballOpt('ultra', 0.8, 800)]
+    expect(pickAutoBall(opts, 0.2)).toBe('poke') // 200/0.3 < 600/0.5 < 800/0.8
+    expect(pickAutoBall(opts, 0.4)).toBe('ultra') // 800/0.8 = 1000 < 600/0.5 = 1200
+    // 가진 볼은 공짜
+    expect(pickAutoBall([...opts.slice(0, 2), ballOpt('ultra', 0.8, 800, 1)], 0.2)).toBe('ultra')
+    // 목표에 닿는 볼이 없으면 가장 잡기 쉬운 것
+    expect(pickAutoBall(opts, 0.9)).toBe('ultra')
+    // 살 수도 없고 가진 것도 없으면 null
+    expect(pickAutoBall([{ ...ballOpt('poke', 0.3, 200), buyable: false }], 0.1)).toBeNull()
+  })
+
+  test('몬스터볼: 도감에 없는 야생 포켓몬에게 가진 볼을 먼저, 없으면 사서 던짐', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter({ ...starter('snorlax', ['splash']), level: 100 })
+    game.perks.push('autoUse:ball')
+    game.autoUse.ball = true
+    game.setAutoBall(10)
+    game.money = 10000
+    const wild = { species: 'rattata', level: 50, nature: 'hardy', ivs: [31, 31, 31, 31, 31, 31], hp: null, moves: ['tackle'] }
+    game.items['poke-ball'] = 1
+    game.startBattle(wild)
+    useBattleLogStore().readyAt = 0
+    expect(game.autoUseItem()).toBe(true)
+    expect(game.items['poke-ball'] ?? 0).toBe(0)
+    expect(game.money).toBe(10000)
+    // 가방에 볼이 없으면 가장 가성비 좋은 볼(몬스터볼·프레셔스볼 200원)을 사서 던짐
+    // (첫 볼로 잡혔을 수도 있으므로 도감·전투 상태를 되돌림)
+    useBattleLogStore().pending = null
+    game.enemy = null
+    game.caught = []
+    game.startBattle(wild)
+    useBattleLogStore().readyAt = 0
+    expect(game.autoUseItem()).toBe(true)
+    expect(game.money).toBe(10000 - 200)
   })
 
   test('상태이상: 가방에 없으면 고칠 수 있는 것 중 가장 싼 아이템을 사서 씀', () => {
@@ -455,7 +497,7 @@ describe('기절 회복 자동 사용·구매 (전투 중·전투 후)', () => {
     const game = useGameStore()
     ;(game.perks as string[]).push('autoUse:revive', 'autoBuy:revive')
     game.autoUse.revive = true
-    ;(game.autoBuyItem as Record<string, string>).revive = 'max-revive'
+    ;(game.$state as unknown as Record<string, unknown>).autoBuyItem = { revive: 'max-revive' }
     game.money = 0
     game.validate()
     expect(game.perks).toEqual(['autoUse:revive', 'autoUse:reviveAfter'])
