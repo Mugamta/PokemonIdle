@@ -90,8 +90,8 @@ onUnmounted(() => {
       <DexTab v-else-if="activeTab === 'dex'" />
       <BattleTab v-else-if="activeTab === 'battle'" />
       <SettingsTab v-else-if="activeTab === 'settings'" />
-      <ShopTab v-else-if="activeTab === 'shop'" key="shop" kind="item" />
-      <ShopTab v-else-if="activeTab === 'upgrade'" key="upgrade" kind="upgrade" />
+      <ShopTab v-else-if="activeTab === 'shop'" key="shop" kind="item" :wide="isWide" />
+      <ShopTab v-else-if="activeTab === 'upgrade'" key="upgrade" kind="upgrade" :wide="isWide" />
       <p v-else class="placeholder">{{ activeLabel }}</p>
     </ScrollPanel>
 

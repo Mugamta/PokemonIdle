@@ -64,7 +64,7 @@ import { josa } from '../core/battle'
 
 type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'perks' | 'slots' | 'heldSlots' | 'sell'
 /** 하단 탭: 도구상점(item) / 강화상점(upgrade) */
-const props = defineProps<{ kind: 'item' | 'upgrade' }>()
+const props = defineProps<{ kind: 'item' | 'upgrade'; wide?: boolean }>()
 const SUB_LABELS: Record<Sub, string> = {
   items: '회복',
   ball: '볼',
@@ -332,7 +332,8 @@ const slotRows = computed(() =>
       </nav>
     </div>
 
-    <div class="wallet">
+    <!-- 넓게보기에서는 전투 화면(소지금 표시)이 가려지므로 여기서 보여 줌 -->
+    <div v-if="wide" class="wallet">
       <span>소지금</span>
       <strong>{{ won(game.money) }}</strong>
     </div>
