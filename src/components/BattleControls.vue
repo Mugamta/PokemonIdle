@@ -129,12 +129,13 @@ const slots = computed(() => {
 const struggling = computed(() => !!game.party[0] && game.usableMoves().length === 0)
 
 const canAct = computed(() => !!foe.value && !game.auto && !game.faint && !game.travel && !busy.value)
+/** 진행 상태 안내 (자동 전투 중에는 계속 바뀌어 거슬리므로 표시하지 않음) */
 const status = computed(() => {
+  if (game.auto) return ''
   if (game.faint) return '포켓몬센터에서 회복 중입니다.'
   if (game.travel) return '이동 중입니다.'
   if (!game.enemy) return '야생 포켓몬을 찾는 중…'
   if (log.pending) return '상대가 기술을 고르는 중…'
-  if (game.auto) return busy.value ? '기술을 고르는 중…' : '자동 전투 중입니다. 상단 왼쪽 스위치로 끌 수 있습니다.'
   return busy.value ? '…' : '기술을 골라 주세요.'
 })
 const autoHint = computed(() => {
@@ -224,7 +225,7 @@ watch(
       <span class="name">발버둥</span>
       <span class="meta">쓸 수 있는 기술이 없습니다. 반동으로 최대 HP의 1/4 데미지를 받습니다.</span>
     </button>
-    <p class="status">{{ status }}</p>
+    <p v-if="status" class="status">{{ status }}</p>
 
     <div class="log-wrap">
       <HScroll class="log-tabs" :active="log.current?.id">
