@@ -125,6 +125,7 @@ import {
 } from '../data/shop'
 import {
   catchChance,
+  ballMultOf,
   EXP_SHARE_ITEM,
   EXP_SHARE_RATE,
   FISHING_ROD_ITEM,
@@ -697,7 +698,7 @@ export const useGameStore = defineStore('game', {
     evBreaks: 0,
     /** 분류별 아이템 자동 사용 (편의성 기능 구매 필요) */
     autoUse: {} as Partial<Record<AutoUseKey, boolean>>,
-    /** 몬스터볼 자동 사용 목표 포획률 (%) */
+    /** 몬스터볼 자동 사용 최소 보정 배율 */
     autoBall: DEFAULT_AUTO_BALL,
     /** 체력 자동 회복 시작 기준·목표 (전투 중 / 전투 후, 최대 HP 대비 %) */
     autoHeal: structuredClone(DEFAULT_AUTO_HEAL) as Record<AutoHealKey, AutoHealRange>,
@@ -1772,7 +1773,7 @@ export const useGameStore = defineStore('game', {
         const pick = empty ? this.autoPpPick(empty >= 2 ? 'all' : 'one') : null
         if (pick && ready(pick.id) && this.useItem(pick.id)) return true
       }
-      // 4. 몬스터볼: 도감에 없는 야생 포켓몬이면 목표 포획률 이상인 볼 중 가성비가 가장 좋은 것
+      // 4. 몬스터볼: 도감에 없는 야생 포켓몬이면 보정 배율이 기준 이상인 볼 중 가성비가 가장 좋은 것
       //    (가진 것은 공짜, 없으면 사서 씀. 마스터볼·파크볼은 쓰지 않음)
       const e = this.enemy
       if (on('ball') && e && !e.boss && !this.caught.includes(e.species)) {
@@ -1784,9 +1785,10 @@ export const useGameStore = defineStore('game', {
             price: i.price,
             owned: this.items[i.id] ?? 0,
             buyable: this.money >= i.price,
+            mult: ballMultOf(i.id, ctx),
             chance: catchChance(i.id, ctx, foe.hp, maxHpOf(foe)),
           })),
-          this.autoBall / 100,
+          this.autoBall,
         )
         if (pick && ready(pick) && this.useItem(pick)) return true
       }

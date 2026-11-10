@@ -400,17 +400,26 @@ describe('자동 사용에 합쳐진 자동 구매', () => {
     expect(st.autoBuyItem).toBeUndefined()
   })
 
-  const ballOpt = (id: string, chance: number, price: number, owned = 0) => ({ id, chance, price, owned, buyable: true })
-  test('몬스터볼 고르기: 목표 포획률 이상 중 한 마리 잡는 데 드는 돈이 가장 적은 것', () => {
-    const opts = [ballOpt('poke', 0.3, 200), ballOpt('great', 0.5, 600), ballOpt('ultra', 0.8, 800)]
-    expect(pickAutoBall(opts, 0.2)).toBe('poke') // 200/0.3 < 600/0.5 < 800/0.8
-    expect(pickAutoBall(opts, 0.4)).toBe('ultra') // 800/0.8 = 1000 < 600/0.5 = 1200
+  const ballOpt = (id: string, mult: number, chance: number, price: number, owned = 0) => ({
+    id,
+    mult,
+    chance,
+    price,
+    owned,
+    buyable: true,
+  })
+  test('몬스터볼 고르기: 보정 배율이 기준 이상인 볼 중 한 마리 잡는 데 드는 돈이 가장 적은 것', () => {
+    const opts = [ballOpt('poke', 1, 0.3, 200), ballOpt('great', 1.5, 0.5, 600), ballOpt('ultra', 2, 0.8, 800)]
+    expect(pickAutoBall(opts, 1)).toBe('poke') // 200/0.3 < 600/0.5 < 800/0.8
+    expect(pickAutoBall(opts, 1.5)).toBe('ultra') // 800/0.8 = 1000 < 600/0.5 = 1200
     // 가진 볼은 공짜
-    expect(pickAutoBall([...opts.slice(0, 2), ballOpt('ultra', 0.8, 800, 1)], 0.2)).toBe('ultra')
-    // 목표에 닿는 볼이 없으면 가장 잡기 쉬운 것
-    expect(pickAutoBall(opts, 0.9)).toBe('ultra')
+    expect(pickAutoBall([...opts.slice(0, 2), ballOpt('ultra', 2, 0.8, 800, 1)], 1)).toBe('ultra')
+    // 기준에 닿는 볼이 없으면 배율이 가장 높은 것
+    expect(pickAutoBall(opts, 3)).toBe('ultra')
+    // 포획률이 낮은 상대라도 배율 기준은 만족함
+    expect(pickAutoBall([ballOpt('poke', 1, 0.01, 200), ballOpt('great', 1.5, 0.02, 600)], 1.5)).toBe('great')
     // 살 수도 없고 가진 것도 없으면 null
-    expect(pickAutoBall([{ ...ballOpt('poke', 0.3, 200), buyable: false }], 0.1)).toBeNull()
+    expect(pickAutoBall([{ ...ballOpt('poke', 1, 0.3, 200), buyable: false }], 1)).toBeNull()
   })
 
   test('몬스터볼: 도감에 없는 야생 포켓몬에게 가진 볼을 먼저, 없으면 사서 던짐', () => {
@@ -419,7 +428,7 @@ describe('자동 사용에 합쳐진 자동 구매', () => {
     game.chooseStarter({ ...starter('snorlax', ['splash']), level: 100 })
     game.perks.push('autoUse:ball')
     game.autoUse.ball = true
-    game.setAutoBall(10)
+    game.setAutoBall(1)
     game.money = 10000
     const wild = { species: 'rattata', level: 50, nature: 'hardy', ivs: [31, 31, 31, 31, 31, 31], hp: null, moves: ['tackle'] }
     game.items['poke-ball'] = 1

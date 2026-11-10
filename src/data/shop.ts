@@ -409,7 +409,7 @@ const AUTO_USE_DESC: Record<AutoUseKey, string> = {
     '자동 전투 중 전투가 끝났을 때 기절한 파티 포켓몬을 모두 살립니다. 가방에 있는 것 중 가장 싼 것을 쓰고, 없으면 고른 아이템을 사서 씁니다. 기절한 포켓몬이 기준 이상이면 성스러운분으로 모두 살립니다.',
   status:
     '자동 전투 중 상태이상에 걸리면 그 상태이상을 고치는 아이템 중 돈이 가장 적게 드는 것을 씁니다. 가방에 없으면 돈이 있을 때 사서 씁니다. (가진 것 먼저, 친밀도가 떨어지는 아이템은 사지 않음)',
-  ball: '자동 전투 중 도감에 없는 야생 포켓몬을 만나면 몬스터볼을 던집니다. 포획률이 목표 이상인 볼 중 한 마리 잡는 데 돈이 가장 적게 드는(가성비가 좋은) 것을 쓰고, 가방에 없으면 돈이 있을 때 사서 씁니다. 목표에 닿는 볼이 없으면 가장 잡기 쉬운 볼을 씁니다. (가진 것 먼저, 마스터볼·파크볼은 쓰지 않음)',
+  ball: '자동 전투 중 도감에 없는 야생 포켓몬을 만나면 몬스터볼을 던집니다. 지금 상대에 대한 보정 배율이 기준 이상인 볼 중 한 마리 잡는 데 돈이 가장 적게 드는(가성비가 좋은) 것을 쓰고, 가방에 없으면 돈이 있을 때 사서 씁니다. 기준에 닿는 볼이 없으면 배율이 가장 높은 볼을 씁니다. (가진 것 먼저, 마스터볼·파크볼은 쓰지 않음)',
 }
 const AUTO_USE_LABELS: Record<AutoUseKey, string> = {
   pp: 'PP 회복 아이템 자동 사용·구매',
@@ -627,9 +627,9 @@ export const DEFAULT_AUTO_HEAL: Record<AutoHealKey, AutoHealRange> = {
   healAfter: { start: 50, target: 100 },
 }
 
-/** 몬스터볼 자동 사용 목표 포획률 선택지 (%) */
-export const AUTO_BALL_STEPS = Array.from({ length: 10 }, (_, i) => (i + 1) * 10)
-export const DEFAULT_AUTO_BALL = 50
+/** 몬스터볼 자동 사용: 최소 보정 배율 선택지 (1 = 모든 볼) */
+export const AUTO_BALL_STEPS = [1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 8]
+export const DEFAULT_AUTO_BALL = 1
 /** 몬스터볼 자동 사용에 쓰지 않는 볼 */
 export const NO_AUTO_BALLS = ['master-ball', 'park-ball']
 
@@ -680,26 +680,27 @@ export function pickCheapestItem(opts: Omit<HealOption, 'amount'>[]): string | n
   return usable.sort((a, b) => cheaper(costOf(a), costOf(b)))[0]?.id ?? null
 }
 
-/** 몬스터볼 자동 사용 후보: 지금 상대에 대한 포획률 (0~1) */
+/** 몬스터볼 자동 사용 후보: 지금 상대에 대한 보정 배율·포획률 (0~1) */
 export interface BallOption extends Omit<HealOption, 'amount'> {
+  mult: number
   chance: number
 }
 
 /**
- * 몬스터볼 자동 사용: 포획률이 target(0~1) 이상인 볼 중 한 마리 잡는 데 드는 돈(가격 ÷ 포획률)이
- * 가장 적은 것 (가진 것은 공짜, 같으면 값어치 ÷ 포획률이 낮은 것). 목표에 닿는 볼이 없으면 가장 잡기 쉬운 것.
+ * 몬스터볼 자동 사용: 보정 배율이 minMult 이상인 볼 중 한 마리 잡는 데 드는 돈(가격 ÷ 포획률)이
+ * 가장 적은 것 (가진 것은 공짜, 같으면 값어치 ÷ 포획률이 낮은 것). 기준에 닿는 볼이 없으면 배율이 가장 높은 것.
  * 쓸 수 있는 게 없으면 null
  */
-export function pickAutoBall(opts: BallOption[], target: number): string | null {
+export function pickAutoBall(opts: BallOption[], minMult: number): string | null {
   const usable = opts.filter((o) => o.chance > 0 && (o.owned > 0 || o.buyable))
   const perCatch = (o: BallOption): HealCost => {
     const c = costOf(o)
     return { spent: c.spent / o.chance, value: c.value / o.chance }
   }
   const byCost = (a: BallOption, b: BallOption) => cheaper(perCatch(a), perCatch(b))
-  const enough = usable.filter((o) => o.chance >= target).sort(byCost)
+  const enough = usable.filter((o) => o.mult >= minMult).sort(byCost)
   if (enough.length) return enough[0]!.id
-  return usable.sort((a, b) => b.chance - a.chance || byCost(a, b))[0]?.id ?? null
+  return usable.sort((a, b) => b.mult - a.mult || byCost(a, b))[0]?.id ?? null
 }
 
 /**

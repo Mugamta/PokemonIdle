@@ -181,6 +181,15 @@ export function ballRate(ball: string, c: CatchContext): { mult: number; add: nu
       return { mult: 1, add: 0 }
   }
 }
+/**
+ * 볼의 실제 보정 배율 (지금 상대 기준): 포획률 가감(헤비볼)도 배율로 환산. 반드시 잡히면 Infinity
+ */
+export function ballMultOf(ball: string, c: CatchContext): number {
+  const r = ballRate(ball, c)
+  if (r.certain) return Infinity
+  const base = dexData.value?.index.find((p) => p.id === c.species)?.capture ?? 45
+  return (r.mult * Math.max(1, Math.min(255, base + r.add))) / base
+}
 /** 볼 효과 설명 (상점·도감 표시용) */
 export const BALL_NOTES: Record<string, string> = {
   'master-ball': '반드시 잡힙니다.',

@@ -739,11 +739,11 @@ const slotRows = computed(() =>
           <p class="desc">{{ p.desc }}</p>
           <!-- 세부 설정 -->
           <div v-if="game.hasPerk(p.id) && p.id === 'autoUse:ball'" class="opt">
-            목표 포획률
+            보정 배율
             <select :value="game.autoBall" @change="game.setAutoBall(Number(($event.target as HTMLSelectElement).value))">
-              <option v-for="t in AUTO_BALL_STEPS" :key="t" :value="t">{{ t }}%</option>
+              <option v-for="t in AUTO_BALL_STEPS" :key="t" :value="t">{{ t === 1 ? '제한 없음' : `${t}배 이상` }}</option>
             </select>
-            이상인 볼 중 가성비 좋은 볼 사용
+            인 볼 중 가성비 좋은 볼 사용
           </div>
           <div v-if="game.hasPerk(p.id) && healKeyOf(p)" class="opt">
             HP가
