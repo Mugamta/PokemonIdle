@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { dexData, loadDex, TYPE_COLORS, type DexEntry } from '../data/dex'
+import { familyRoot, loadEvolutions } from '../data/evolutions'
 import { regionalDexOf } from '../data/regionalDex'
 import { findStage, REGIONS } from '../data/stages'
 import { useGameStore } from '../stores/game'
@@ -24,24 +25,49 @@ const FILTERS = [
   { key: 'caught', label: '포획' },
 ] as const
 
-/** 전국도감 / 지역도감 */
-const scope = ref<'national' | 'regional'>('national')
+/** 전국도감은 두 번째 지방에 도달한 뒤에 받음 */
+const hasNational = computed(() => game.unlockedRegions.length >= 2)
+/** 지역도감 / 전국도감 (지역도감이 먼저) */
+const scope = ref<'national' | 'regional'>('regional')
 /** 지역도감으로 볼 지방 (기본: 지금 있는 지방) */
 const regionKey = ref(findStage(game.currentStageId)?.region.key ?? REGIONS[0]!.key)
-/** 들어갈 수 있는 지방만 (조건을 만족하지 못한 히든 지방은 숨김) */
-const regionOptions = computed(() => REGIONS.filter((r) => game.canEnter(r) && regionalDexOf(r.key).length))
-
-onMounted(() => loadDex().catch((e) => (error.value = String(e))))
 
 const caughtSet = computed(() => new Set(game.caught))
+/** 포획한 포켓몬이 하나라도 있는 지역도감만 (들어갈 수 없는 히든 지방은 숨김) */
+const regionOptions = computed(() => {
+  const nums = new Set((dexData.value?.index ?? []).filter((p) => caughtSet.value.has(p.id)).map((p) => p.num))
+  return REGIONS.filter((r) => game.canEnter(r) && regionalDexOf(r.key).some((n) => nums.has(n)))
+})
+/** 보여줄 지방: 고른 지방이 목록에 없으면 첫 지방 */
+const activeRegion = computed(
+  () => regionOptions.value.find((r) => r.key === regionKey.value)?.key ?? regionOptions.value[0]?.key ?? null,
+)
+/** 실제로 보여줄 도감 범위 (전국도감 미획득이면 지역도감, 지역도감이 하나도 없으면 전국도감) */
+const activeScope = computed<'national' | 'regional'>(() =>
+  !hasNational.value ? 'regional' : scope.value === 'regional' && activeRegion.value ? 'regional' : 'national',
+)
+
+/** 진화형끼리 묶어서 보기 */
+const grouped = ref(localStorage.getItem('dex-grouped') === '1')
+watch(grouped, (v) => localStorage.setItem('dex-grouped', v ? '1' : '0'))
+/** 묶음 행이 1초마다 다음 진화형으로 바뀌도록 하는 시계 */
+const tick = ref(0)
+let timer: ReturnType<typeof setInterval> | undefined
+
+onMounted(() => {
+  Promise.all([loadDex(), loadEvolutions()]).catch((e) => (error.value = String(e)))
+  timer = setInterval(() => tick.value++, 1000)
+})
+onUnmounted(() => clearInterval(timer))
+
 /** 실제로 조우·포획한 포켓몬 (도감 공개 퍽과 무관) */
 const seenSet = computed(() => new Set([...game.seen, ...game.caught]))
 /** 현재 도감 범위의 포켓몬 (지역도감은 지역도감 번호 순) */
 const scoped = computed<{ p: DexEntry; no: number }[]>(() => {
   const index = dexData.value?.index ?? []
-  if (scope.value === 'national') return index.map((p) => ({ p, no: p.num }))
+  if (activeScope.value === 'national') return index.map((p) => ({ p, no: p.num }))
   const byNum = new Map(index.map((p) => [p.num, p]))
-  return regionalDexOf(regionKey.value).flatMap((num, i) => {
+  return regionalDexOf(activeRegion.value ?? '').flatMap((num, i) => {
     const p = byNum.get(num)
     return p ? [{ p, no: i + 1 }] : []
   })
@@ -60,7 +86,27 @@ const filtered = computed(() => {
 })
 const seenCount = computed(() => scoped.value.filter(({ p }) => seenSet.value.has(p.id)).length)
 const caughtCount = computed(() => scoped.value.filter(({ p }) => caughtSet.value.has(p.id)).length)
-const pad = computed(() => (scope.value === 'national' ? 4 : 3))
+const pad = computed(() => (activeScope.value === 'national' ? 4 : 3))
+
+type Row = { p: DexEntry; no: number }
+/** 목록 행: 묶어 보기면 같은 진화 계통끼리 한 행 (계통 중 처음 나오는 번호 자리에) */
+const rows = computed<Row[][]>(() => {
+  if (!grouped.value) return filtered.value.map((r) => [r])
+  const families = new Map<string, Row[]>()
+  for (const r of filtered.value) {
+    const root = familyRoot(r.p.id)
+    const fam = families.get(root)
+    if (fam) fam.push(r)
+    else families.set(root, [r])
+  }
+  return [...families.values()]
+})
+/** 묶음 행에서 지금 보여줄 포켓몬 (공개된 포켓몬만 돌아가며, 모두 미공개면 첫 포켓몬) */
+function shown(members: Row[]): Row {
+  if (members.length === 1) return members[0]!
+  const visible = members.filter(({ p }) => game.dexLevel(p.id) !== 'hidden')
+  return visible.length ? visible[tick.value % visible.length]! : members[0]!
+}
 
 function open(id: string) {
   if (game.dexLevel(id) !== 'full') return
@@ -94,9 +140,28 @@ async function back() {
     <template v-else>
     <header class="header">
       <div class="scopes">
-        <button type="button" :class="{ active: scope === 'national' }" @click="scope = 'national'">전국도감</button>
-        <button type="button" :class="{ active: scope === 'regional' }" @click="scope = 'regional'">지역도감</button>
-        <select v-if="scope === 'regional'" v-model="regionKey" class="region">
+        <button
+          v-if="regionOptions.length"
+          type="button"
+          :class="{ active: activeScope === 'regional' }"
+          @click="scope = 'regional'"
+        >
+          지역도감
+        </button>
+        <button
+          v-if="hasNational"
+          type="button"
+          :class="{ active: activeScope === 'national' }"
+          @click="scope = 'national'"
+        >
+          전국도감
+        </button>
+        <select
+          v-if="activeScope === 'regional' && regionOptions.length"
+          :value="activeRegion"
+          class="region"
+          @change="regionKey = ($event.target as HTMLSelectElement).value"
+        >
           <option v-for="r in regionOptions" :key="r.key" :value="r.key">{{ r.title }}</option>
         </select>
       </div>
@@ -112,11 +177,14 @@ async function back() {
         >
           {{ f.label }}
         </button>
+        <button type="button" class="group" :class="{ active: grouped }" @click="grouped = !grouped">진화 묶기</button>
       </div>
     </header>
     <ul class="list">
-      <li v-for="{ p, no } in filtered" :key="p.id">
+      <li v-for="members in rows" :key="members[0]!.p.id">
         <button
+          v-for="{ p, no } in [shown(members)]"
+          :key="p.id"
           type="button"
           class="row"
           :class="game.dexLevel(p.id)"
@@ -131,6 +199,14 @@ async function back() {
             <span v-for="t in p.types" :key="t" class="type" :style="{ background: TYPE_COLORS[t] }">
               {{ dexData.types[t] }}
             </span>
+          </span>
+          <span v-if="members.length > 1" class="family" :title="`진화형 ${members.length}마리`">
+            <span
+              v-for="m in members"
+              :key="m.p.id"
+              class="dot"
+              :class="{ on: m.p.id === p.id, caught: caughtSet.has(m.p.id) }"
+            />
           </span>
           <span class="ball" :class="{ caught: caughtSet.has(p.id) }" :title="caughtSet.has(p.id) ? '포획' : '미포획'" />
         </button>
@@ -250,6 +326,33 @@ async function back() {
   border-color: #ffcb05;
   color: #fff;
   font-weight: 700;
+}
+
+.filters .group {
+  margin-left: auto;
+}
+
+.family {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  max-height: 36px;
+  gap: 3px;
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #4a4a56;
+}
+
+.dot.caught {
+  background: #8a8a96;
+}
+
+.dot.on {
+  background: #ffcb05;
 }
 
 .search {

@@ -74,3 +74,26 @@ export function evoItemUsage(itemId: string): EvoItemUse[] {
     }
   return out
 }
+
+let familyCache: { src: unknown; map: Map<string, string> } | null = null
+/** 진화 계통의 뿌리 포켓몬 id (파이리·리자드·리자몽 → 'charmander'). 진화 데이터가 없으면 자기 자신 */
+export function familyRoot(species: string): string {
+  const evo = evolutions.value
+  if (!evo) return species
+  if (familyCache?.src !== evo) {
+    const prevo = new Map<string, string>()
+    for (const [from, list] of Object.entries(evo)) for (const e of list) if (!prevo.has(e.to)) prevo.set(e.to, from)
+    const map = new Map<string, string>()
+    for (const id of new Set([...prevo.keys(), ...prevo.values()])) {
+      let root = id
+      const visited = new Set<string>()
+      while (prevo.has(root) && !visited.has(root)) {
+        visited.add(root)
+        root = prevo.get(root)!
+      }
+      map.set(id, root)
+    }
+    familyCache = { src: evo, map }
+  }
+  return familyCache.map.get(species) ?? species
+}
