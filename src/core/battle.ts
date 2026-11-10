@@ -1616,17 +1616,36 @@ export function runTurn(
 }
 
 // ---------- 기술 배치 ----------
+/** 버전 그룹 → 세대 (야생 기술 배치에서 세대 한정 레벨업 기술 판단) */
+const VG_GEN: Record<string, number> = {
+  'red-blue': 1, yellow: 1,
+  'gold-silver': 2, crystal: 2,
+  'ruby-sapphire': 3, emerald: 3, 'firered-leafgreen': 3,
+  'diamond-pearl': 4, platinum: 4, 'heartgold-soulsilver': 4,
+  'black-white': 5, 'black-2-white-2': 5,
+  'x-y': 6, 'omega-ruby-alpha-sapphire': 6,
+  'sun-moon': 7, 'ultra-sun-ultra-moon': 7, 'lets-go-pikachu-lets-go-eevee': 7,
+  'sword-shield': 8, 'brilliant-diamond-shining-pearl': 8, 'legends-arceus': 8,
+  'scarlet-violet': 9,
+}
+
 /** 원작 야생 포켓몬 규칙: 해당 레벨까지 배운 레벨업 기술 중 마지막 4개 */
 export function wildMoveset(species: string, level: number, vg?: string): string[] {
   const dex = dexData.value
   if (!dex) return []
   let list: [number, number][] | undefined = vg ? battleData.value?.wild[vg]?.[species] : undefined
   if (!list) {
-    // 해당 게임 데이터가 없으면 통합 레벨업 기술표로 대신
-    list = (learnsets.value?.[species] ?? [])
-      .filter((e): e is [number, 'level', number] => e[1] === 'level')
-      .map((e) => [e[0], e[2]] as [number, number])
-      .sort((a, b) => a[1] - b[1])
+    // 해당 게임 데이터가 없으면 통합 레벨업 기술표로 대신 (그 게임 세대에서만 배우는 레벨업 기술 포함)
+    const gen = vg ? VG_GEN[vg] : undefined
+    list = []
+    for (const e of learnsets.value?.[species] ?? []) {
+      if (e[1] === 'level') list.push([e[0], e[2]])
+      else if (e[1] === 'gen' && e[3]) {
+        const lv = gen != null ? e[3][gen] : undefined
+        if (lv != null) list.push([e[0], lv])
+      }
+    }
+    list.sort((a, b) => a[1] - b[1])
   }
   const ids: string[] = []
   for (const [num, lv] of list) {
@@ -1636,6 +1655,12 @@ export function wildMoveset(species: string, level: number, vg?: string): string
     const i = ids.indexOf(id)
     if (i >= 0) ids.splice(i, 1)
     ids.push(id)
+  }
+  // 그 레벨까지 배운 기술이 없으면 (통합 기술표는 최신 작품 습득 레벨 기준) 가장 일찍 배우는 공격 기술
+  if (!ids.length) {
+    const first = list.find(([num]) => dex.moves[num]?.power) ?? list[0]
+    const id = first && dex.moves[first[0]]?.id
+    if (id) ids.push(id)
   }
   return ids.slice(-4)
 }
