@@ -728,7 +728,7 @@ const slotRows = computed(() =>
           </div>
           <p class="desc">{{ p.desc }}</p>
           <!-- 세부 설정 -->
-          <div v-if="game.hasPerk(p.id) && perkKind(p).kind === 'autoBuy'" class="opt">
+          <div v-if="game.hasPerk(p.id) && perkKind(p).kind === 'autoBuy' && perkKind(p).cat !== 'heal'" class="opt">
             구매할 아이템
             <select
               :value="game.autoBuyItem[perkKind(p).cat]"

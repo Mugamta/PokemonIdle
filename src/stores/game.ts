@@ -85,6 +85,10 @@ import {
   SPEED_DELAY_MS,
   type SpeedKind,
   AUTO_HEAL_THRESHOLDS,
+  type HealOption,
+  healAmountOf,
+  pickHealInBattle,
+  planHealAfterBattle,
   DEFAULT_AUTO_BUY,
   EVERSTONE_ITEM,
   extraSlotPrice,
@@ -1552,7 +1556,7 @@ export const useGameStore = defineStore('game', {
       const hp = m.hp ?? max
       if (hp >= max) return null
       const list = owned('heal').filter((i) => i.hp != null || i.hpFrac != null)
-      const amount = (i: ShopItem) => (i.hp === 'full' ? max : i.hpFrac != null ? Math.floor(max * i.hpFrac) : (i.hp ?? 0))
+      const amount = (i: ShopItem) => healAmountOf(i, max)
       const enough = [...list].sort((a, b) => a.price - b.price).find((i) => amount(i) >= max - hp)
       return enough ?? [...list].sort((a, b) => amount(b) - amount(a))[0] ?? null
     },
@@ -1568,16 +1572,22 @@ export const useGameStore = defineStore('game', {
       // 전투 중 상대를 타격할 기술이 하나도 없으면 (PP와 무관하게) 회복약·PP 회복은 쓰지 않음
       const useless = !!this.enemy && this.bestDamageVsFoe(0, false) <= 0
 
-      // 1. 체력: 기준 아래면, 부족한 만큼을 채우는 가장 싼 아이템 (없으면 가장 많이 회복하는 아이템)
+      // 1. 체력: 기준 아래면 최대 HP까지 채움 (자동 구매가 켜져 있으면 없는 아이템은 사서 씀).
+      //    전투 중 = 한 개로 가장 잘 채우는 아이템, 전투 후 = 돈이 가장 적게 드는 조합
       const max = maxHpOf(me)
       if (!useless && on('heal') && (me.hp / max) * 100 < this.autoHealAt) {
-        const list = owned('heal')
         const need = max - me.hp
-        const amount = (i: ShopItem) => (i.hp === 'full' ? max : i.hpFrac != null ? Math.floor(max * i.hpFrac) : (i.hp ?? 0))
-        const sorted = [...list].sort((a, b) => a.price - b.price)
-        const enough = sorted.find((i) => amount(i) >= need)
-        const pick = enough ?? [...list].sort((a, b) => amount(b) - amount(a))[0]
-        if (pick && this.useItem(pick.id)) return true
+        const buying = this.perks.includes('autoBuy:heal') && !!this.autoBuy.heal
+        const opts: HealOption[] = SHOP_ITEMS.filter((i) => i.category === 'heal' && this.itemEffect(i)).map((i) => ({
+          id: i.id,
+          amount: healAmountOf(i, max),
+          price: i.price,
+          owned: this.items[i.id] ?? 0,
+          // 친밀도가 떨어지는 아이템은 사지 않음
+          buyable: buying && !i.friendship && this.money >= i.price,
+        }))
+        const pick = this.enemy ? pickHealInBattle(opts, need)?.id : planHealAfterBattle(opts, need)[0]
+        if (pick && ((this.items[pick] ?? 0) > 0 || this.buyItem(pick, 1)) && this.useItem(pick)) return true
       }
       // 2. 상태이상: 고칠 수 있는 가장 싼 아이템
       if (on('status') && m.status) {
@@ -1635,7 +1645,8 @@ export const useGameStore = defineStore('game', {
     /** 아이템 자동 구매 (편의성 기능): 고른 아이템이 떨어지면 1개 */
     autoBuyItems() {
       for (const cat of Object.keys(DEFAULT_AUTO_BUY) as AutoCategory[]) {
-        if (!this.perks.includes(`autoBuy:${cat}`) || !this.autoBuy[cat]) continue
+        // 체력 회복은 자동 사용할 때 필요한 아이템을 그때그때 삼 (autoUseItem)
+        if (cat === 'heal' || !this.perks.includes(`autoBuy:${cat}`) || !this.autoBuy[cat]) continue
         const id = this.autoBuyItem[cat]
         if (!(this.items[id] ?? 0)) this.buyItem(id, 1)
       }

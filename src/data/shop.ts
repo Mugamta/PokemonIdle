@@ -399,7 +399,7 @@ export interface Perk {
 }
 const AUTO_USE_DESC: Record<AutoCategory, string> = {
   pp: '자동 전투 중 PP가 0인 기술이 생기면 PP 회복 아이템을 씁니다.',
-  heal: '자동 전투 중 HP가 기준 아래로 떨어지면 체력 회복 아이템을 씁니다.',
+  heal: '자동 전투 중 HP가 기준 아래로 떨어지면 최대 HP까지 채웁니다. 전투 중에는 한 개로 가장 잘 채우는 아이템을, 전투 후에는 돈이 가장 적게 드는 조합을 씁니다.',
   revive: '자동 전투 중 싸우던 포켓몬이 기절하면 기절 회복 아이템을 씁니다. (성스러운분은 쓰지 않음)',
   status: '자동 전투 중 상태이상에 걸리면 회복 아이템을 씁니다.',
   ball: '자동 전투 중 도감에 없는 야생 포켓몬을 만나면 몬스터볼을 던집니다. (가장 잡기 쉬운 볼부터)',
@@ -415,7 +415,10 @@ export const PERKS: Perk[] = AUTO_CATS.flatMap((c) => [
   {
     id: `autoBuy:${c}` as ItemPerkId,
     label: `${AUTO_LABELS[c]} 아이템 자동 구매`,
-    desc: '고른 아이템이 다 떨어지면 돈이 있을 때 1개씩 자동으로 삽니다.',
+    desc:
+      c === 'heal'
+        ? '체력 회복 아이템을 자동 사용할 때 가방에 없는 아이템이 필요하면 돈이 있을 때 사서 씁니다. (친밀도가 떨어지는 아이템은 사지 않음, 자동 사용 필요)'
+        : '고른 아이템이 다 떨어지면 돈이 있을 때 1개씩 자동으로 삽니다.',
     price: 5000,
   },
 ])
@@ -598,6 +601,81 @@ export const evStatCap = (breaks: number) => EV_STAT_MAX * (1 + breaks)
 
 /** 체력 자동 사용 기준 선택지 (최대 HP 대비 %) */
 export const AUTO_HEAL_THRESHOLDS = [25, 50, 75] as const
+
+/** 체력 회복 아이템 자동 사용 후보: 가진 개수와 살 수 있는지 (가진 것은 돈이 들지 않음) */
+export interface HealOption {
+  id: string
+  /** 이 포켓몬에게 회복되는 양 */
+  amount: number
+  price: number
+  owned: number
+  buyable: boolean
+}
+
+/** 아이템 한 개로 회복되는 양 */
+export const healAmountOf = (i: ShopItem, max: number): number =>
+  i.hp === 'full' ? max : i.hpFrac != null ? Math.floor(max * i.hpFrac) : (i.hp ?? 0)
+
+/** 비용 비교: 먼저 쓰는 돈, 같으면 쓰는 아이템의 값어치 (가진 비싼 아이템을 아낌) */
+type HealCost = { spent: number; value: number }
+const cheaper = (a: HealCost, b: HealCost) => a.spent - b.spent || a.value - b.value
+const costOf = (o: HealOption): HealCost => ({ spent: o.owned > 0 ? 0 : o.price, value: o.price })
+
+/**
+ * 전투 중 자동 회복: 한 개로 부족한 HP를 모두 채우는 아이템 중 돈이 가장 적게 드는 것
+ * (가진 것은 공짜, 같으면 값어치가 낮은 것). 다 채우는 게 없으면 가장 많이 회복하는 것
+ */
+export function pickHealInBattle(opts: HealOption[], need: number): HealOption | null {
+  const usable = opts.filter((o) => o.amount > 0 && (o.owned > 0 || o.buyable))
+  const enough = usable.filter((o) => o.amount >= need).sort((a, b) => cheaper(costOf(a), costOf(b)))
+  if (enough.length) return enough[0]!
+  return usable.sort((a, b) => b.amount - a.amount || cheaper(costOf(a), costOf(b)))[0] ?? null
+}
+
+/**
+ * 전투 후 자동 회복: 부족한 HP를 모두 채우는 아이템 조합 중 돈이 가장 적게 드는 것
+ * (가진 것은 공짜, 같으면 값어치 합이 낮은 것). 다 채울 수 없으면 가진 것으로 최대한 채움.
+ * 반환: 쓸 아이템 id 목록 (가진 것 먼저)
+ */
+export function planHealAfterBattle(opts: HealOption[], need: number): string[] {
+  if (need <= 0) return []
+  type Node = { id: string; prev: Node | null }
+  type Cell = HealCost & { plan: Node | null }
+  // best[h] = HP를 h 이상 채우는 가장 싼 조합
+  const best: (Cell | null)[] = Array.from({ length: need + 1 }, () => null)
+  best[0] = { spent: 0, value: 0, plan: null }
+  const relax = (h: number, o: HealOption, spent: number) => {
+    const from = best[Math.max(0, h - o.amount)]
+    if (!from) return
+    const c: Cell = { spent: from.spent + spent, value: from.value + o.price, plan: { id: o.id, prev: from.plan } }
+    const cur = best[h]
+    if (!cur || cheaper(c, cur) < 0) best[h] = c
+  }
+  for (const o of opts) {
+    if (o.amount <= 0) continue
+    // 가진 것: 한 개씩 (필요한 만큼만)
+    const copies = Math.min(o.owned, Math.ceil(need / o.amount))
+    for (let k = 0; k < copies; k++) for (let h = need; h >= 1; h--) relax(h, o, 0)
+    // 살 수 있는 것: 몇 개든
+    if (o.buyable) for (let h = 1; h <= need; h++) relax(h, o, o.price)
+  }
+  // 다 채울 수 없으면 (살 수 없음) 가장 많이 채우는 조합
+  let h = need
+  while (h > 0 && !best[h]) h--
+  const ids: string[] = []
+  for (let n = best[h]!.plan; n; n = n.prev) ids.push(n.id)
+  const left = new Map(opts.map((o) => [o.id, o.owned]))
+  const bag: string[] = []
+  const buy: string[] = []
+  for (const id of ids) {
+    const n = left.get(id) ?? 0
+    if (n > 0) {
+      left.set(id, n - 1)
+      bag.push(id)
+    } else buy.push(id)
+  }
+  return [...bag, ...buy]
+}
 
 /** 상점에서 여는 추가 기술칸 가격 (n번째 추가 칸) */
 export const extraSlotPrice = (n: number) => 10000 * n

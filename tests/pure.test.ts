@@ -7,6 +7,7 @@ import { maxPower, teraShardOf, teraShardType, zPower } from '../src/core/gimmic
 import { exportSave, importSave, load, resetSave, save, SAVE_VERSION, unlockSave } from '../src/core/save'
 import { rollStarter, STARTER_CHANCES, STARTERS } from '../src/data/starters'
 import { baseSlotsAt, MAX_MOVE_SLOTS, slotsAt } from '../src/stores/game'
+import { type HealOption, pickHealInBattle, planHealAfterBattle } from '../src/data/shop'
 
 describe('calcStats (실능치 공식)', () => {
   test('원작 예시와 일치: Lv78 고집 한카리아스', () => {
@@ -187,5 +188,35 @@ describe('저장', () => {
   test('깨진 저장 데이터는 null', () => {
     localStorage.setItem('idle-game-save', '{broken')
     expect(load()).toBeNull()
+  })
+})
+
+describe('체력 회복 자동 사용 계획', () => {
+  const opt = (id: string, amount: number, price: number, owned = 0, buyable = true): HealOption => ({ id, amount, price, owned, buyable })
+
+  test('전투 중: 한 개로 다 채우는 아이템 중 가장 싼 것', () => {
+    const opts = [opt('potion', 20, 200), opt('super', 60, 700), opt('hyper', 120, 1500)]
+    expect(pickHealInBattle(opts, 50)?.id).toBe('super')
+  })
+  test('전투 중: 가진 아이템이 다 채우면 사지 않음', () => {
+    const opts = [opt('super', 60, 700), opt('hyper', 120, 1500, 1)]
+    expect(pickHealInBattle(opts, 50)?.id).toBe('hyper')
+  })
+  test('전투 중: 다 채우는 게 없으면 가장 많이 회복하는 것', () => {
+    const opts = [opt('potion', 20, 200), opt('super', 60, 700)]
+    expect(pickHealInBattle(opts, 100)?.id).toBe('super')
+  })
+  test('전투 후: 돈이 가장 적게 드는 조합', () => {
+    // 50 부족: 상처약 3개(600) < 좋은상처약(700)
+    const opts = [opt('potion', 20, 200), opt('super', 60, 700)]
+    expect(planHealAfterBattle(opts, 50).sort()).toEqual(['potion', 'potion', 'potion'])
+  })
+  test('전투 후: 가진 아이템을 먼저 쓰고 모자란 만큼만 삼', () => {
+    const opts = [opt('potion', 20, 200, 1), opt('super', 60, 700)]
+    expect(planHealAfterBattle(opts, 50)).toEqual(['potion', 'potion', 'potion'])
+  })
+  test('전투 후: 살 수 없으면 가진 것으로 최대한', () => {
+    const opts = [opt('potion', 20, 200, 2, false)]
+    expect(planHealAfterBattle(opts, 100)).toEqual(['potion', 'potion'])
   })
 })
