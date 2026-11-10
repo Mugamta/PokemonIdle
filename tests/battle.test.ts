@@ -235,3 +235,51 @@ describe('기술 배치·경험치', () => {
     expect(expGain('pidgey', 10, 50, false)).toBeLessThan(wild)
   })
 })
+
+describe('스타팅 전용기 부가 효과', () => {
+  // 상대는 맞아도 쓰러지지 않게 고레벨, 내 쪽이 먼저 행동하도록 기술은 'splash'
+  const tank = (species = 'snorlax') => full(battler(species, 100, ['splash']))
+
+  test('플레어송: 자신의 특수공격 +1', () => {
+    const me = full(battler('skeledirge', 50, ['torch-song']))
+    runTurn(me, tank(), 'torch-song', 'splash')
+    expect(me.stages.spa).toBe(1)
+  })
+
+  test('아쿠아스텝: 자신의 스피드 +1, 접촉 기술', () => {
+    const me = full(battler('quaquaval', 50, ['aqua-step']))
+    runTurn(me, tank(), 'aqua-step', 'splash')
+    expect(me.stages.spe).toBe(1)
+    expect(mv('aqua-step').extra.fl).toContain('contact')
+  })
+
+  test('트릭플라워: 반드시 급소', () => {
+    for (let i = 0; i < 20; i++) {
+      const r = runTurn(full(battler('meowscarada', 50, ['flower-trick'])), tank(), 'flower-trick', 'splash')
+      expect(r.lines.some((l) => l.includes('급소'))).toBe(true)
+    }
+  })
+
+  test('그림자꿰매기: 상대가 묶임, 고스트 타입은 안 묶임', () => {
+    // 고스트 기술이라 노말 타입(잠만보)에는 안 맞음 → 망나뇽으로
+    const foe = tank('dragonite')
+    runTurn(full(battler('decidueye', 50, ['spirit-shackle'])), foe, 'spirit-shackle', 'splash')
+    expect(foe.vol?.trapped).toBe(true)
+    const ghost = tank('dusknoir')
+    runTurn(full(battler('decidueye', 50, ['spirit-shackle'])), ghost, 'spirit-shackle', 'splash')
+    expect(ghost.vol?.trapped).toBeFalsy()
+  })
+})
+
+test('화염볼: 얼어 있어도 녹이고 공격', () => {
+  vi.spyOn(Math, 'random').mockReturnValue(0.5) // 자연 해동(20%)은 실패, 명중(90%)은 성공
+  try {
+    const me = full(battler('cinderace', 50, ['pyro-ball'], { status: 'frz' }))
+    const foe = full(battler('snorlax', 100, ['splash']))
+    runTurn(me, foe, 'pyro-ball', 'splash')
+    expect(me.status).toBeFalsy()
+    expect(foe.hp).toBeLessThan(maxHpOf(foe))
+  } finally {
+    vi.restoreAllMocks()
+  }
+})

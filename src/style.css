@@ -17,3 +17,13 @@ body {
   color: #eee;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* 타입 배지: 한글 타입명은 최대 3글자 → 글자 수와 무관하게 3글자 폭을 차지 (불꽃/물 등으로 밀리지 않게) */
+.type,
+.mtype {
+  display: inline-block;
+  box-sizing: content-box;
+  min-width: 3em;
+  text-align: center;
+  white-space: nowrap;
+}

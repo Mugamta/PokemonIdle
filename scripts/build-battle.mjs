@@ -3,7 +3,8 @@
 //
 // 내용
 //   types   타입 상성 {공격 타입: {방어 타입: 배율}} (1배는 생략)
-//   moves   기술 추가 정보 {기술 id: {pri, self, crit, hits, drain, heal, stats, chance, ail, ailChance, fixed, fl}}
+//   moves   기술 추가 정보 {기술 id: {pri, self, crit, hits, drain, heal, stats, chance, ail, ailChance, fixed, trap, thaw, fl}}
+//           trap = 맞은 상대가 교체·도망 불가, thaw = 얼어 있어도 녹이고 사용
 //           fl = 특성 판정용 플래그 (contact, punch, sound, bite, pulse, ballistics, powder, slicing, wind)
 //   abilities 특성 숫자 id → identifier
 //   species 포켓몬별 {exp: 기초 경험치, growth: 성장 그룹, ev: 노력치 보상 [6], happy: 기본 친밀도}
@@ -106,6 +107,16 @@ const SLICING = new Set(['cut', 'razor-leaf', 'slash', 'fury-cutter', 'air-cutte
 const WIND = new Set(['air-cutter', 'bleakwind-storm', 'blizzard', 'fairy-wind', 'gust', 'heat-wave', 'hurricane', 'icy-wind',
   'petal-blizzard', 'sandsear-storm', 'sandstorm', 'springtide-storm', 'tailwind', 'twister', 'whirlwind', 'wildbolt-storm'])
 
+// PokeAPI 에 부가 효과 정보가 빠진 기술 (주로 8·9세대). 자동 추출 결과에 덮어씀
+// trap = 맞은 상대가 교체·도망 불가 / thaw = 자신이 얼어 있어도 녹이고 사용
+const OVERRIDES = {
+  'pyro-ball': { thaw: 1 },
+  'spirit-shackle': { trap: 1 },
+  'flower-trick': { crit: 3 },
+  'torch-song': { stats: [['spa', 1]], self: 1, chance: 100, fl: ['sound'] },
+  'aqua-step': { stats: [['spe', 1]], self: 1, chance: 100, fl: ['contact'] },
+}
+
 const moveOut = {}
 for (const m of moves) {
   if (Number(m.id) >= 10000) continue
@@ -135,6 +146,7 @@ for (const m of moves) {
   if (SLICING.has(m.identifier)) fl.push('slicing')
   if (WIND.has(m.identifier)) fl.push('wind')
   if (fl.length) o.fl = fl
+  Object.assign(o, OVERRIDES[m.identifier])
   if (Object.keys(o).length) moveOut[m.id] = o
 }
 

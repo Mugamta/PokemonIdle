@@ -45,6 +45,10 @@ export interface MoveExtra {
   ailChance?: number
   /** 고정 데미지 */
   fixed?: number | 'level' | 'half'
+  /** 자신이 얼어 있어도 녹이고 사용 (화염볼) */
+  thaw?: 1
+  /** 맞은 상대가 교체·도망 불가 (그림자꿰매기) */
+  trap?: 1
   /** 특성 판정용 플래그 */
   fl?: MoveFlag[]
 }

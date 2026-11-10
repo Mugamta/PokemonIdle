@@ -97,6 +97,8 @@ export interface Volatile {
   unburden?: boolean
   /** 다이월: 이번 턴 상대의 기술을 막음 */
   protect?: boolean
+  /** 그림자꿰매기 등에 맞아 교체·도망 불가 (교체하면 풀림) */
+  trapped?: boolean
 }
 
 /** 상대가 알고 있는 이 포켓몬의 특성 정보 (자동 전투 AI 용) */
@@ -343,7 +345,8 @@ const isSelfMove = (m: MoveData) => m.cls === 'status' && !!(m.extra.self || (m.
 /** 회복 기술 (힐링시프트 대상) */
 const isHealMove = (m: MoveData) => !!m.extra.heal || (m.extra.drain ?? 0) > 0
 /** 부가 효과가 있는 공격기 (우격다짐 대상) */
-const hasSecondary = (m: MoveData) => m.cls !== 'status' && (!!m.extra.ail || (!!m.extra.stats && m.extra.chance != null))
+const hasSecondary = (m: MoveData) =>
+  m.cls !== 'status' && (!!m.extra.ail || !!m.extra.trap || (!!m.extra.stats && m.extra.chance != null))
 
 /** 우선도 (짓궂은마음·질풍날개·힐링시프트 반영) */
 export function priorityOf(att: Battler, def: Battler, m: MoveData): number {
@@ -848,7 +851,7 @@ export function cureStatus(b: Pick<Battler, 'status' | 'sleep' | 'toxic'>) {
 }
 
 /** 행동 전 상태이상 판정. 행동할 수 있으면 true */
-function canMove(att: Battler, foe: Battler, log: string[]): boolean {
+function canMove(att: Battler, foe: Battler, log: string[], moveId: string): boolean {
   switch (att.status) {
     case 'slp':
       if ((att.sleep ?? 0) > 0) {
@@ -863,7 +866,8 @@ function canMove(att: Battler, foe: Battler, log: string[]): boolean {
       log.push(`${josa(att.name, '은', '는')} 눈을 떴다!`)
       return true
     case 'frz':
-      if (Math.random() < 0.2) {
+      // 화염볼 등: 얼어 있어도 스스로 녹이고 공격
+      if (Math.random() < 0.2 || moveData(moveId)?.extra.thaw) {
         cureStatus(att)
         log.push(`${att.name}의 얼음이 녹았다!`)
         return true
@@ -1359,6 +1363,11 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
     if (ex.ail && !shield && def.hp > 0 && total > 0 && (ex.ailChance == null || Math.random() * 100 < ex.ailChance * chanceMult)) {
       inflictStatus(def, ex.ail, log, false, att)
     }
+    // 교체·도망 봉쇄 (고스트 타입은 걸리지 않음)
+    if (ex.trap && !shield && def.hp > 0 && total > 0 && !def.vol?.trapped && !typesOf(def).includes('ghost')) {
+      ;(def.vol ??= {}).trapped = true
+      log.push(`${josa(def.name, '은', '는')} 이제 도망칠 수 없다!`)
+    }
   }
   afterMove(att, def, m, log)
 }
@@ -1595,7 +1604,7 @@ export function runTurn(
       }
       vol.loaf = true
     }
-    if (!canMove(att, def, log)) return
+    if (!canMove(att, def, log, move)) return
     // 풀죽음 (왕의징표석 등): 먼저 행동한 상대에게 맞아 이번 턴 행동 불가 (다이맥스 중에는 풀죽지 않음)
     if (vol.flinch && att.dynamax) vol.flinch = false
     if (vol.flinch) {

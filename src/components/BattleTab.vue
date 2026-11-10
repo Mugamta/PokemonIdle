@@ -432,8 +432,14 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                 v-if="i > 0"
                 type="button"
                 class="small-btn"
-                :disabled="m.hp === 0 || !!game.faint"
-                :title="game.enemy && game.battleTurns > 0 ? '전투 중에 교체하면 한 턴을 소모합니다' : ''"
+                :disabled="m.hp === 0 || !!game.faint || game.leadTrapped"
+                :title="
+                  game.leadTrapped
+                    ? '싸우는 포켓몬이 묶여 있어 교체할 수 없습니다'
+                    : game.enemy && game.battleTurns > 0
+                      ? '전투 중에 교체하면 한 턴을 소모합니다'
+                      : ''
+                "
                 @click="game.setLead(i)"
               >
                 싸우는 포켓몬으로

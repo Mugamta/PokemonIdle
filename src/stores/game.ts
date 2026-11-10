@@ -572,6 +572,8 @@ export const useGameStore = defineStore('game', {
     spriteChoice: {} as Record<string, string>,
   }),
   getters: {
+    /** 전투 중 싸우는 포켓몬이 묶여 교체·도망 불가 (그림자꿰매기 등) */
+    leadTrapped: (s): boolean => !!s.enemy && !!s.playerVol.trapped && (s.party[0]?.hp ?? 0) > 0,
     canFly: (s) => s.party.some((m) => m.moves.includes('fly')),
     /** PP 소모 여부 (PP_START_STAGE 클리어 후) */
     ppActive: (s) => s.clearedStages.includes(PP_START_STAGE),
@@ -1303,7 +1305,7 @@ export const useGameStore = defineStore('game', {
       if (def.category === 'battle') {
         if (!this.enemy || target !== 0) return null
         if (def.escape) {
-          if (this.enemy.boss) return null
+          if (this.enemy.boss || this.leadTrapped) return null
           return () => {
             this.escapeBattle()
             return '무사히 도망쳤다!'
@@ -1418,7 +1420,7 @@ export const useGameStore = defineStore('game', {
 
     /** 야생 포켓몬과의 배틀에서 도망 (보상 없음) */
     escapeBattle() {
-      if (!this.enemy || this.enemy.boss) return
+      if (!this.enemy || this.enemy.boss || this.leadTrapped) return
       this.endBattleGimmick()
       this.enemy = null
       this.playerVol = {}
@@ -1580,6 +1582,8 @@ export const useGameStore = defineStore('game', {
       const log = useBattleLogStore()
       const m = this.party[index]
       if (!m || index === 0 || m.hp === 0 || this.faint || !battleReady()) return false
+      // 그림자꿰매기 등으로 묶여 있으면 교체 불가 (싸우는 포켓몬이 기절했으면 가능)
+      if (this.leadTrapped) return false
       const consumesTurn = !!this.enemy && this.battleTurns > 0 && (this.party[0]?.hp ?? 1) !== 0
       if (consumesTurn && log.isBusy()) return false
       const prev = this.party[0]!
