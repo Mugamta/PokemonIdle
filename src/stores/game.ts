@@ -23,6 +23,7 @@ import {
   takeHeld,
   wildMoveset,
   type Battler,
+  type KoPick,
   type TurnResult,
   type Difficulty,
   DIFFICULTY_EXP,
@@ -806,6 +807,8 @@ export const useGameStore = defineStore('game', {
       return SPEED_DELAY_MS[this.speedLevel('search')]
     },
     autoAiMode: (s): AiMode => (s.perks.includes('ai:smart') ? 'smart' : s.perks.includes('ai:strong') ? 'strong' : 'random'),
+    /** 자동 전투 AI 개선 3·4: 확정 1타 기술 고르는 기준 */
+    autoKoPick: (s): KoPick | undefined => (s.perks.includes('ai:pp') ? 'pp' : s.perks.includes('ai:ko') ? 'effect' : undefined),
     /** 특수 기능 해금 여부 (해금하는 지방에 들어간 적 있음) */
     gimmickUnlocked: (s) => (g: Gimmick) => REGIONS.some((r) => r.unlocks === g && s.unlockedRegions.includes(r.id)),
     /** 해금한 특수 기능이 하나라도 있음 */
@@ -899,7 +902,9 @@ export const useGameStore = defineStore('game', {
             : g === 'z'
               ? (m: MoveData) => (zEligible(m, held) ? zMove(m) : m)
               : undefined
-        this.takeTurn(chooseMove(me, foe, this.autoAiMode, transform), g)
+        const member = this.party[0]!
+        const opts = { koPick: this.autoKoPick, ppLeft: (id: string) => (this.ppActive ? ppOf(member, id) : null) }
+        this.takeTurn(chooseMove(me, foe, this.autoAiMode, transform, opts), g)
       }
     },
 

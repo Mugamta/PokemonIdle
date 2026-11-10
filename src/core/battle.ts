@@ -603,13 +603,81 @@ export function expectedDamage(att: Battler, def: Battler, m: MoveData): number 
   return damageOf(att, def, m, 92.5, false) * avgHits(att, def, m) * accuracyOf(att, def, m)
 }
 
+/**
+ * 최소 난수·급소 없음·최소 타수로도 상대를 쓰러뜨리는지 (확정 1타).
+ * 탈·옹골참·기합의띠(HP가 가득할 때)에 버티는 경우는 확정 아님. 기합의머리띠(확률)는 무시
+ */
+export function surelyKo(att: Battler, def: Battler, m: MoveData): boolean {
+  if (!isDamaging(m) || def.hp <= 0) return false
+  const { type } = moveTypeOf(att, def, m)
+  const eff = effOf(att, def, type)
+  if (eff === 0 || blockOf(att, def, m, type, eff)) return false
+  const h = m.extra.hits
+  const hits = !h ? 1 : ab(att, def) === 'skill-link' ? h[1] : h[0] === 2 && h[1] === 5 && nItem(att, 'loaded-dice', def) ? 4 : h[0]
+  const d = defAb(def, att)
+  const maxHp = maxHpOf(def)
+  let hp = def.hp
+  let busted = !!def.vol?.busted
+  let sashes = nItem(def, 'focus-sash', att)
+  for (let i = 0; i < hits; i++) {
+    if (d === 'disguise' && !busted) {
+      busted = true
+      hp = Math.max(1, hp - Math.floor(maxHp / 8))
+      continue
+    }
+    const dmg = damageOf(att, { ...def, hp }, m, 85, false)
+    if (dmg >= hp) {
+      const full = hp >= maxHp
+      if (full && d === 'sturdy') hp = 1
+      else if (full && sashes > 0) {
+        sashes--
+        hp = 1
+      } else return true
+    } else hp -= dmg
+  }
+  return false
+}
+
+/**
+ * 부가 효과의 이로움 (클수록 좋음): 흡수 회복·자신 능력 상승·상대 능력 하락·상대 상태이상·묶기는 +,
+ * 반동·자신 능력 하락은 -
+ */
+function sideEffectScore(att: Battler, def: Battler, m: MoveData): number {
+  const ex = m.extra
+  let s = (ex.drain ?? 0) / 100
+  if (ex.stats) {
+    const p = (ex.chance ?? 100) / 100
+    const flip = ex.self && ab(att, def) === 'contrary' ? -1 : 1
+    for (const [k, n] of ex.stats) if (k !== 'hp') s += (ex.self ? n * flip : -n) * 0.25 * p
+  }
+  if (ex.ail) s += (ex.ailChance ?? 100) / 100
+  if (ex.trap) s += 0.1
+  return s
+}
+
+/** 확정 1타 기술 고르기: effect = 명중률 → 부가 효과 / pp = 명중률 → 남은 PP → 부가 효과 */
+export type KoPick = 'effect' | 'pp'
+export interface ChooseOpts {
+  /** 상대를 확정 1타 낼 수 있는 기술이 있으면 그중에서 고름 (smart 에서만) */
+  koPick?: KoPick
+  /** 남은 PP (null = 제한 없음) */
+  ppLeft?: (id: string) => number | null
+}
+
 // ---------- AI ----------
 /**
  * 기술 선택.
  * random = 무작위 / strong = 특성을 모른다고 보고 기대 데미지가 가장 큰 기술 /
  * smart = 상대 특성 후보(def.intel)와 자신의 특성까지 고려해 기대 데미지가 가장 큰 기술
+ * (opts.koPick 이면 확정 1타 기술이 있을 때 그중에서 고름)
  */
-export function chooseMove(att: Battler, def: Battler, mode: AiMode, transform?: (m: MoveData) => MoveData): string {
+export function chooseMove(
+  att: Battler,
+  def: Battler,
+  mode: AiMode,
+  transform?: (m: MoveData) => MoveData,
+  opts: ChooseOpts = {},
+): string {
   const moves = selectableMoves(att, att.moves).map(moveData).filter((m): m is MoveData => !!m)
   // 다이맥스 기술처럼 실제로 나가는 기술로 비교 (돌려주는 것은 원래 기술 id)
   const real = new Map(moves.map((m) => [m, transform ? transform(m) : m]))
@@ -627,6 +695,29 @@ export function chooseMove(att: Battler, def: Battler, mode: AiMode, transform?:
     const it = def.intel
     const cands: (string | null)[] = it?.known ? [abilityOf(def)] : it?.cands.length ? it.cands : speciesAbilities(def.species, true)
     foes = (cands.length ? cands : [null]).map((c) => withAbility(def, c))
+    // 확정 1타: 어떤 특성 후보든 쓰러뜨리는 기술 중에서 명중률 → (남은 PP) → 부가 효과 순
+    if (opts.koPick) {
+      const ko = moves.filter((m) => foes.every((f) => surelyKo(me, f, real.get(m)!)))
+      if (ko.length) {
+        const avg = (fn: (f: Battler) => number) => foes.reduce((s, f) => s + fn(f), 0) / foes.length
+        const keys = (m: MoveData): number[] => {
+          const r = real.get(m)!
+          const acc = Math.round(avg((f) => accuracyOf(me, f, r)) * 1000)
+          const fx = avg((f) => sideEffectScore(me, f, r))
+          if (opts.koPick !== 'pp') return [acc, fx]
+          const pp = opts.ppLeft?.(m.id)
+          return [acc, pp == null ? Infinity : pp, fx]
+        }
+        const scored = ko.map((m) => ({ m, k: keys(m) }))
+        const cmp = (a: number[], b: number[]) => {
+          for (let i = 0; i < a.length; i++) if (Math.abs(a[i]! - b[i]!) > 1e-9) return a[i]! - b[i]!
+          return 0
+        }
+        const top = scored.reduce((b, x) => (cmp(x.k, b.k) > 0 ? x : b)).k
+        const list = scored.filter((x) => cmp(x.k, top) === 0)
+        return list[Math.floor(Math.random() * list.length)]!.m.id
+      }
+    }
   }
   let best: MoveData[] = []
   let bestDmg = -Infinity

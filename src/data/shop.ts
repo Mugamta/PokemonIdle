@@ -367,8 +367,11 @@ export function sellPrice(id: string): number {
 
 /** 편의성 기능 */
 export type ItemPerkId = `autoUse:${AutoUseKey}`
-/** 자동 전투 AI 개선: strong = 가장 강한 기술, smart = 특성까지 고려 (strong 필요) */
-export type AiPerkId = 'ai:strong' | 'ai:smart'
+/**
+ * 자동 전투 AI 개선: strong = 가장 강한 기술, smart = 특성까지 고려 (strong 필요),
+ * ko = 확정 1타 기술 중 명중률·부가 효과 (smart 필요), pp = 확정 1타 기술 중 남은 PP (ko 필요)
+ */
+export type AiPerkId = 'ai:strong' | 'ai:smart' | 'ai:ko' | 'ai:pp'
 /** 전투 화면 표시 개선: ratio = 비율, full = 현재/최대와 비율 (ratio 필요) / 상대 기술: list = 기술, pp = 남은 PP (list 필요) */
 export type DisplayPerkId = `${'foeHp' | 'exp'}:${'ratio' | 'full'}` | `foeMoves:${'list' | 'pp'}` | 'foeItem:show'
 /** 속도 가속: battle = 기술 선택 대기, search = 상대 포켓몬 찾는 시간. 1~4단계 */
@@ -488,6 +491,22 @@ export const AI_PERKS: AiPerk[] = [
       '상대 특성이 여러 가지일 수 있으면 직접 써 보며 알게 된 정보로 판단합니다.',
     price: 20000,
     requires: 'ai:strong',
+  },
+  {
+    id: 'ai:ko',
+    label: '자동 전투 AI 개선 3',
+    desc:
+      '상대를 확정 1타로 쓰러뜨릴 수 있는 기술이 있으면, 그중 명중률이 가장 높은 기술을 씁니다. ' +
+      '명중률이 같으면 자신에게 이롭고 상대에게 해로운 부가 효과(흡수 회복·능력 변화·상태이상)가 있는 기술을, 반동·자신 능력 하락이 있는 기술은 나중에 고릅니다.',
+    price: 50000,
+    requires: 'ai:smart',
+  },
+  {
+    id: 'ai:pp',
+    label: '자동 전투 AI 개선 4',
+    desc: '확정 1타로 쓰러뜨릴 수 있는 기술 중 명중률이 같으면 남은 PP가 가장 많은 기술을 먼저 씁니다. (그다음 부가 효과)',
+    price: 100000,
+    requires: 'ai:ko',
   },
 ]
 

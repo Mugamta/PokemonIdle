@@ -14,6 +14,7 @@ import {
   runTurn,
   speedOf,
   stackMult,
+  surelyKo,
   typeEffect,
   wildMoveset,
   type Battler,
@@ -161,6 +162,35 @@ describe('AI 기술 선택', () => {
 
   test('기술이 없으면 발버둥', () => {
     expect(chooseMove(full(battler('pikachu', 50, [])), full(battler('squirtle', 50, [])), 'strong')).toBe('struggle')
+  })
+
+  describe('확정 1타 기술 고르기 (AI 개선 3·4)', () => {
+    const moves = ['thunder', 'psychic', 'drain-punch', 'close-combat']
+    const me = () => full(battler('mewtwo', 100, moves))
+    const foe = (o: Partial<Battler> = {}) =>
+      full(battler('rattata', 5, [], { ability: 'run-away', intel: { cands: ['run-away'], known: true }, ...o }))
+
+    test('surelyKo: 최소 난수로도 쓰러뜨리면 확정, 옹골참·기합의띠(HP 가득)면 아님', () => {
+      expect(surelyKo(me(), foe(), mv('psychic'))).toBe(true)
+      expect(surelyKo(me(), foe({ ability: 'sturdy' }), mv('psychic'))).toBe(false)
+      expect(surelyKo(me(), foe({ held: { 'focus-sash': 1 } }), mv('psychic'))).toBe(false)
+      expect(surelyKo(full(battler('rattata', 5, [])), full(battler('snorlax', 100, [])), mv('tackle'))).toBe(false)
+    })
+
+    test('effect: 명중률 높은 것 중 이로운 부가 효과(흡수) 우선, 반동·능력 하락은 뒤로', () => {
+      for (let i = 0; i < 20; i++) expect(chooseMove(me(), foe(), 'smart', undefined, { koPick: 'effect' })).toBe('drain-punch')
+    })
+
+    test('pp: 명중률이 같으면 남은 PP가 많은 기술 우선', () => {
+      const pp: Record<string, number> = { thunder: 10, psychic: 9, 'drain-punch': 2, 'close-combat': 5 }
+      for (let i = 0; i < 20; i++)
+        expect(chooseMove(me(), foe(), 'smart', undefined, { koPick: 'pp', ppLeft: (id) => pp[id]! })).toBe('psychic')
+    })
+
+    test('확정 1타 기술이 없으면 원래대로 가장 강한 기술', () => {
+      const tough = full(battler('blissey', 100, [], { ability: 'natural-cure', intel: { cands: ['natural-cure'], known: true } }))
+      expect(chooseMove(me(), tough, 'smart', undefined, { koPick: 'effect' })).toBe(chooseMove(me(), tough, 'smart'))
+    })
   })
 
   test('random: 항상 가진 기술 중 하나', () => {
