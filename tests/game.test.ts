@@ -290,9 +290,8 @@ describe('체력 자동 회복 (전투 중·전투 후)', () => {
     const m = game.party[0]!
     const max = maxHpOf({ species: m.species, level: m.level, ivs: m.ivs!, evs: m.evs!, nature: m.nature })
     m.hp = 1
-    game.perks.push('autoUse:healAfter', 'autoBuy:heal')
+    game.perks.push('autoUse:healAfter')
     game.autoUse.healAfter = true
-    game.autoBuy.heal = true
     game.money = 100000
     expect(game.autoUseItem()).toBe(true)
     expect(m.hp ?? max).toBe(max)
@@ -310,5 +309,34 @@ describe('체력 자동 회복 (전투 중·전투 후)', () => {
     // 전투 밖: 전투 후 기능이 없으므로 쓰지 않음
     expect(game.autoUseItem()).toBe(false)
     expect(game.items.potion).toBe(5)
+  })
+})
+
+describe('체력·PP 자동 사용에 합쳐진 자동 구매', () => {
+  test('이전 저장 데이터: 체력·PP 자동 구매 기능은 없애고 산 값을 돌려줌', () => {
+    const game = useGameStore()
+    ;(game.perks as string[]).push('autoBuy:heal', 'autoBuy:pp', 'autoBuy:ball')
+    ;(game.autoBuy as Record<string, boolean>).heal = true
+    game.money = 0
+    game.validate()
+    expect(game.perks).toEqual(['autoBuy:ball'])
+    expect(game.money).toBe(10000)
+    expect(Object.keys(game.autoBuy)).not.toContain('heal')
+    expect(Object.keys(game.autoBuyItem).sort()).toEqual(['ball', 'revive', 'status'])
+  })
+
+  test('PP: 가방에 없으면 가장 싼 아이템을 사서 씀', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    game.clearedStages.push('1-1')
+    const m = game.party[0]!
+    m.pp = { scratch: 0 }
+    game.perks.push('autoUse:pp')
+    game.autoUse.pp = true
+    game.money = 10000
+    expect(game.autoUseItem()).toBe(true)
+    expect(game.money).toBe(10000 - 300) // 과사열매
+    expect(m.pp.scratch).toBeGreaterThan(0)
   })
 })

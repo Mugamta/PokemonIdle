@@ -35,7 +35,7 @@ import {
   TRAIN_ITEMS,
   BOTTLE_CAP_LEVEL,
   VITAMIN_EV,
-  type AutoCategory,
+  type AutoBuyCategory,
   type AutoHealKey,
   type AutoUseKey,
   type ChainPerk,
@@ -258,7 +258,7 @@ const evBreak2 = computed(() => ({
 }))
 
 function perkKind(p: Perk) {
-  const [kind, cat] = p.id.split(':') as ['autoUse' | 'autoBuy', AutoCategory]
+  const [kind, cat] = p.id.split(':') as ['autoUse' | 'autoBuy', AutoBuyCategory]
   return { kind, cat }
 }
 function togglePerk(p: Perk, on: boolean) {
@@ -733,7 +733,7 @@ const slotRows = computed(() =>
           </div>
           <p class="desc">{{ p.desc }}</p>
           <!-- 세부 설정 -->
-          <div v-if="game.hasPerk(p.id) && perkKind(p).kind === 'autoBuy' && perkKind(p).cat !== 'heal'" class="opt">
+          <div v-if="game.hasPerk(p.id) && perkKind(p).kind === 'autoBuy'" class="opt">
             구매할 아이템
             <select
               :value="game.autoBuyItem[perkKind(p).cat]"

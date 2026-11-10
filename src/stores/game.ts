@@ -95,6 +95,9 @@ import {
   planHealAfterBattle,
   DEFAULT_AUTO_BUY,
   AUTO_USE_KEYS,
+  AUTO_BUY_CATS,
+  AUTO_BUY_PRICE,
+  type AutoBuyCategory,
   EVERSTONE_ITEM,
   extraSlotPrice,
   heldKindPrice,
@@ -106,7 +109,6 @@ import {
   SHOP_ITEMS,
   sellPrice,
   shopItem,
-  type AutoCategory,
   type ItemCategory,
   type PerkId,
   type ShopItem,
@@ -606,9 +608,9 @@ export const useGameStore = defineStore('game', {
     /** 분류별 아이템 자동 사용 (편의성 기능 구매 필요) */
     autoUse: {} as Partial<Record<AutoUseKey, boolean>>,
     /** 분류별 아이템 자동 구매 (편의성 기능 구매 필요) */
-    autoBuy: {} as Partial<Record<AutoCategory, boolean>>,
+    autoBuy: {} as Partial<Record<AutoBuyCategory, boolean>>,
     /** 분류별 자동 구매 품목 */
-    autoBuyItem: { ...DEFAULT_AUTO_BUY } as Record<AutoCategory, string>,
+    autoBuyItem: { ...DEFAULT_AUTO_BUY } as Record<AutoBuyCategory, string>,
     /** 체력 자동 회복 시작 기준·목표 (전투 중 / 전투 후, 최대 HP 대비 %) */
     autoHeal: structuredClone(DEFAULT_AUTO_HEAL) as Record<AutoHealKey, AutoHealRange>,
     /** 현재 전투에서 지난 턴 수 (0 = 아직 기술을 쓰지 않음, 아이템 사용 시 턴 소모 판단) */
@@ -834,15 +836,27 @@ export const useGameStore = defineStore('game', {
         this.perks.push('autoUse:revive')
         this.autoUse.revive = !!this.autoUse.heal
       }
-      const oldHealBuy = shopItem(this.autoBuyItem?.heal ?? '')
+      const oldBuyItem = (this.autoBuyItem ?? {}) as Record<string, string>
+      const oldBuyOn = this.autoBuy as Record<string, boolean | undefined>
+      const oldHealBuy = shopItem(oldBuyItem.heal ?? '')
       if (oldHealBuy?.category === 'revive') {
         this.autoBuyItem.revive = oldHealBuy.id
-        if (this.perks.includes('autoBuy:heal') && !this.perks.includes('autoBuy:revive')) {
+        if ((this.perks as string[]).includes('autoBuy:heal') && !this.perks.includes('autoBuy:revive')) {
           this.perks.push('autoBuy:revive')
-          this.autoBuy.revive = !!this.autoBuy.heal
+          this.autoBuy.revive = !!oldBuyOn.heal
         }
       }
+      // 이전 저장 데이터 호환: 체력·PP 자동 구매가 따로 있던 시절 → 자동 사용에 합쳐졌으므로 산 값을 돌려줌
+      for (const old of ['autoBuy:heal', 'autoBuy:pp']) {
+        const i = (this.perks as string[]).indexOf(old)
+        if (i < 0) continue
+        this.perks.splice(i, 1)
+        this.money += AUTO_BUY_PRICE
+      }
+      for (const k of Object.keys(oldBuyOn)) if (!AUTO_BUY_CATS.includes(k as AutoBuyCategory)) delete oldBuyOn[k]
       this.autoBuyItem = { ...DEFAULT_AUTO_BUY, ...this.autoBuyItem }
+      for (const k of Object.keys(this.autoBuyItem))
+        if (!AUTO_BUY_CATS.includes(k as AutoBuyCategory)) delete (this.autoBuyItem as Record<string, string>)[k]
       if (!Number.isFinite(this.money)) this.money = 0
       if (this.enemy && !this.enemy.species) this.enemy = null
       if (!this.autoUnlocked) this.auto = false
@@ -855,7 +869,7 @@ export const useGameStore = defineStore('game', {
       if (!this.perks.includes('autoCenter:pp')) this.autoCenter = false
       if (this.autoCenterPriority !== 'center') this.autoCenterPriority = 'item'
       if (!this.expShareOwned) this.expShare = false
-      for (const k of Object.keys(this.autoBuyItem) as AutoCategory[])
+      for (const k of Object.keys(this.autoBuyItem) as AutoBuyCategory[])
         if (shopItem(this.autoBuyItem[k])?.category !== k) this.autoBuyItem[k] = DEFAULT_AUTO_BUY[k]
       // 이전 저장 데이터 호환: 박스 시절 → 박스 포켓몬은 도감 기록으로, 포켓몬별 격파 수 → 계정 격파 수
       const oldBox = Array.isArray(st.box) ? (st.box as PartyMember[]) : []
@@ -1589,23 +1603,23 @@ export const useGameStore = defineStore('game', {
       // 전투 중 상대를 타격할 기술이 하나도 없으면 (PP와 무관하게) 회복약·PP 회복은 쓰지 않음
       const useless = !!this.enemy && this.bestDamageVsFoe(0, false) <= 0
 
-      // 1. 체력: 시작 기준 아래면 목표까지 채움 (자동 구매가 켜져 있으면 없는 아이템은 사서 씀).
+      // 가방에 없으면 사서 씀 (체력·PP 회복 자동 사용에 포함된 자동 구매)
+      const ready = (id: string) => (this.items[id] ?? 0) > 0 || this.buyItem(id, 1)
+      // 1. 체력: 시작 기준 아래면 목표까지 채움 (없는 아이템은 사서 씀).
       //    전투 중 = 한 개로 가장 잘 채우는 아이템, 전투 후 = 돈이 가장 적게 드는 조합을 한꺼번에
       const healKey: AutoHealKey = this.enemy ? 'heal' : 'healAfter'
       const max = maxHpOf(me)
       const range = this.autoHeal[healKey]
       if (!useless && on(healKey) && (me.hp / max) * 100 < range.start) {
         const need = Math.ceil((max * range.target) / 100) - me.hp
-        const buying = this.perks.includes('autoBuy:heal') && !!this.autoBuy.heal
         const opts: HealOption[] = SHOP_ITEMS.filter((i) => i.category === 'heal' && this.itemEffect(i)).map((i) => ({
           id: i.id,
           amount: healAmountOf(i, max),
           price: i.price,
           owned: this.items[i.id] ?? 0,
           // 친밀도가 떨어지는 아이템은 사지 않음
-          buyable: buying && !i.friendship && this.money >= i.price,
+          buyable: !i.friendship && this.money >= i.price,
         }))
-        const ready = (id: string) => (this.items[id] ?? 0) > 0 || this.buyItem(id, 1)
         if (this.enemy) {
           const pick = pickHealInBattle(opts, need)?.id
           if (pick && ready(pick) && this.useItem(pick)) return true
@@ -1623,15 +1637,11 @@ export const useGameStore = defineStore('game', {
         const pick = [...owned('status')].sort((a, b) => a.price - b.price)[0]
         if (pick && this.useItem(pick.id)) return true
       }
-      // 3. PP: PP가 0인 기술이 있으면. 2개 이상이면 전체 회복 아이템 우선
+      // 3. PP: PP가 0인 기술이 있으면. 2개 이상이면 전체 회복 아이템 우선 (없으면 가장 싼 것을 사서 씀)
       if (!useless && on('pp') && this.ppActive) {
         const empty = m.moves.filter((id) => ppOf(m, id) === 0).length
-        if (empty) {
-          const list = owned('pp')
-          const prefer = empty >= 2 ? 'all' : 'one'
-          const pick = list.find((i) => i.pp?.target === prefer) ?? list[0]
-          if (pick && this.useItem(pick.id)) return true
-        }
+        const pick = empty ? this.autoPpPick(empty >= 2 ? 'all' : 'one') : null
+        if (pick && ready(pick.id) && this.useItem(pick.id)) return true
       }
       // 4. 몬스터볼: 도감에 없는 야생 포켓몬이면 가장 잡기 쉬운 볼 (마스터볼·파크볼은 쓰지 않음)
       const e = this.enemy
@@ -1649,6 +1659,18 @@ export const useGameStore = defineStore('game', {
     },
 
     /**
+     * PP 자동 사용할 아이템: 가진 것 중 원하는 종류(한 기술/전체) → 살 수 있는 원하는 종류 중 가장 싼 것
+     * → 가진 다른 종류 → 살 수 있는 다른 종류 중 가장 싼 것. 없으면 null
+     */
+    autoPpPick(prefer: 'one' | 'all'): ShopItem | null {
+      const list = SHOP_ITEMS.filter((i) => i.category === 'pp' && this.itemEffect(i))
+      const owned = list.filter((i) => (this.items[i.id] ?? 0) > 0)
+      const buyable = list.filter((i) => this.money >= i.price).sort((a, b) => a.price - b.price)
+      const is = (i: ShopItem) => i.pp?.target === prefer
+      return owned.find(is) ?? buyable.find(is) ?? owned[0] ?? buyable[0] ?? null
+    },
+
+    /**
      * PP 자동 센터 귀환 (편의성 기능, 자동 전투 중 전투 사이에만):
      * 싸우는 포켓몬의 모든 기술 PP가 AUTO_CENTER_PP_RATIO 미만이면 회복하러 감.
      * 아이템 우선이면, PP 회복 아이템 자동 사용이 켜져 있고 쓸 수 있는 아이템이 있을 때는 가지 않음. 갔으면 true
@@ -1662,10 +1684,9 @@ export const useGameStore = defineStore('game', {
         .map((id) => ({ left: ppOf(m, id), max: maxPpOf(id, m) }))
         .filter((x): x is { left: number; max: number } => x.left != null && x.max != null && x.max > 0)
       if (!moves.length || moves.some((x) => x.left >= x.max * AUTO_CENTER_PP_RATIO)) return false
-      if (this.autoCenterPriority === 'item' && this.perks.includes('autoUse:pp') && this.autoUse.pp) {
-        const hasItem = SHOP_ITEMS.some((i) => i.category === 'pp' && (this.items[i.id] ?? 0) > 0 && this.itemEffect(i))
-        if (hasItem) return false
-      }
+      // 아이템 우선: 가진 아이템이 있거나 살 수 있으면 자동 사용에 맡김
+      if (this.autoCenterPriority === 'item' && this.perks.includes('autoUse:pp') && this.autoUse.pp && this.autoPpPick('one'))
+        return false
       useBattleLogStore().push('PP가 얼마 남지 않아 회복하러 돌아갔다.', 'info')
       this.goRecover(RETREAT_MS, true)
       return true
@@ -1673,9 +1694,8 @@ export const useGameStore = defineStore('game', {
 
     /** 아이템 자동 구매 (편의성 기능): 고른 아이템이 떨어지면 1개 */
     autoBuyItems() {
-      for (const cat of Object.keys(DEFAULT_AUTO_BUY) as AutoCategory[]) {
-        // 체력 회복은 자동 사용할 때 필요한 아이템을 그때그때 삼 (autoUseItem)
-        if (cat === 'heal' || !this.perks.includes(`autoBuy:${cat}`) || !this.autoBuy[cat]) continue
+      for (const cat of AUTO_BUY_CATS) {
+        if (!this.perks.includes(`autoBuy:${cat}`) || !this.autoBuy[cat]) continue
         const id = this.autoBuyItem[cat]
         if (!(this.items[id] ?? 0)) this.buyItem(id, 1)
       }
@@ -2048,7 +2068,7 @@ export const useGameStore = defineStore('game', {
       }
       if (id === 'dex:reveal' || id === END_HEAL_PERK.id) return true
       // 사면 바로 켬
-      const [kind, cat] = id.split(':') as ['autoUse' | 'autoBuy', AutoCategory]
+      const [kind, cat] = id.split(':') as ['autoUse' | 'autoBuy', AutoBuyCategory]
       this[kind][cat] = true
       return true
     },
@@ -2679,11 +2699,11 @@ export const useGameStore = defineStore('game', {
       if (!this.perks.includes(`autoUse:${cat}`)) return
       this.autoUse[cat] = on
     },
-    setAutoBuy(cat: AutoCategory, on: boolean) {
+    setAutoBuy(cat: AutoBuyCategory, on: boolean) {
       if (!this.perks.includes(`autoBuy:${cat}`)) return
       this.autoBuy[cat] = on
     },
-    setAutoBuyItem(cat: AutoCategory, itemId: string) {
+    setAutoBuyItem(cat: AutoBuyCategory, itemId: string) {
       if (shopItem(itemId)?.category === cat) this.autoBuyItem[cat] = itemId
     },
   },
