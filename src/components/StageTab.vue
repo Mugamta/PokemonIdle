@@ -6,6 +6,7 @@ import { useGameStore } from '../stores/game'
 import { useStageViewStore } from '../stores/stageView'
 import StageDetail from './StageDetail.vue'
 import LeagueDialog from './LeagueDialog.vue'
+import PokeSprite from './PokeSprite.vue'
 
 const view = useStageViewStore()
 const game = useGameStore()
@@ -25,6 +26,37 @@ function pickDifficulty(d: Difficulty) {
   showStages.value = false
   view.selectRegion(findStage(game.currentStageId)?.region.id ?? 1)
 }
+
+/** 지방 카드에 보여줄 스타팅 포켓몬 (작품별) */
+const KANTO_STARTERS = ['bulbasaur', 'charmander', 'squirtle']
+const JOHTO_STARTERS = ['chikorita', 'cyndaquil', 'totodile']
+const HOENN_STARTERS = ['treecko', 'torchic', 'mudkip']
+const SINNOH_STARTERS = ['turtwig', 'chimchar', 'piplup']
+const UNOVA_STARTERS = ['snivy', 'tepig', 'oshawott']
+const ALOLA_STARTERS = ['rowlet', 'litten', 'popplio']
+const STARTERS: Record<string, string[]> = {
+  'kanto-rby': KANTO_STARTERS,
+  'johto-gs': JOHTO_STARTERS,
+  'johto-c': JOHTO_STARTERS,
+  'hoenn-rs': HOENN_STARTERS,
+  'hoenn-e': HOENN_STARTERS,
+  'kanto-frlg': KANTO_STARTERS,
+  'sinnoh-dp': SINNOH_STARTERS,
+  'sinnoh-pt': SINNOH_STARTERS,
+  'johto-hgss': JOHTO_STARTERS,
+  'unova-bw': UNOVA_STARTERS,
+  'unova-b2w2': UNOVA_STARTERS,
+  'kalos-xy': ['chespin', 'fennekin', 'froakie'],
+  'hoenn-oras': HOENN_STARTERS,
+  'alola-sm': ALOLA_STARTERS,
+  'alola-usum': ALOLA_STARTERS,
+  'kanto-lgpe': ['pikachu', 'eevee'],
+  'galar-swsh': ['grookey', 'scorbunny', 'sobble'],
+  'sinnoh-bdsp': SINNOH_STARTERS,
+  'paldea-sv': ['sprigatito', 'fuecoco', 'quaxly'],
+  hisui: ['rowlet', 'cyndaquil', 'oshawott'],
+}
+const conqueredPct = (region: Region) => (region.stages.length ? (conquered(region) / region.stages.length) * 100 : 0)
 
 /** 지금 진행 중인 스테이지가 있는 지방 */
 const currentRegionId = computed(() => findStage(game.currentStageId)?.region.id ?? null)
@@ -104,30 +136,48 @@ watch(
     </ul>
   </div>
 
-  <!-- 지방 목록 -->
+  <!-- 지방 목록: 스타팅 포켓몬이 있는 큰 카드 -->
   <ul v-else class="list">
     <li v-for="region in REGIONS" :key="region.id">
       <!-- 조건을 만족하지 못한 히든 지방은 이름을 가림 -->
-      <div v-if="!game.canEnter(region)" class="item locked">
-        <span class="num">{{ region.id }}</span>
-        <span class="name">???</span>
-        <span class="tag hidden">🔒 히든</span>
+      <div v-if="!game.canEnter(region)" class="item region locked">
+        <div class="starters unknown">?</div>
+        <div class="rinfo">
+          <div class="rhead">
+            <span class="num">{{ region.id }}</span>
+            <span class="rtitle">???</span>
+          </div>
+          <div class="tags"><span class="tag hidden">🔒 히든</span></div>
+        </div>
       </div>
       <button
         v-else
         type="button"
-        class="item clickable"
-        :class="{ selected: view.regionId === region.id, current: currentRegionId === region.id }"
+        class="item region clickable"
+        :class="{ selected: view.regionId === region.id, current: currentRegionId === region.id, sealed: game.regionLocked(region) }"
         @click="openRegion(region)"
       >
-        <span class="num">{{ region.id }}</span>
-        <span class="name rname">{{ region.name }}<small class="ver">{{ region.version }}</small></span>
-        <span v-if="region.hidden" class="tag hidden">히든</span>
-        <span v-if="game.regionLocked(region)" class="tag league" title="앞 지방의 포켓몬 리그를 제패해야 갈 수 있습니다">🔒 리그</span>
-        <span v-if="game.leagueCleared.includes(region.key)" class="tag champ" title="이 지방의 포켓몬 리그를 제패했습니다">리그 제패</span>
-        <span v-if="game.regionDexDone(region)" class="tag dex" title="모든 스테이지의 출현 포켓몬을 잡았습니다">도감 완성</span>
-        <span v-if="game.regionCleared(region)" class="tag cleared" title="모든 스테이지를 클리어했습니다">전부 클리어</span>
-        <span class="count" title="정복한 스테이지 (클리어 + 도감 완성) / 전체 스테이지">정복 {{ conquered(region) }}/{{ region.stages.length }}개</span>
+        <div class="starters">
+          <PokeSprite v-for="sp in STARTERS[region.key] ?? []" :key="sp" class="starter" :species="sp" :size="52" lazy />
+        </div>
+        <div class="rinfo">
+          <div class="rhead">
+            <span class="num">{{ region.id }}</span>
+            <span class="rtitle">{{ region.name }}</span>
+          </div>
+          <small class="ver">{{ region.version }}</small>
+          <div class="tags">
+            <span v-if="region.hidden" class="tag hidden">히든</span>
+            <span v-if="game.regionLocked(region)" class="tag league" title="앞 지방의 포켓몬 리그를 제패해야 갈 수 있습니다">🔒 리그</span>
+            <span v-if="game.leagueCleared.includes(region.key)" class="tag champ" title="이 지방의 포켓몬 리그를 제패했습니다">리그 제패</span>
+            <span v-if="game.regionDexDone(region)" class="tag dex" title="모든 스테이지의 출현 포켓몬을 잡았습니다">도감 완성</span>
+            <span v-if="game.regionCleared(region)" class="tag cleared" title="모든 스테이지를 클리어했습니다">전부 클리어</span>
+          </div>
+          <div class="progress" title="정복한 스테이지 (클리어 + 도감 완성) / 전체 스테이지">
+            <div class="bar"><div class="fill" :style="{ width: `${conqueredPct(region)}%` }" /></div>
+            <span class="count">정복 {{ conquered(region) }}/{{ region.stages.length }}</span>
+          </div>
+        </div>
       </button>
     </li>
   </ul>
@@ -295,17 +345,89 @@ watch(
   flex: 1;
   font-size: 16px;
 }
-/* 지방 이름: 버전은 항상 다음 줄, 넘치면 잘림 */
-.rname {
+/* 지방 카드: 왼쪽 스타팅 포켓몬, 오른쪽 이름·버전·태그·정복 진행도 */
+.item.region {
+  gap: 10px;
+  padding: 10px 14px 10px 8px;
+  background: linear-gradient(135deg, #30303c, #24242c);
+}
+.starters {
+  flex: none;
+  width: 116px;
+  height: 64px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 8px;
+  background: radial-gradient(ellipse at 50% 85%, rgba(255, 203, 5, 0.14), transparent 70%);
+}
+.starter + .starter {
+  margin-left: -16px;
+}
+.starters.unknown {
+  align-items: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: #4a4a56;
+  background: #26262e;
+}
+.item.region.sealed .starters {
+  filter: grayscale(1) brightness(0.7);
+}
+.rinfo {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  gap: 3px;
 }
-.rname .ver {
+.rhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rhead .num {
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+}
+.rtitle {
+  font-size: 18px;
+  font-weight: 700;
+}
+.rinfo .ver {
   margin-left: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tags:empty {
+  display: none;
+}
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: #1a1a20;
+  overflow: hidden;
+}
+.fill {
+  height: 100%;
+  background: #ffcb05;
+}
+.progress .count {
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .count,
