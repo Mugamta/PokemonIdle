@@ -113,9 +113,7 @@ function useShopItem(c: ItemCategory, id: string) {
 }
 const turnNote = computed(() => {
   if (!game.party.length) return ''
-  if (!game.enemy) return '전투 중이 아니라서 회복 아이템은 턴을 소모하지 않습니다.'
-  if (game.battleTurns === 0) return '아직 기술을 쓰기 전이라 회복 아이템은 턴을 소모하지 않습니다. (몬스터볼·배틀용 도구는 항상 한 턴 소모)'
-  return '전투 중에 쓰면 한 턴을 소모합니다.'
+  return game.enemy ? '전투 중 - 사용 시 턴 소모 O' : '비전투 - 사용 시 턴 소모 X'
 })
 
 // 지닌 도구: 고른 포켓몬이 지닌 도구(여러 종류·같은 도구 여러 개)와 가방의 지닐 수 있는 도구
@@ -623,9 +621,6 @@ function sell(id: string, n: number) {
   margin: 0 0 10px;
   color: #9a9aa6;
   font-size: 12px;
-  line-height: 1.45;
-  /* 전투 상태에 따라 문구가 1~2줄로 바뀌어도 아래 목록이 흔들리지 않도록 2줄 높이를 항상 확보 */
-  min-height: 2.9em;
 }
 
 .sec .auto {
