@@ -26,6 +26,9 @@ function pickDifficulty(d: Difficulty) {
   view.selectRegion(findStage(game.currentStageId)?.region.id ?? 1)
 }
 
+/** 지금 진행 중인 스테이지가 있는 지방 */
+const currentRegionId = computed(() => findStage(game.currentStageId)?.region.id ?? null)
+
 /** 리그 도전 창을 띄운 (잠긴) 지방 */
 const leagueFor = ref<Region | null>(null)
 
@@ -82,7 +85,7 @@ watch(
         <button
           type="button"
           class="item clickable"
-          :class="{ selected: view.stageId === stage.id }"
+          :class="{ selected: view.stageId === stage.id, current: game.currentStageId === stage.id }"
           @click="view.toggleStage(stage.id)"
         >
           <span class="stage-id">{{ stage.id }}</span>
@@ -114,7 +117,7 @@ watch(
         v-else
         type="button"
         class="item clickable"
-        :class="{ selected: view.regionId === region.id }"
+        :class="{ selected: view.regionId === region.id, current: currentRegionId === region.id }"
         @click="openRegion(region)"
       >
         <span class="num">{{ region.id }}</span>
@@ -242,6 +245,26 @@ watch(
 
 .item.selected {
   box-shadow: inset 0 0 0 2px #ffcb05;
+}
+
+/* 지금 진행 중인 지방·스테이지: 테두리 점멸 */
+.item.current {
+  animation: current-blink 1.2s ease-in-out infinite;
+}
+@keyframes current-blink {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 2px #ffcb05;
+  }
+  50% {
+    box-shadow: inset 0 0 0 2px rgba(255, 203, 5, 0.1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .item.current {
+    animation: none;
+    box-shadow: inset 0 0 0 2px #ffcb05;
+  }
 }
 
 .num {
