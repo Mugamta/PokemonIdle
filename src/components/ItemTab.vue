@@ -623,6 +623,9 @@ function sell(id: string, n: number) {
   margin: 0 0 10px;
   color: #9a9aa6;
   font-size: 12px;
+  line-height: 1.45;
+  /* 전투 상태에 따라 문구가 1~2줄로 바뀌어도 아래 목록이 흔들리지 않도록 2줄 높이를 항상 확보 */
+  min-height: 2.9em;
 }
 
 .sec .auto {
