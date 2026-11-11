@@ -113,7 +113,7 @@ function useShopItem(c: ItemCategory, id: string) {
 }
 const turnNote = computed(() => {
   if (!game.party.length) return ''
-  return game.enemy ? '전투 중 - 사용 시 턴 소모 O' : '비전투 - 사용 시 턴 소모 X'
+  return game.enemy ? '전투중 - 사용 시 턴 소모 O' : '전투후 - 사용 시 턴 소모 X'
 })
 
 // 지닌 도구: 고른 포켓몬이 지닌 도구(여러 종류·같은 도구 여러 개)와 가방의 지닐 수 있는 도구
