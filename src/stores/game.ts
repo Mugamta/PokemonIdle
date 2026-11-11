@@ -4,6 +4,9 @@ import {
   chooseMove,
   cureStatus,
   DIFFICULTY_AI,
+  DIFFICULTY_AI_OPTS,
+  DIFFICULTY_IDS,
+  DIFFICULTIES,
   onBattleEnd,
   endOfTurnBenefits,
   onEntry,
@@ -20,6 +23,7 @@ import {
   selectableMoves,
   speciesOf,
   stackMult,
+  statsOf,
   takeHeld,
   wildMoveset,
   type Battler,
@@ -153,6 +157,8 @@ import {
   type CatchContext,
 } from '../data/items'
 import { BATTLE_HELD, POWER_ITEM_EV, POWER_ITEMS } from '../core/items'
+import { DIFFICULTY_EV, DIFFICULTY_LEVEL, difficultyMon } from '../core/difficulty'
+import { frontierSets } from '../data/frontier'
 import { findStage, stageWeather, migrateLegacyRegionIds, migrateLegacyStageId, REGIONS, type Region, type Stage } from '../data/stages'
 import { leagueOf, leagueStage, regionPlayable, requiredLeagueRegion, trainerLabel, type LeagueMon, type LeagueTrainer } from '../data/league'
 import { useBattleLogStore } from './battleLog'
@@ -586,7 +592,30 @@ export interface WildPokemon {
   intel?: AbilityIntel
   /** 트레이너의 포켓몬 (리그). boss 도 함께 켜짐 (포획·도망 불가, 트레이너 경험치) */
   trainer?: EnemyTrainer
+  /** 노력치 (난이도 보정, 없으면 0) */
+  evs?: number[]
+  /** 난이도 보정으로 지닌 도구: 쓰러뜨리거나 잡아도 얻을 수 없음 */
+  noDrop?: boolean
 }
+
+/** 난이도별로 따로 기록하는 진행도 (지금 난이도의 진행도는 스토어의 같은 이름 값에 있음) */
+export interface DifficultyProgress {
+  currentStageId: string
+  stageProgress: Record<string, StageProgress>
+  clearedStages: string[]
+  unlockedRegions: number[]
+  leagueCleared: string[]
+}
+const freshProgress = (): DifficultyProgress => ({
+  currentStageId: '1-1',
+  stageProgress: {},
+  clearedStages: [],
+  unlockedRegions: [1],
+  leagueCleared: [],
+})
+
+/** 도감 보너스: 세대 도감 하나를 모두 잡을 때마다 모든 실능치 +10% (합연산) */
+export const DEX_GEN_BOOST = 0.1
 
 /** 상대 포켓몬의 트레이너 정보 */
 export interface EnemyTrainer {
@@ -759,6 +788,26 @@ export function pickVariant(t: LeagueTrainer, lead: string | undefined): number 
   return best
 }
 
+/**
+ * 난이도 보정 (보통·어려움): 레벨·노력치를 올리고 배틀시설 엔트리 기반 기술·성격,
+ * 어려움이면 기술에 어울리는 도구 (얻을 수 없음)
+ */
+export function applyDifficulty(e: WildPokemon, diff: Difficulty): WildPokemon {
+  if (diff === 'easy') return e
+  e.level += DIFFICULTY_LEVEL[diff]
+  e.evs = Array.from({ length: 6 }, () => DIFFICULTY_EV[diff])
+  const set = difficultyMon(e.species, diff)
+  if (set) {
+    e.moves = set.moves
+    e.nature = set.nature
+    if (set.item) {
+      e.item = set.item
+      e.noDrop = true
+    }
+  }
+  return e
+}
+
 export const useGameStore = defineStore('game', {
   state: () => ({
     playTimeMs: 0,
@@ -857,8 +906,12 @@ export const useGameStore = defineStore('game', {
     everstoneOwned: false,
     /** 변함없는돌 켜짐: 레벨업 진화를 막음 */
     everstone: false,
-    /** 설정: 난이도 */
-    difficulty: 'normal' as Difficulty,
+    /** 지금 진행 중인 난이도 (스테이지 탭 상단에서 바꿈) */
+    difficulty: 'easy' as Difficulty,
+    /** 지금 난이도가 아닌 난이도들의 진행도 */
+    diffProgress: {} as Partial<Record<Difficulty, DifficultyProgress>>,
+    /** 난이도별 진행 분리 적용됨 (false = 분리 전 저장 데이터) */
+    diffSplit: false,
     /** 설정: 기본 도트 */
     spriteDefault: 'fan' as SpriteDefault,
     /** 설정: 포켓몬별로 고른 도트 {포켓몬 id: 도트 키} */
@@ -882,7 +935,36 @@ export const useGameStore = defineStore('game', {
       return (stage) => (stage.encounters ? encountersWith(stage.encounters, this.waterMethods) : null)
     },
     /** PP 소모 여부 (PP_START_STAGE 클리어 후) */
-    ppActive: (s) => s.clearedStages.includes(PP_START_STAGE),
+    ppActive(): boolean {
+      return this.allProgress.some((p) => p.clearedStages.includes(PP_START_STAGE))
+    },
+    /** 모든 난이도의 진행도 (지금 난이도가 맨 앞) */
+    allProgress: (s): DifficultyProgress[] => [
+      {
+        currentStageId: s.currentStageId,
+        stageProgress: s.stageProgress,
+        clearedStages: s.clearedStages,
+        unlockedRegions: s.unlockedRegions,
+        leagueCleared: s.leagueCleared,
+      },
+      ...DIFFICULTY_IDS.filter((d) => d !== s.difficulty).flatMap((d) => (s.diffProgress[d] ? [s.diffProgress[d]] : [])),
+    ],
+    /** 어느 난이도에서든 들어가 본 지방 id (특수 기능·세대 기술 해금은 난이도와 상관없이 공용) */
+    everUnlockedRegions(): number[] {
+      return [...new Set(this.allProgress.flatMap((p) => p.unlockedRegions))]
+    },
+    /** 모두 잡은 세대 목록 (도감 보너스) */
+    completedGens: (s): number[] => {
+      const index = dexData.value?.index
+      if (!index) return []
+      const caught = new Set(s.caught)
+      const gens = [...new Set(index.map((p) => p.gen))].sort((a, b) => a - b)
+      return gens.filter((g) => index.every((p) => p.gen !== g || caught.has(p.id)))
+    },
+    /** 도감 보너스 실능치 배율 (0.1 = +10%) */
+    dexBoost(): number {
+      return Math.round(this.completedGens.length * DEX_GEN_BOOST * 100) / 100
+    },
     hasPerk: (s) => (id: PerkId) => s.perks.includes(id),
     /** 지금 있는 스테이지의 필드 날씨 (원작에서 날씨가 있는 장소, 없으면 null) */
     fieldWeather: (s) => stageWeather(s.currentStageId),
@@ -998,13 +1080,19 @@ export const useGameStore = defineStore('game', {
     /** 자동 전투 AI 개선 3·4: 확정 1타 기술 고르는 기준 */
     autoKoPick: (s): KoPick | undefined => (s.perks.includes('ai:pp') ? 'pp' : s.perks.includes('ai:ko') ? 'effect' : undefined),
     /** 특수 기능 해금 여부 (해금하는 지방에 들어간 적 있음) */
-    gimmickUnlocked: (s) => (g: Gimmick) => REGIONS.some((r) => r.unlocks === g && s.unlockedRegions.includes(r.id)),
+    gimmickUnlocked(): (g: Gimmick) => boolean {
+      const ids = this.everUnlockedRegions
+      return (g) => REGIONS.some((r) => r.unlocks === g && ids.includes(r.id))
+    },
     /** 해금한 특수 기능이 하나라도 있음 */
     anyGimmickUnlocked(): boolean {
       return GIMMICKS.some((g) => this.gimmickUnlocked(g))
     },
     /** 해금된 지방이 무대인 세대 목록 */
-    unlockedGens: (s) => REGIONS.filter((r) => s.unlockedRegions.includes(r.id)).flatMap((r) => r.gens),
+    unlockedGens(): number[] {
+      const ids = this.everUnlockedRegions
+      return REGIONS.filter((r) => ids.includes(r.id)).flatMap((r) => r.gens)
+    },
     /** 이동 가능한 지방인지 (히든 지방은 조건 포켓몬 포획 필요) */
     canEnter: (s) => (region: Region) => !region.hidden || s.caught.includes(region.hidden.requiresCaught),
     /**
@@ -1171,6 +1259,28 @@ export const useGameStore = defineStore('game', {
       // 이전 저장 데이터 호환: 지방을 작품별로 나누기 전(수상 스테이지 재배치 전 포함) 스테이지 id 변환
       if (savedStageOrder < STAGE_ORDER) this.migrateStageIds(savedStageOrder)
       this.stageOrder = STAGE_ORDER
+      // 난이도별 진행 분리 전 저장 데이터: 지금까지의 진행도는 쉬움(분리 전 기본 난이도와 같은 상대)으로
+      if (!this.diffSplit) {
+        this.difficulty = 'easy'
+        this.diffProgress = {}
+        this.diffSplit = true
+      }
+      if (!DIFFICULTY_IDS.includes(this.difficulty)) this.difficulty = 'easy'
+      if (!this.diffProgress || typeof this.diffProgress !== 'object') this.diffProgress = {}
+      for (const d of DIFFICULTY_IDS) {
+        const p = this.diffProgress[d]
+        if (!p) continue
+        if (d === this.difficulty || typeof p !== 'object') {
+          delete this.diffProgress[d]
+          continue
+        }
+        if (!findStage(p.currentStageId)) p.currentStageId = '1-1'
+        if (!p.stageProgress || typeof p.stageProgress !== 'object') p.stageProgress = {}
+        if (!Array.isArray(p.clearedStages)) p.clearedStages = []
+        if (!Array.isArray(p.unlockedRegions)) p.unlockedRegions = [1]
+        if (!p.unlockedRegions.includes(1)) p.unlockedRegions.unshift(1)
+        if (!Array.isArray(p.leagueCleared)) p.leagueCleared = []
+      }
       if (!findStage(this.currentStageId)) this.currentStageId = '1-1'
       if (this.travel && !findStage(this.travel.to)) this.travel = null
       // 이전 저장 데이터 호환: 아이템별 자동사용 설정 시절의 값 정리
@@ -1370,6 +1480,40 @@ export const useGameStore = defineStore('game', {
     cancelTravel() {
       this.travel = null
     },
+    /**
+     * 난이도 바꾸기: 지금 난이도의 진행도를 보관하고 고른 난이도의 진행도로 (처음이면 1번 지방 처음부터).
+     * 전투·이동·리그 도전은 취소됨. 회복 중에는 바꿀 수 없음
+     */
+    setDifficulty(to: Difficulty): boolean {
+      if (to === this.difficulty || !DIFFICULTY_IDS.includes(to) || this.faint) return false
+      this.quitLeague('난이도를 바꿔 리그 도전 기록이 초기화되었다.')
+      this.endBattleGimmick()
+      this.enemy = null
+      this.travel = null
+      this.playerStages = {}
+      this.playerVol = {}
+      this.playerIntel = null
+      const store = this.diffProgress
+      store[this.difficulty] = {
+        currentStageId: this.currentStageId,
+        stageProgress: this.stageProgress,
+        clearedStages: this.clearedStages,
+        unlockedRegions: this.unlockedRegions,
+        leagueCleared: this.leagueCleared,
+      }
+      const next = store[to] ?? freshProgress()
+      delete store[to]
+      this.difficulty = to
+      this.currentStageId = next.currentStageId
+      this.stageProgress = next.stageProgress
+      this.clearedStages = next.clearedStages
+      this.unlockedRegions = next.unlockedRegions
+      this.leagueCleared = next.leagueCleared
+      this.nextEncounterAt = 0
+      const label = DIFFICULTIES.find((d) => d.id === to)?.label ?? to
+      useBattleLogStore().push(`난이도를 ${ro(label)} 바꿨다.`, 'info')
+      return true
+    },
 
     // ---------- 전투 ----------
     /** index = 파티 번호 (맨 앞이 아니면 랭크·전투 중 상태 없이 막 나온 상태로 계산) */
@@ -1394,6 +1538,7 @@ export const useGameStore = defineStore('game', {
           // 파티 슬롯 도구: 나오면 맨 앞 슬롯의 도구를 지님
           held: heldOf(this.slotHeldActive ? this.party[0]! : m),
           vol: {},
+          boost: this.dexBoost,
         }
         b.hp = m.hp ?? maxHpOf(b)
         return b
@@ -1415,6 +1560,7 @@ export const useGameStore = defineStore('game', {
         held: heldOf(m),
         vol: { ...this.playerVol },
         intel: this.playerIntel ? { cands: [...this.playerIntel.cands], known: this.playerIntel.known } : undefined,
+        boost: this.dexBoost,
       }
       this.applyGimmick(b)
       b.hp = m.hp ?? maxHpOf(b)
@@ -1434,9 +1580,13 @@ export const useGameStore = defineStore('game', {
       else b.tera = g.type
     },
     /** 파티 포켓몬의 최대 HP (싸우는 포켓몬이 다이맥스 중이면 2배) */
-    memberMaxHp(m: PartyMember): number {
+    memberMaxHp(m: PartyMember, species = m.species): number {
       const dynamax = m === this.party[0] && this.gimmickActive?.kind === 'dynamax'
-      return maxHpOf({ species: m.species, level: m.level, ivs: m.ivs ?? [], evs: m.evs ?? [], nature: m.nature, dynamax })
+      return maxHpOf({ species, level: m.level, ivs: m.ivs ?? [], evs: m.evs ?? [], nature: m.nature, dynamax, boost: this.dexBoost })
+    },
+    /** 파티 포켓몬의 실능치 (도감 보너스 포함) */
+    memberStats(m: Pick<PartyMember, 'species' | 'level' | 'ivs' | 'evs' | 'nature'>): number[] {
+      return statsOf({ species: m.species, level: m.level, ivs: m.ivs ?? [], evs: m.evs ?? [], nature: m.nature, boost: this.dexBoost })
     },
 
     // ---------- 특수 기능 ----------
@@ -1535,7 +1685,7 @@ export const useGameStore = defineStore('game', {
         level: e.level,
         nature: e.nature,
         ivs: e.ivs,
-        evs: [0, 0, 0, 0, 0, 0],
+        evs: e.evs ?? [0, 0, 0, 0, 0, 0],
         hp: 0,
         moves: e.moves ?? [],
         stages: { ...(e.stages ?? {}) },
@@ -1574,7 +1724,7 @@ export const useGameStore = defineStore('game', {
       } else log.push(enemy.boss ? `보스 ${josa(name, '이', '가')} 승부를 걸어왔다!` : `앗! 야생 ${josa(name, '이', '가')} 튀어나왔다!`, 'info')
       if (enemy.boss && (!tr || tr.index === 0)) sfx('boss')
       // 특성 정보: 서로 상대가 가질 수 있는 특성을 후보로 시작
-      enemy.intel = { cands: speciesAbilities(enemy.species, !!enemy.boss || this.difficulty === 'hard'), known: false }
+      enemy.intel = { cands: speciesAbilities(enemy.species, !!enemy.boss || this.difficulty !== 'easy'), known: false }
       const mine = this.party[0]
       this.playerIntel = mine ? { cands: speciesAbilities(mine.species, true), known: false } : null
       // 전투 시작 시 발동하는 특성 (위협 등)
@@ -1654,15 +1804,15 @@ export const useGameStore = defineStore('game', {
     spawn() {
       const stage = findStage(this.currentStageId)?.stage
       if (stage) this.dexPickRod(stage)
-      const enemy = stage && rollWild(this.stageEncounters(stage), this.difficulty === 'hard')
-      if (enemy) this.startBattle(enemy)
+      const enemy = stage && rollWild(this.stageEncounters(stage), this.difficulty !== 'easy')
+      if (enemy) this.startBattle(applyDifficulty(enemy, this.difficulty))
       else this.nextEncounterAt = Date.now() + 5000
     },
     challengeBoss() {
       const stage = findStage(this.currentStageId)?.stage
       if (!stage || !this.bossReady(stage.id) || this.faint || this.travel || !battleReady()) return
       const boss = makeBoss(this.stageEncounters(stage))
-      if (boss) this.startBattle(boss)
+      if (boss) this.startBattle(applyDifficulty(boss, this.difficulty))
     },
 
     /** 지금 쓸 수 있는 장착 기술 (PP가 남은 기술) */
@@ -1765,7 +1915,7 @@ export const useGameStore = defineStore('game', {
       const override = md ? (activated === 'z' ? zMove(md) : this.gimmickActive?.kind === 'dynamax' ? maxMove(md) : undefined) : undefined
       // 상대도 PP가 남은 기술만 (모두 0이면 발버둥)
       const foeMoves = this.ppActive ? foe.moves.filter((id) => (ppOf(this.enemy!, id) ?? 1) > 0) : foe.moves
-      const enemyMove = chooseMove({ ...foe, moves: foeMoves }, me, DIFFICULTY_AI[this.difficulty])
+      const enemyMove = chooseMove({ ...foe, moves: foeMoves }, me, DIFFICULTY_AI[this.difficulty], undefined, DIFFICULTY_AI_OPTS[this.difficulty])
       const result: TurnResult = runTurn(me, foe, playerMove, enemyMove, override)
       for (const line of result.lines) log.push(line)
       // 효과음: 공격마다 조금씩 간격을 두고, 쓰러짐은 마지막 공격 뒤에
@@ -1863,7 +2013,7 @@ export const useGameStore = defineStore('game', {
         if (!targets.length) return null
         return () => {
           for (const t of targets) {
-            const tMax = maxHpOf({ species: t.species, level: t.level, ivs: t.ivs ?? [], evs: t.evs ?? [], nature: t.nature })
+            const tMax = this.memberMaxHp(t)
             t.hp = def.revive! >= 1 ? null : Math.max(1, Math.floor(tMax * def.revive!))
             cureStatus(t)
           }
@@ -2306,9 +2456,14 @@ export const useGameStore = defineStore('game', {
     /** 그 작품 지방의 그 스테이지에 도착한 적 있는지 (지금 있는 곳 / 클리어 / 전투 기록) */
     stageVisited(regionKey: string, stageName: string): boolean {
       const region = REGIONS.find((r) => r.key === regionKey)
-      if (!region || !this.unlockedRegions.includes(region.id)) return false
-      return region.stages.some(
-        (s) => s.name === stageName && (s.id === this.currentStageId || this.clearedStages.includes(s.id) || !!this.stageProgress[s.id]),
+      if (!region) return false
+      // 어느 난이도에서든 가 본 곳이면 됨
+      return this.allProgress.some(
+        (p) =>
+          p.unlockedRegions.includes(region.id) &&
+          region.stages.some(
+            (s) => s.name === stageName && (s.id === p.currentStageId || p.clearedStages.includes(s.id) || !!p.stageProgress[s.id]),
+          ),
       )
     },
     /** 기술가르침 비용이 부족한 것 (없으면 빈 문자열) */
@@ -2610,14 +2765,18 @@ export const useGameStore = defineStore('game', {
       const normal = normalAbilities(e.species)
       const hidden = !!e.ability && e.ability === hiddenAbility(e.species) && !normal.includes(e.ability)
       const slot = Math.max(0, normal.indexOf(e.ability ?? ''))
-      const learned = movesUpToLevel(e.species, e.level, this.unlockedGens)
+      // 난이도 보정으로 레벨 100을 넘는 포켓몬도 잡으면 레벨 100 (노력치는 0부터, 남은 HP 비율은 그대로)
+      const level = Math.min(100, e.level)
+      const learned = movesUpToLevel(e.species, level, this.unlockedGens)
       const moves = (e.moves?.length ? e.moves : learned).slice(-1)
+      const foeMax = maxHpOf({ ...e, evs: e.evs ?? [] })
+      const heldItem = e.item && !e.noDrop ? e.item : null
       const caught: PartyMember = {
         species: e.species,
-        level: e.level,
+        level,
         moves,
         learned: [...new Set([...(e.moves ?? []), ...learned])],
-        exp: expAtLevel(e.species, e.level),
+        exp: expAtLevel(e.species, level),
         nature: e.nature,
         gender: e.gender !== undefined ? e.gender : rollGender(e.species),
         ivs: [...e.ivs],
@@ -2626,7 +2785,7 @@ export const useGameStore = defineStore('game', {
         status: e.status ?? null,
         abilitySlot: slot,
         hiddenAbility: hidden,
-        held: e.item ? { [e.item]: 1 } : {},
+        held: heldItem ? { [heldItem]: 1 } : {},
         ball: ballId,
         // 테라스탈 타입: 그 포켓몬의 타입 중 하나
         teraType: (() => {
@@ -2639,19 +2798,20 @@ export const useGameStore = defineStore('game', {
         cureStatus(caught)
       }
       if (ballId === 'friend-ball') caught.friendship = FRIEND_BALL_FRIENDSHIP
-      if (caught.hp != null && caught.hp >= maxHpOf({ ...caught, ivs: caught.ivs, evs: caught.evs })) caught.hp = null
+      if (caught.hp != null && (level !== e.level || e.evs)) caught.hp = Math.max(1, Math.round((caught.hp / foeMax) * this.memberMaxHp(caught)))
+      if (caught.hp != null && caught.hp >= this.memberMaxHp(caught)) caught.hp = null
       this.recordToDex(caught)
       if (this.party.length < PARTY_MAX) {
         this.keepSlotHeld(() => this.party.push(caught))
         log.push(`${josa(name, '은', '는')} 파티에 들어갔다!`, 'info')
-        if (e.item && this.slotHeldActive) {
-          const itemName = dexData.value?.items[e.item]?.ko ?? e.item
+        if (heldItem && this.slotHeldActive) {
+          const itemName = dexData.value?.items[heldItem]?.ko ?? heldItem
           log.push(`${josa(name, '이', '가')} 지니고 있던 ${josa(itemName, '은', '는')} 가방에 넣었다.`, 'info')
         }
       } else {
         log.push(`파티가 가득 차서 ${name}의 정보는 도감에 기록되었다.`, 'info')
-        if (e.item) {
-          const itemName = dexData.value?.items[e.item]?.ko ?? e.item
+        if (heldItem) {
+          const itemName = dexData.value?.items[heldItem]?.ko ?? heldItem
           log.push(`${josa(name, '이', '가')} 지니고 있던 ${josa(itemName, '은', '는')} 가방에 넣었다.`, 'info')
         }
         this.takeHeldFrom(caught)
@@ -2864,7 +3024,7 @@ export const useGameStore = defineStore('game', {
       log.recordReward(expGot, prize)
 
       // 지니고 있던 도구 획득 (트레이너의 포켓몬은 제외)
-      if (enemy.item && !enemy.trainer) {
+      if (enemy.item && !enemy.trainer && !enemy.noDrop) {
         this.addToBag(enemy.item)
         const itemName = dexData.value?.items[enemy.item]?.ko ?? enemy.item
         log.push(`${josa(name, '은', '는')} ${josa(itemName, '을', '를')} 지니고 있었다! ${josa(itemName, '을', '를')} 손에 넣었다!`, 'good')
@@ -2948,8 +3108,7 @@ export const useGameStore = defineStore('game', {
       member.exp += amount
       log.push(`${josa(name, '은', '는')} 경험치를 ${amount} 얻었다!`)
       let leveled = false
-      const maxHp = () =>
-        maxHpOf({ species: member.species, level: member.level, ivs: member.ivs ?? [], evs: member.evs ?? [], nature: member.nature })
+      const maxHp = () => this.memberMaxHp(member)
       while (member.level < 100 && member.exp >= expAtLevel(member.species, member.level + 1)) {
         const oldMax = maxHp()
         member.level++
@@ -3179,8 +3338,7 @@ export const useGameStore = defineStore('game', {
       if (member === this.party[0]) this.endGimmick()
       const before = speciesOf(member.species)?.ko ?? member.species
       const after = speciesOf(to)?.ko ?? to
-      const maxHp = (species: string) =>
-        maxHpOf({ species, level: member.level, ivs: member.ivs ?? [], evs: member.evs ?? [], nature: member.nature })
+      const maxHp = (species: string) => this.memberMaxHp(member, species)
       const oldMax = maxHp(member.species)
       member.species = to
       if (member.hp != null) member.hp = Math.max(0, member.hp + (maxHp(to) - oldMax))
@@ -3368,7 +3526,7 @@ export const useGameStore = defineStore('game', {
       const team = t.variants[t.champion ? run.variant : 0] ?? t.variants[0]!
       const m = team[run.mon]
       if (!m) return
-      this.startBattle(makeLeagueMon(t, m, run.mon, team.length))
+      this.startBattle(applyDifficulty(makeLeagueMon(t, m, run.mon, team.length), this.difficulty))
     },
     /** 리그 트레이너의 포켓몬을 쓰러뜨린 뒤: 다음 포켓몬 → 다음 트레이너 → 제패 */
     advanceLeague() {
@@ -3577,4 +3735,4 @@ function sanitizeAutoHeal(v: unknown): Record<AutoHealKey, AutoHealRange> {
   return { heal: fix('heal'), healAfter: fix('healAfter') }
 }
 
-export const battleReady = () => !!(dexData.value && learnsets.value && battleData.value)
+export const battleReady = () => !!(dexData.value && learnsets.value && battleData.value && frontierSets.value)

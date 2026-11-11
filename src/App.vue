@@ -19,6 +19,7 @@ import { load, save } from './core/save'
 import { loadBattle } from './data/battle'
 import { loadDex, loadLearnsets } from './data/dex'
 import { loadEvolutions } from './data/evolutions'
+import { loadFrontier } from './data/frontier'
 import { useGameStore } from './stores/game'
 
 const game = useGameStore()
@@ -47,7 +48,7 @@ onMounted(() => {
   game.validate(data ? (data.state.stageOrder ?? 1) : undefined)
   loaded.value = true
   // 전투에 필요한 데이터 (불러오기 전에는 전투가 진행되지 않음)
-  Promise.all([loadDex(), loadLearnsets(), loadBattle(), loadEvolutions()])
+  Promise.all([loadDex(), loadLearnsets(), loadBattle(), loadEvolutions(), loadFrontier()])
     .then(() => {
       game.backfillLearned()
       game.checkEvolutions()

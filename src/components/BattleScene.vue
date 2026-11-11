@@ -8,7 +8,7 @@ import { dexData, loadDex, STAT_LABELS, TYPE_COLORS } from '../data/dex'
 import { calcStats } from '../data/natures'
 import { findStage, stageTerrain } from '../data/stages'
 import { WEATHER_LABELS } from '../core/battle'
-import { expAtLevel, isConsumableItem, moveData, ro } from '../core/battle'
+import { boostStats, expAtLevel, isConsumableItem, moveData, ro } from '../core/battle'
 import { formOf } from '../core/gimmicks'
 import { useBattleLogStore } from '../stores/battleLog'
 import { BOSS_DEFEATS, BOSS_INTRO_MS, maxPpOf, ppOf, useGameStore } from '../stores/game'
@@ -41,10 +41,10 @@ const travelLeft = computed(() =>
 
 const species = (id: string) => dexData.value?.index.find((p) => p.id === id)
 
-function hpInfo(id: string, level: number, ivs: number[], evs: number[], nature: string, hp: number | null | undefined) {
+function hpInfo(id: string, level: number, ivs: number[], evs: number[], nature: string, hp: number | null | undefined, boost = 0) {
   const sp = species(id)
   if (!sp) return null
-  const max = calcStats(sp.stats, level, ivs, evs, nature, id)[0]!
+  const max = boostStats(calcStats(sp.stats, level, ivs, evs, nature, id), boost, id)[0]!
   return { name: sp.ko, max, hp: Math.max(0, Math.min(max, hp ?? max)) }
 }
 
@@ -52,7 +52,7 @@ const mine = computed(() => {
   const m = game.party[0]
   if (!m) return null
   const g = game.gimmickActive
-  const info = hpInfo(m.species, m.level, m.ivs ?? [], m.evs ?? [], m.nature, null)
+  const info = hpInfo(m.species, m.level, m.ivs ?? [], m.evs ?? [], m.nature, null, game.dexBoost)
   // 다이맥스: 최대 HP 2배 / 메가진화: 메가진화한 모습의 이름·도트
   if (info) {
     if (g?.kind === 'dynamax') info.max *= 2
@@ -155,7 +155,7 @@ watch(
 const foe = computed(() => {
   const e = game.enemy ?? fallen.value
   if (!e) return null
-  return { enemy: e, info: hpInfo(e.species, e.level, e.ivs, [0, 0, 0, 0, 0, 0], e.nature, e.hp) }
+  return { enemy: e, info: hpInfo(e.species, e.level, e.ivs, e.evs ?? [0, 0, 0, 0, 0, 0], e.nature, e.hp) }
 })
 const foeFallen = computed(() => !game.enemy && !!fallen.value)
 /** 상대 기술 (강화상점 상대 기술 표시 개선, HP 바 아래). 2단계면 남은 PP까지

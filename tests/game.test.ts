@@ -1013,3 +1013,76 @@ describe('포켓몬 리그 (화면 값)', () => {
     expect(requiredLeagueRegion(reactive(REGIONS[1]!) as never)?.key).toBe(REGIONS[0]!.key)
   })
 })
+
+describe('난이도별 진행', () => {
+  test('난이도마다 진행도가 따로이고, 다시 돌아오면 이어서 진행', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    expect(game.difficulty).toBe('easy')
+    game.clearedStages.push('1-1', '1-2')
+    game.currentStageId = '1-3'
+    expect(game.setDifficulty('hard')).toBe(true)
+    expect(game.currentStageId).toBe('1-1')
+    expect(game.clearedStages).toEqual([])
+    // PP 소모·특수 기능 등 계정 기능은 어느 난이도에서 열었든 공용
+    expect(game.ppActive).toBe(true)
+    // 파티·도감은 공용
+    expect(game.party).toHaveLength(1)
+    game.setDifficulty('easy')
+    expect(game.currentStageId).toBe('1-3')
+    expect(game.clearedStages).toEqual(['1-1', '1-2'])
+    expect(Object.keys(game.diffProgress)).toEqual(['hard'])
+  })
+
+  test('난이도 분리 전 저장 데이터: 진행도는 쉬움으로', () => {
+    const game = useGameStore()
+    game.$patch({ difficulty: 'hard', clearedStages: ['1-1'], currentStageId: '1-2' } as never)
+    game.validate()
+    expect(game.difficulty).toBe('easy')
+    expect(game.clearedStages).toEqual(['1-1'])
+    expect(game.currentStageId).toBe('1-2')
+    expect(game.diffSplit).toBe(true)
+  })
+
+  test('어려움: 레벨 +100, 노력치 504, 얻을 수 없는 도구 / 잡으면 레벨 100에 도구 없음', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter('mewtwo', ['psychic']))
+    game.setDifficulty('hard')
+    game.spawn()
+    const e = game.enemy!
+    expect(e.level).toBeGreaterThan(100)
+    expect(e.evs).toEqual([504, 504, 504, 504, 504, 504])
+    expect(e.item).toBeTruthy()
+    expect(e.noDrop).toBe(true)
+    game.onEnemyCaught('poke-ball')
+    const caught = game.party[1]!
+    expect(caught.level).toBe(100)
+    expect(caught.held).toEqual({})
+    expect(caught.evs).toEqual([0, 0, 0, 0, 0, 0])
+  })
+
+  test('보통: 레벨 +50, 노력치 252', () => {
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter())
+    game.setDifficulty('normal')
+    game.spawn()
+    expect(game.enemy!.level).toBeGreaterThan(50)
+    expect(game.enemy!.evs).toEqual([252, 252, 252, 252, 252, 252])
+  })
+
+  test('세대 도감을 모두 잡으면 실능치 +10%씩', async () => {
+    const { dexData } = await import('../src/data/dex')
+    const game = useGameStore()
+    game.validate()
+    game.chooseStarter(starter('bulbasaur'))
+    const base = game.memberMaxHp(game.party[0]!)
+    game.caught = dexData.value!.index.filter((p) => p.gen <= 2).map((p) => p.id)
+    expect(game.completedGens).toEqual([1, 2])
+    expect(game.dexBoost).toBe(0.2)
+    expect(game.memberMaxHp(game.party[0]!)).toBe(Math.floor(base * 1.2))
+    expect(game.playerBattler()!.boost).toBe(0.2)
+  })
+})

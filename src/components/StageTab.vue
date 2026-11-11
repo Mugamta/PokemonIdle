@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
-import { REGIONS, stageWeather, type Region } from '../data/stages'
-import { WEATHER_LABELS } from '../core/battle'
+import { computed, nextTick, ref, watch } from 'vue'
+import { findStage, REGIONS, stageWeather, type Region } from '../data/stages'
+import { DIFFICULTIES, WEATHER_LABELS, type Difficulty } from '../core/battle'
 import { useGameStore } from '../stores/game'
 import { useStageViewStore } from '../stores/stageView'
 import StageDetail from './StageDetail.vue'
@@ -14,6 +14,16 @@ const showStages = ref(false)
 /** 정복한 스테이지 수: 클리어 + 도감 완성 (출현 정보가 없는 스테이지는 클리어만) */
 function conquered(region: Region) {
   return region.stages.filter((st) => game.clearedStages.includes(st.id) && game.stageDexDone(st) !== false).length
+}
+
+/** 난이도 탭: 난이도마다 진행도가 따로 (도감·파티·가방은 공용) */
+const diffInfo = computed(() => DIFFICULTIES.find((d) => d.id === game.difficulty)!)
+function pickDifficulty(d: Difficulty) {
+  if (d === game.difficulty || game.faint) return
+  if (game.league && !confirm('리그 도전 중입니다. 난이도를 바꾸면 도전 기록이 초기화됩니다. 바꿀까요?')) return
+  if (!game.setDifficulty(d)) return
+  showStages.value = false
+  view.selectRegion(findStage(game.currentStageId)?.region.id ?? 1)
 }
 
 /** 리그 도전 창을 띄운 (잠긴) 지방 */
@@ -45,6 +55,22 @@ watch(
 </script>
 
 <template>
+  <!-- 난이도 탭 -->
+  <nav class="diff-tabs" aria-label="난이도">
+    <button
+      v-for="d in DIFFICULTIES"
+      :key="d.id"
+      type="button"
+      :class="['diff', d.id, { active: game.difficulty === d.id }]"
+      :disabled="!!game.faint && game.difficulty !== d.id"
+      :title="game.faint ? '회복 중에는 난이도를 바꿀 수 없습니다' : d.desc"
+      @click="pickDifficulty(d.id)"
+    >
+      {{ d.label }}
+    </button>
+  </nav>
+  <p class="diff-desc">{{ diffInfo.desc }}</p>
+
   <!-- 세부 스테이지 목록 -->
   <div v-if="showStages">
     <header class="header">
@@ -106,6 +132,45 @@ watch(
 </template>
 
 <style scoped>
+.diff-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.diff {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px;
+  background: #2a2a33;
+  color: #9a9aa6;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.diff:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.diff.active.easy {
+  background: #2f6b3f;
+  color: #fff;
+}
+.diff.active.normal {
+  background: #8a6d00;
+  color: #fff;
+}
+.diff.active.hard {
+  background: #7a2f2f;
+  color: #fff;
+}
+.diff-desc {
+  margin: 0 0 10px;
+  color: #8a8a96;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .tag.here {
   background: #4a3f12;
   color: #ffcb05;

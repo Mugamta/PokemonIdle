@@ -29,7 +29,7 @@ import {
 } from '../stores/game'
 import { formOf, megaFormFor, TERA_SHARD_COST } from '../core/gimmicks'
 import { abilityInfo } from '../core/abilities'
-import { josa } from '../core/battle'
+import { boostStats, josa } from '../core/battle'
 import { moveEffectText } from '../data/moveText'
 import { findStage } from '../data/stages'
 import { useStageViewStore } from '../stores/stageView'
@@ -84,7 +84,8 @@ const stats = computed(() => {
   const m = member.value
   const sp = m && species(m.species)
   if (!m || !sp) return null
-  const actual = calcStats(sp.stats, m.level, m.ivs ?? [], m.evs ?? [], m.nature, m.species)
+  const raw = calcStats(sp.stats, m.level, m.ivs ?? [], m.evs ?? [], m.nature, m.species)
+  const actual = boostStats(raw, game.dexBoost, m.species)
   const nature = NATURES[m.nature]
   return STAT_KEYS.map((key, i) => {
     const base = sp.stats[i]!
@@ -105,7 +106,7 @@ const stats = computed(() => {
             `× ${m.level}/100⌋`,
             isHp ? `+ ${m.level} + 10` : `+ 5) × ${mod === 'up' ? '1.1' : mod === 'down' ? '0.9' : '1'}⌋`,
           ]
-    return { label: STAT_LABELS[i], base, iv, ev, value, mod, formula, locked: game.evLockedOf(m, i) }
+    return { label: STAT_LABELS[i], base, iv, ev, value, raw: raw[i]!, mod, formula, locked: game.evLockedOf(m, i) }
   })
 })
 
@@ -554,6 +555,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
             지금 {{ formOf(game.gimmickActive.form)?.ko }}(으)로 메가진화한 상태입니다. (위 능력치는 원래 모습 기준)
           </p>
           <h4 class="sec stat-head">능력치</h4>
+          <p v-if="game.dexBoost" class="muted boost-note">도감 보너스: 모든 실능치 +{{ Math.round(game.dexBoost * 100) }}% (완성한 세대 도감 {{ game.completedGens.length }}개)</p>
           <table class="stats">
             <thead>
               <tr>
@@ -600,11 +602,14 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
                     <td v-for="(part, k) in s.formula" :key="k" :class="`f${k}`">{{ part }}</td>
                   </template>
                   <td v-else colspan="6" class="fnote">껍질몬은 항상 1</td>
-                  <td class="fres">= {{ s.value }}</td>
+                  <td class="fres">= {{ s.raw }}</td>
                 </tr>
               </tbody>
             </table>
             <p class="muted fnat">성격보정: ▲ 1.1 · ▼ 0.9 · 그 외 1</p>
+            <p v-if="game.dexBoost" class="muted fnat">
+              계산식 결과에 도감 보너스 ×{{ (1 + game.dexBoost).toFixed(1) }} (소수점 버림)를 곱한 값이 실능치입니다.
+            </p>
           </div>
 
           <div class="friend">
@@ -1561,6 +1566,12 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 .muted {
   color: #9a9aa6;
   font-size: 13px;
+}
+
+.boost-note {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #ffcb05;
 }
 
 .formula {

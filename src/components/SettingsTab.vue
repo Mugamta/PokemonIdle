@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { audioSettings } from '../core/audio'
-import { DIFFICULTIES } from '../core/battle'
 import { exportSave, importSave, resetSave, save } from '../core/save'
 import { dexData, loadDex } from '../data/dex'
 import { loadSprites, resolveVariant, SPRITE_DEFAULTS, spriteData } from '../data/sprites'
@@ -142,18 +141,6 @@ const credits = computed(() => {
 
     <!-- 게임 설정 -->
     <template v-else-if="sub === 'game'">
-      <section class="card">
-        <h3>난이도</h3>
-        <label v-for="d in DIFFICULTIES" :key="d.id" class="radio">
-          <input v-model="game.difficulty" type="radio" name="difficulty" :value="d.id" />
-          <span>
-            <strong>{{ d.label }}</strong>
-            <small>{{ d.desc }}</small>
-          </span>
-        </label>
-        <p class="hint">언제든 바꿀 수 있으며 다음 턴부터 적용됩니다.</p>
-      </section>
-
       <section class="card">
         <h3>사운드</h3>
         <label class="volume">

@@ -442,3 +442,32 @@ describe('필드 날씨', () => {
     expect(damageOf(att, def, mv('weather-ball'), 100, false)).toBeGreaterThan(normal * 3.5)
   })
 })
+
+describe('난이도 엔트리', () => {
+  test('보통은 공격기만, 어려움은 도구를 지님', async () => {
+    const { difficultyMon } = await import('../src/core/difficulty')
+    const { moveData } = await import('../src/core/battle')
+    for (let i = 0; i < 20; i++) {
+      const n = difficultyMon('garchomp', 'normal')!
+      expect(n.moves.length).toBe(4)
+      expect(n.moves.every((id) => moveData(id)!.cls !== 'status')).toBe(true)
+      expect(n.item).toBeNull()
+      const h = difficultyMon('garchomp', 'hard')!
+      expect(h.item).toBeTruthy()
+    }
+    expect(difficultyMon('garchomp', 'easy')).toBeNull()
+  })
+
+  test('어려움 AI: HP가 낮으면 회복, 상대가 멀쩡하면 상태이상', () => {
+    const me = battler('garchomp', 60, ['earthquake', 'toxic', 'recover'])
+    const foe = battler('blissey', 100, ['tackle'])
+    foe.hp = maxHpOf(foe)
+    me.hp = Math.floor(maxHpOf(me) * 0.3)
+    const picks = new Set(Array.from({ length: 50 }, () => chooseMove(me, foe, 'smart', undefined, { status: true })))
+    expect(picks.has('recover')).toBe(true)
+    me.hp = maxHpOf(me)
+    const picks2 = new Set(Array.from({ length: 50 }, () => chooseMove(me, foe, 'smart', undefined, { status: true })))
+    expect(picks2.has('toxic')).toBe(true)
+    expect(picks2.has('recover')).toBe(false)
+  })
+})

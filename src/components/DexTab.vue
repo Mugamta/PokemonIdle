@@ -27,7 +27,17 @@ const FILTERS = [
 ] as const
 
 /** 전국도감은 두 번째 지방에 도달한 뒤에 받음 */
-const hasNational = computed(() => game.unlockedRegions.length >= 2)
+const hasNational = computed(() => game.everUnlockedRegions.length >= 2)
+
+/** 세대 도감 보너스: 세대별 포획 수 / 전체 */
+const genProgress = computed(() => {
+  const index = dexData.value?.index ?? []
+  const gens = [...new Set(index.map((p) => p.gen))].sort((a, b) => a - b)
+  return gens.map((g) => {
+    const list = index.filter((p) => p.gen === g)
+    return { gen: g, caught: list.filter((p) => caughtSet.value.has(p.id)).length, total: list.length }
+  })
+})
 /** 지역도감 / 전국도감 (지역도감이 먼저) */
 const scope = ref<'national' | 'regional'>('regional')
 /** 지역도감으로 볼 지방 (기본: 지금 있는 지방) */
@@ -185,6 +195,18 @@ async function back() {
         <button type="button" class="group" :class="{ active: grouped }" @click="grouped = !grouped">진화 묶기</button>
       </div>
     </header>
+    <details class="bonus">
+      <summary>
+        세대 도감 보너스: 모든 실능치 <strong>+{{ Math.round(game.dexBoost * 100) }}%</strong>
+        <small>(완성 {{ game.completedGens.length }}/{{ genProgress.length }}세대)</small>
+      </summary>
+      <p class="bonus-hint">한 세대의 포켓몬을 모두 잡을 때마다 파티 포켓몬의 모든 실능치가 10%씩 오릅니다 (합연산).</p>
+      <ul class="gens">
+        <li v-for="g in genProgress" :key="g.gen" :class="{ done: g.caught >= g.total }">
+          {{ g.gen }}세대 <span>{{ g.caught }}/{{ g.total }}</span>
+        </li>
+      </ul>
+    </details>
     <ul class="list">
       <li v-for="members in rows" :key="members[0]!.p.id">
         <button
@@ -254,7 +276,52 @@ async function back() {
   box-shadow: inset 0 -2px 0 #ffcb05;
 }
 
-.modes + .header {
+.modes + .bonus {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #2a2a33;
+  font-size: 13px;
+}
+.bonus summary {
+  cursor: pointer;
+}
+.bonus strong {
+  color: #ffcb05;
+}
+.bonus small {
+  color: #8a8a96;
+}
+.bonus-hint {
+  margin: 6px 0;
+  color: #8a8a96;
+  font-size: 12px;
+}
+.gens {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.gens li {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #1e1e24;
+  font-size: 12px;
+}
+.gens li span {
+  color: #8a8a96;
+}
+.gens li.done {
+  background: #2f6b3f;
+}
+.gens li.done span {
+  color: #fff;
+}
+
+.header {
   margin-top: 0;
 }
 

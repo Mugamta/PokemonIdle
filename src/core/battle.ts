@@ -43,22 +43,33 @@ import { evolutionsOf } from '../data/evolutions'
 import { MAX_GUARD } from './gimmicks'
 
 export type Difficulty = 'easy' | 'normal' | 'hard'
+export const DIFFICULTY_IDS: Difficulty[] = ['easy', 'normal', 'hard']
 export const DIFFICULTIES: { id: Difficulty; label: string; desc: string }[] = [
-  { id: 'easy', label: '쉬움', desc: '상대가 기술을 완전히 무작위로 고릅니다. 경험치 0.75배.' },
-  { id: 'normal', label: '보통', desc: '상대가 지금 내 포켓몬에게 가장 강한 기술을 우선 씁니다. 경험치 1배.' },
+  { id: 'easy', label: '쉬움', desc: '원작 그대로의 상대. 상대는 지금 내 포켓몬에게 가장 강한 기술을 씁니다.' },
+  {
+    id: 'normal',
+    label: '보통',
+    desc: '상대 레벨 +50, 모든 노력치 252. 배틀시설 엔트리 기반의 고위력기를 쓰고, 특성까지 고려해 확정 1타를 노립니다. 야생 포켓몬도 숨겨진 특성을 가질 수 있습니다.',
+  },
   {
     id: 'hard',
     label: '어려움',
-    desc: '상대가 특성까지 고려해 가장 강한 기술을 씁니다. 야생 포켓몬도 숨겨진 특성을 가질 수 있습니다. 경험치 1.25배.',
+    desc: '상대 레벨 +100, 모든 노력치 504. 고위력기와 변화기(능력 상승·상태이상·회복)를 함께 쓰고, 모든 포켓몬이 기술에 어울리는 도구를 지닙니다 (쓰러뜨려도 얻을 수 없음).',
   },
 ]
 
 /** 난이도별 경험치 배율 */
-export const DIFFICULTY_EXP: Record<Difficulty, number> = { easy: 0.75, normal: 1, hard: 1.25 }
+export const DIFFICULTY_EXP: Record<Difficulty, number> = { easy: 1, normal: 1, hard: 1 }
 
 /** 기술 선택 방식: random = 무작위, strong = 가장 강한 기술, smart = 특성까지 고려 */
 export type AiMode = 'random' | 'strong' | 'smart'
-export const DIFFICULTY_AI: Record<Difficulty, AiMode> = { easy: 'random', normal: 'strong', hard: 'smart' }
+export const DIFFICULTY_AI: Record<Difficulty, AiMode> = { easy: 'strong', normal: 'smart', hard: 'smart' }
+/** 난이도별 상대 기술 선택 옵션 (보통 이상: 확정 1타 우선, 어려움: 변화기도 씀) */
+export const DIFFICULTY_AI_OPTS: Record<Difficulty, ChooseOpts> = {
+  easy: {},
+  normal: { koPick: 'effect' },
+  hard: { koPick: 'effect', status: true },
+}
 
 export type Stages = Partial<Record<StageKey, number>>
 
@@ -137,6 +148,8 @@ export interface Battler {
   tera?: string | null
   /** 다이맥스 중 (최대 HP 2배) */
   dynamax?: boolean
+  /** 실능치 배율 보정 (도감 완성 보너스: 0.1 = +10%) */
+  boost?: number
 }
 
 export interface MoveData extends MoveInfo {
@@ -172,13 +185,20 @@ export function moveData(id: string): MoveData | null {
 /** 포켓몬 정보 (메가진화·원시회귀 폼 포함) */
 export const speciesOf = (id: string): DexEntry | undefined => speciesEntry(id)
 
-export function statsOf(b: Pick<Battler, 'species' | 'level' | 'ivs' | 'evs' | 'nature'>): number[] {
+type StatSource = Pick<Battler, 'species' | 'level' | 'ivs' | 'evs' | 'nature'> & { boost?: number }
+export function statsOf(b: StatSource): number[] {
   const sp = speciesOf(b.species)
-  return sp ? calcStats(sp.stats, b.level, b.ivs, b.evs, b.nature, b.species) : [1, 1, 1, 1, 1, 1]
+  if (!sp) return [1, 1, 1, 1, 1, 1]
+  return boostStats(calcStats(sp.stats, b.level, b.ivs, b.evs, b.nature, b.species), b.boost, b.species)
+}
+/** 실능치에 배율 보정 적용 (껍질몬의 HP 1은 그대로) */
+export function boostStats(stats: number[], boost: number | undefined, species?: string): number[] {
+  if (!boost) return stats
+  return stats.map((v, i) => (i === 0 && species === 'shedinja' ? v : Math.floor(v * (1 + boost))))
 }
 
 /** 최대 HP (다이맥스 중이면 2배) */
-export const maxHpOf = (b: Pick<Battler, 'species' | 'level' | 'ivs' | 'evs' | 'nature'> & { dynamax?: boolean }) =>
+export const maxHpOf = (b: StatSource & { dynamax?: boolean }) =>
   statsOf(b)[0]! * (b.dynamax ? 2 : 1)
 
 // ---------- 특성 ----------
@@ -720,6 +740,40 @@ export interface ChooseOpts {
   koPick?: KoPick
   /** 남은 PP (null = 제한 없음) */
   ppLeft?: (id: string) => number | null
+  /** 상황에 맞으면 변화기(회복·상태이상·능력 상승)도 씀 */
+  status?: boolean
+}
+
+/**
+ * 지금 쓸 만한 변화기 (없으면 null): HP가 절반 이하면 회복, 상대가 상태이상이 아니면 상태이상,
+ * HP가 넉넉하면 능력 상승(올릴 능력이 모두 +2 미만일 때), 상대 능력 크게 내리기
+ */
+function statusPick(me: Battler, foe: Battler, moves: MoveData[]): MoveData | null {
+  const hp = me.hp / maxHpOf(me)
+  const picks: { m: MoveData; w: number }[] = []
+  for (const m of moves) {
+    if (m.cls !== 'status') continue
+    const ex = m.extra
+    const { type } = moveTypeOf(me, foe, m)
+    if (blockOf(me, foe, m, type, effOf(me, foe, type))) continue
+    if (ex.heal && !ex.stats) {
+      if (hp <= 0.5) picks.push({ m, w: 4 })
+    } else if (ex.ail) {
+      if (m.type === 'electric' && typeEffect(m.type, foe) === 0) continue
+      if (canInflict(foe, ex.ail, me) && defAb(foe, me) !== 'magic-bounce') picks.push({ m, w: 3 })
+    } else if (ex.stats && ex.self) {
+      if (ab(me, foe) === 'contrary' || hp < 0.6) continue
+      const ups = ex.stats.filter(([k, n]) => k in STAT_INDEX && n > 0)
+      if (ups.length && ups.every(([k]) => (me.stages[k as StageKey] ?? 0) < 2)) picks.push({ m, w: 2 })
+    } else if (ex.stats && !ex.self) {
+      const drops = ex.stats.filter(([k, n]) => k in STAT_INDEX && n <= -2)
+      if (hp >= 0.7 && drops.length && drops.every(([k]) => (foe.stages[k as StageKey] ?? 0) > -2)) picks.push({ m, w: 1 })
+    }
+  }
+  if (!picks.length || Math.random() < 0.25) return null
+  const top = Math.max(...picks.map((p) => p.w))
+  const list = picks.filter((p) => p.w === top)
+  return list[Math.floor(Math.random() * list.length)]!.m
 }
 
 // ---------- AI ----------
@@ -776,6 +830,10 @@ export function chooseMove(
         return list[Math.floor(Math.random() * list.length)]!.m.id
       }
     }
+  }
+  if (opts.status) {
+    const sm = statusPick(me, foes[0]!, moves)
+    if (sm) return sm.id
   }
   let best: MoveData[] = []
   let bestDmg = -Infinity
