@@ -471,3 +471,104 @@ describe('난이도 엔트리', () => {
     expect(picks2.has('recover')).toBe(false)
   })
 })
+
+describe('부작용이 있는 기술', () => {
+  afterEach(() => vi.restoreAllMocks())
+  const mid = () => vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+  test('공중날기: 첫 턴은 날아올라 상대 공격이 빗나가고, 다음 턴 자동으로 공격 (PP 소모 없음)', () => {
+    mid()
+    const p = full(battler('pidgeot', 50, ['fly', 'tackle']))
+    const e = full(battler('rattata', 50, ['tackle']))
+    const t1 = runTurn(p, e, 'fly', 'tackle')
+    expect(t1.playerMoved).toBe(true)
+    expect(p.hp).toBe(maxHpOf(p))
+    expect(e.hp).toBe(maxHpOf(e))
+    const t2 = runTurn(p, e, 'tackle', 'tackle')
+    expect(t2.playerMoved).toBe(false)
+    expect(t2.lines).toContain('pidgeot의 공중날기!')
+    expect(e.hp).toBeLessThan(maxHpOf(e))
+    expect(p.vol?.semi).toBeUndefined()
+  })
+
+  test('파괴광선: 맞히면 다음 턴은 움직일 수 없음', () => {
+    mid()
+    const p = full(battler('snorlax', 50, ['hyper-beam']))
+    const e = full(battler('steelix', 100, ['tackle']))
+    runTurn(p, e, 'hyper-beam', 'tackle')
+    const hp = e.hp
+    const t2 = runTurn(p, e, 'hyper-beam', 'tackle')
+    expect(t2.playerMoved).toBe(false)
+    expect(e.hp).toBe(hp)
+    expect(t2.lines.some((l) => l.includes('반동으로 움직일 수 없다'))).toBe(true)
+  })
+
+  test('대폭발: 쓰면 자신도 쓰러짐 / 축축이면 쓸 수 없음', () => {
+    mid()
+    const p = full(battler('electrode', 50, ['explosion']))
+    const e = full(battler('snorlax', 100, ['tackle']))
+    runTurn(p, e, 'explosion', 'tackle')
+    expect(p.hp).toBe(0)
+    const p2 = full(battler('electrode', 50, ['explosion']))
+    const e2 = full(battler('golduck', 50, ['tackle'], { ability: 'damp' }))
+    runTurn(p2, e2, 'explosion', 'tackle')
+    expect(p2.hp).toBeGreaterThan(0)
+  })
+
+  test('속이기: 첫 행동에서만 성공하고 상대를 풀죽게 함', () => {
+    mid()
+    const p = full(battler('persian', 50, ['fake-out']))
+    const e = full(battler('snorlax', 50, ['tackle']))
+    const t1 = runTurn(p, e, 'fake-out', 'tackle')
+    expect(t1.lines.some((l) => l.includes('풀이 죽어'))).toBe(true)
+    const hp = e.hp
+    runTurn(p, e, 'fake-out', 'tackle')
+    expect(e.hp).toBe(hp)
+  })
+
+  test('꿈먹기는 잠든 상대에게만, 잠꼬대는 잠들었을 때만', () => {
+    mid()
+    const p = full(battler('gengar', 50, ['dream-eater']))
+    const e = full(battler('snorlax', 50, ['tackle']))
+    runTurn(p, e, 'dream-eater', 'tackle')
+    expect(e.hp).toBe(maxHpOf(e))
+    const s = full(battler('snorlax', 50, ['rest', 'sleep-talk', 'body-slam']))
+    const f = full(battler('slowbro', 30, ['tackle']))
+    s.hp = 50
+    runTurn(s, f, 'rest', 'tackle')
+    expect(s.status).toBe('slp')
+    expect(chooseMove(s, f, 'smart')).toBe('sleep-talk')
+    runTurn(s, f, 'sleep-talk', 'tackle')
+    expect(f.hp).toBeLessThan(maxHpOf(f))
+  })
+
+  test('미래예지: 2턴 뒤 턴이 끝날 때 맞음', () => {
+    mid()
+    const p = full(battler('alakazam', 50, ['future-sight', 'calm-mind']))
+    const e = full(battler('snorlax', 50, ['rest']))
+    runTurn(p, e, 'future-sight', 'rest')
+    runTurn(p, e, 'calm-mind', 'rest')
+    expect(e.hp).toBe(maxHpOf(e))
+    runTurn(p, e, 'calm-mind', 'rest')
+    expect(e.hp).toBeLessThan(maxHpOf(e))
+  })
+
+  test('길동무: 길동무 상태에서 공격으로 쓰러지면 상대도 쓰러짐', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.99)
+    const p = full(battler('gengar', 50, ['destiny-bond']))
+    const e = full(battler('slowbro', 100, ['psychic']))
+    p.hp = 20
+    runTurn(p, e, 'destiny-bond', 'psychic')
+    expect(p.hp).toBe(0)
+    expect(e.hp).toBe(0)
+  })
+
+  test('AI: 자폭 계열은 쓰러뜨릴 수 있거나 HP가 적을 때만', () => {
+    mid()
+    const p = full(battler('electrode', 50, ['explosion', 'thunderbolt']))
+    const e = full(battler('snorlax', 100, ['rest']))
+    expect(chooseMove(p, e, 'smart')).toBe('thunderbolt')
+    p.hp = 10
+    expect(chooseMove(p, e, 'smart')).toBe('explosion')
+  })
+})

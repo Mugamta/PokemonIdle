@@ -4,7 +4,7 @@ import { dexData, learnsets, type DexEntry } from '../data/dex'
 import { evolutionsOf } from '../data/evolutions'
 import { frontierSets, type FrontierSet } from '../data/frontier'
 import { NATURES } from '../data/natures'
-import { moveData, speciesOf, type Difficulty, type MoveData } from './battle'
+import { CHARGE_MOVES, moveData, RECHARGE_MOVES, SELF_KO_MOVES, speciesOf, type Difficulty, type MoveData } from './battle'
 import { BATTLE_HELD, CHOICE_ITEMS, PINCH_BERRY, TYPE_BOOST } from './items'
 
 /** 난이도별 상대 레벨 보정 (상한 없음) */
@@ -12,21 +12,28 @@ export const DIFFICULTY_LEVEL: Record<Difficulty, number> = { easy: 0, normal: 5
 /** 난이도별 상대 노력치 (모든 능력치) */
 export const DIFFICULTY_EV: Record<Difficulty, number> = { easy: 0, normal: 252, hard: 504 }
 
+/** 상대 혼자서는 쓸모가 없는 기술 (교체가 필요한 기술 등). 보통·어려움 상대의 기술로는 쓰지 않음 */
+const BANNED = new Set(['struggle', 'healing-wish', 'lunar-dance', 'perish-song'])
+
 /**
- * 이 게임에서 부작용(자폭·재충전·모으기·첫 턴 한정·조건부 성공 등)이 구현되지 않아 위력만 남거나,
- * 효과가 없는 기술. 보통·어려움 상대의 기술로는 쓰지 않음
+ * 조건이 맞아야 성공하는 공격기 (꿈먹기 = 상대가 잠듦, 트림 = 열매를 먹음 등).
+ * 엔트리에 있으면 쓰지만, 배울 수 있는 기술로 채울 때는 거의 고르지 않음
  */
-const BANNED = new Set([
-  'explosion', 'self-destruct', 'misty-explosion', 'memento', 'final-gambit', 'healing-wish', 'lunar-dance',
-  'hyper-beam', 'giga-impact', 'blast-burn', 'frenzy-plant', 'hydro-cannon', 'rock-wrecker', 'roar-of-time',
-  'prismatic-laser', 'eternabeam', 'meteor-assault', 'focus-punch', 'dream-eater', 'fake-out', 'first-impression',
-  'last-resort', 'belch', 'sky-attack', 'solar-beam', 'solar-blade', 'skull-bash', 'razor-wind', 'freeze-shock',
-  'ice-burn', 'geomancy', 'shadow-force', 'phantom-force', 'future-sight', 'doom-desire', 'steel-beam', 'mind-blown',
-  'chloroblast', 'synchronoise', 'snore', 'sleep-talk', 'spit-up', 'natural-gift', 'fling', 'meteor-beam',
-  'electro-shot', 'head-smash', 'light-of-ruin', 'shell-trap', 'beak-blast', 'burn-up', 'double-shock', 'rest',
-  'dig', 'dive', 'fly', 'bounce', 'sky-drop', 'rollout', 'ice-ball',
-  'perish-song', 'destiny-bond', 'struggle',
+const CONDITIONAL = new Set([
+  'dream-eater', 'belch', 'last-resort', 'synchronoise', 'snore', 'shell-trap', 'focus-punch', 'fake-out',
+  'first-impression', 'burn-up', 'double-shock', 'future-sight', 'doom-desire',
 ])
+
+/** 부작용에 따른 공격기 점수 배율 (자폭·반동으로 쉼·2턴 기술·HP 소모) */
+function drawback(m: MoveData): number {
+  if (SELF_KO_MOVES.has(m.id) || m.id === 'final-gambit') return 0.3
+  if (CONDITIONAL.has(m.id)) return 0.2
+  if (RECHARGE_MOVES.has(m.id)) return 0.6
+  if (CHARGE_MOVES[m.id]) return m.id === 'electro-shot' ? 0.8 : 0.55
+  if (m.id === 'steel-beam' || m.id === 'mind-blown' || m.id === 'chloroblast') return 0.75
+  if (m.id === 'rollout' || m.id === 'ice-ball') return 1.5
+  return 1
+}
 
 /** 엔트리에 있으면 그대로 쓰는 도구 (그 외는 기술에 맞춰 고름) */
 const GOOD_ITEMS = new Set([
@@ -69,7 +76,7 @@ function attackScore(sp: DexEntry, m: MoveData): number {
   p *= fit * fit
   if ((ex.drain ?? 0) < 0) p *= 0.9
   if (ex.self && ex.chance == null && ex.stats?.some(([, n]) => n < 0)) p *= 0.8
-  return p
+  return p * drawback(m)
 }
 
 type StatusKind = 'setup' | 'ail' | 'heal' | 'drop'
@@ -78,6 +85,9 @@ const MAIN_STATS = new Set(['atk', 'def', 'spa', 'spd', 'spe'])
 /** 이 게임에서 효과가 있는 변화기의 종류 (없으면 null) */
 function statusKind(m: MoveData): StatusKind | null {
   if (m.cls !== 'status' || BANNED.has(m.id)) return null
+  // 잠자기(+잠꼬대)·길동무: 엔트리에 있으면 그대로 씀
+  if (m.id === 'rest' || m.id === 'sleep-talk') return 'heal'
+  if (m.id === 'destiny-bond') return 'drop'
   const ex = m.extra
   if (ex.heal && !ex.stats) return 'heal'
   if (ex.ail) return 'ail'

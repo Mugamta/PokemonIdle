@@ -110,7 +110,42 @@ export interface Volatile {
   protect?: boolean
   /** 그림자꿰매기 등에 맞아 교체·도망 불가 (교체하면 풀림) */
   trapped?: boolean
+  /** 2턴 기술: 힘을 모으는 중인 기술 (다음 턴 자동으로 사용) */
+  charge?: string
+  /** 공중날기·구멍파기·다이빙·섀도다이브: 화면에서 사라져 대부분의 기술이 맞지 않음 */
+  semi?: Semi
+  /** 이번 행동은 모아 둔 기술을 쓰는 턴 */
+  releasing?: boolean
+  /** 파괴광선 등: 다음 턴은 반동으로 움직일 수 없음 */
+  recharge?: boolean
+  /** 구르기·아이스볼: 연속으로 맞힌 횟수와 이어서 쓰는 기술 */
+  rollout?: number
+  rolloutMove?: string
+  /** 이번 전투에서 기술을 쓴 적 있음 (속이기·만나자마자) */
+  acted?: boolean
+  /** 이번 전투에서 쓴 기술 (비장의무기) */
+  used?: string[]
+  /** 이번 전투에서 나무열매를 먹음 (트림) */
+  ateBerry?: boolean
+  /** 비축하기 횟수 (최대 3) */
+  stockpile?: number
+  /** 이번 턴 공격을 받음 (힘껏펀치) / 물리 공격을 받음 (트랩셸) */
+  hurt?: boolean
+  hurtPhys?: boolean
+  /** 부리캐논: 이번 턴 부리를 가열 중 (접촉한 상대는 화상) */
+  beak?: boolean
+  /** 미래예지·파멸의소원: 남은 턴 수, 데미지, 기술 이름 */
+  future?: { left: number; dmg: number; move: string }
+  /** 멸망의노래: 남은 카운트 (0이 되면 쓰러짐) */
+  perish?: number
+  /** 길동무: 다음에 기술을 쓰기 전에 상대 공격으로 쓰러지면 상대도 쓰러짐 */
+  destinyBond?: boolean
+  /** 치유소원·초승달춤: 다음에 나오는 포켓몬의 HP·상태이상 회복 */
+  wish?: boolean
 }
+
+/** 화면에서 사라진 상태: 하늘 / 땅속 / 물속 / 사라짐 */
+export type Semi = 'sky' | 'dig' | 'dive' | 'shadow'
 
 /** 상대가 알고 있는 이 포켓몬의 특성 정보 (자동 전투 AI 용) */
 export interface AbilityIntel {
@@ -311,6 +346,7 @@ function canEat(b: Battler, foe?: Battler): boolean {
 /** 도구 1개 사용 후 사라짐. 볼주머니: 열매를 먹으면 HP 1/3 회복, 곡예: 도구가 모두 사라지면 스피드 2배 */
 function consumeItem(b: Battler, id: string, foe: Battler | undefined, log: string[]) {
   if (!takeHeld(b, id)) return
+  if (isBerry(id)) (b.vol ??= {}).ateBerry = true
   const a = foe ? ab(b, foe) : abilityOf(b)
   if (a === 'unburden' && !heldTotal(b.held)) (b.vol ??= {}).unburden = true
   if (isBerry(id) && a === 'cheek-pouch' && b.hp > 0 && b.hp < maxHpOf(b)) {
@@ -418,6 +454,10 @@ export function typeEffect(moveType: string, defender: Battler): number {
 /** 실제 기술 타입과 위력 배율 (노말스킨·스카이스킨 등) */
 function moveTypeOf(att: Battler, def: Battler, m: MoveData): { type: string; pow: number } {
   if (m.type === 'typeless') return { type: m.type, pow: 1 }
+  if (m.id === 'natural-gift') {
+    const b = giftBerry(att, def)
+    return { type: b ? (NATURAL_GIFT[b]?.[0] ?? 'normal') : 'normal', pow: 1 }
+  }
   const w = weatherOf(att, def)
   if (m.id === 'weather-ball' && w) return { type: WEATHER_BALL_TYPE[w], pow: 2 }
   const a = ab(att, def)
@@ -443,9 +483,177 @@ function effOf(att: Battler, def: Battler, type: string): number {
   }, 1)
 }
 
-const isDamaging = (m: MoveData) => m.cls !== 'status' && (m.power != null || m.extra.fixed != null)
-/** 자신에게 쓰는 변화기 */
-const isSelfMove = (m: MoveData) => m.cls === 'status' && !!(m.extra.self || (m.extra.heal && !m.extra.stats))
+const isDamaging = (m: MoveData) => m.cls !== 'status' && (m.power != null || m.extra.fixed != null || VAR_POWER.has(m.id))
+/** 자신(또는 필드)에게 쓰는 변화기 */
+const isSelfMove = (m: MoveData) =>
+  m.cls === 'status' && (!!(m.extra.self || (m.extra.heal && !m.extra.stats)) || SELF_STATUS.has(m.id))
+
+// ---------- 특수한 기술 ----------
+/** 위력이 상황에 따라 정해지는 공격기 (데이터에 위력이 없음) */
+const VAR_POWER = new Set(['spit-up', 'natural-gift', 'fling', 'final-gambit'])
+/** 상대를 대상으로 하지 않는 변화기 */
+const SELF_STATUS = new Set(['rest', 'destiny-bond', 'perish-song', 'healing-wish', 'lunar-dance', 'sleep-talk', 'stockpile', 'swallow'])
+/** 쓴 다음 턴은 반동으로 움직일 수 없는 기술 */
+export const RECHARGE_MOVES = new Set([
+  'hyper-beam', 'giga-impact', 'blast-burn', 'frenzy-plant', 'hydro-cannon', 'rock-wrecker', 'roar-of-time',
+  'prismatic-laser', 'eternabeam', 'meteor-assault',
+])
+/** 2턴 기술: 첫 턴에 힘을 모으고 다음 턴에 공격 */
+export const CHARGE_MOVES: Record<string, { msg: string; semi?: Semi; stats?: [StageKey, number][] }> = {
+  'solar-beam': { msg: '빛을 흡수했다!' },
+  'solar-blade': { msg: '빛을 흡수했다!' },
+  'skull-bash': { msg: '목을 움츠렸다!', stats: [['def', 1]] },
+  'razor-wind': { msg: '주위의 공기를 소용돌이치게 했다!' },
+  'sky-attack': { msg: '강렬한 빛에 휩싸였다!' },
+  'freeze-shock': { msg: '차가운 빛에 휩싸였다!' },
+  'ice-burn': { msg: '얼어붙는 공기에 휩싸였다!' },
+  geomancy: { msg: '파워를 모으고 있다!' },
+  'meteor-beam': { msg: '우주의 힘이 넘쳐흐른다!', stats: [['spa', 1]] },
+  'electro-shot': { msg: '전기를 모았다!', stats: [['spa', 1]] },
+  fly: { msg: '하늘 높이 날아올랐다!', semi: 'sky' },
+  bounce: { msg: '높이 뛰어올랐다!', semi: 'sky' },
+  'sky-drop': { msg: '하늘 높이 날아올랐다!', semi: 'sky' },
+  dig: { msg: '땅으로 파고들었다!', semi: 'dig' },
+  dive: { msg: '물속으로 숨었다!', semi: 'dive' },
+  'shadow-force': { msg: '순식간에 모습을 감췄다!', semi: 'shadow' },
+  'phantom-force': { msg: '순식간에 모습을 감췄다!', semi: 'shadow' },
+}
+/** 사라진 상대에게도 맞는 기술 (double = 위력 2배) */
+const SEMI_HIT: Record<Semi, { hit: string[]; double: string[] }> = {
+  sky: { hit: ['gust', 'twister', 'thunder', 'sky-uppercut', 'hurricane', 'smack-down', 'thousand-arrows'], double: ['gust', 'twister'] },
+  dig: { hit: ['earthquake', 'magnitude', 'fissure'], double: ['earthquake', 'magnitude'] },
+  dive: { hit: ['surf', 'whirlpool'], double: ['surf', 'whirlpool'] },
+  shadow: { hit: [], double: [] },
+}
+/** 쓰면 자신이 쓰러지는 공격기 (축축 특성이면 쓸 수 없음) */
+export const SELF_KO_MOVES = new Set(['explosion', 'self-destruct', 'misty-explosion'])
+/** 쓰면 자신의 최대 HP 절반을 잃는 기술 */
+const HALF_COST_MOVES = new Set(['steel-beam', 'mind-blown', 'chloroblast'])
+/** 2턴 뒤에 맞는 기술 */
+const FUTURE_MOVES = new Set(['future-sight', 'doom-desire'])
+/** 맞힌 상대를 풀죽게 하는 확률 (%) */
+const FLINCH_MOVES: Record<string, number> = { 'fake-out': 100, snore: 30 }
+/** 행동 전에 준비하는 기술 (우선도 -3): 턴 시작 시 문구 */
+const PREP_MOVES: Record<string, string> = {
+  'focus-punch': '집중력을 높이고 있다!',
+  'shell-trap': '트랩셸을 설치했다!',
+  'beak-blast': '부리를 가열하기 시작했다!',
+}
+/** 잠꼬대로 나오지 않는 기술 */
+const NO_SLEEP_TALK = new Set(['sleep-talk', 'focus-punch', 'shell-trap', 'beak-blast', 'belch', 'struggle', ...Object.keys(CHARGE_MOVES)])
+
+/** 자연의은혜: 나무열매 → [타입, 위력] (목록에 없는 열매는 노말 80) */
+const NATURAL_GIFT: Record<string, [string, number]> = {
+  'cheri-berry': ['fire', 80], 'chesto-berry': ['water', 80], 'pecha-berry': ['electric', 80], 'rawst-berry': ['grass', 80],
+  'aspear-berry': ['ice', 80], 'leppa-berry': ['fighting', 80], 'oran-berry': ['poison', 80], 'persim-berry': ['ground', 80],
+  'lum-berry': ['flying', 80], 'sitrus-berry': ['psychic', 80], 'figy-berry': ['bug', 80], 'wiki-berry': ['rock', 80],
+  'mago-berry': ['ghost', 80], 'aguav-berry': ['dragon', 80], 'iapapa-berry': ['dark', 80],
+  'occa-berry': ['fire', 80], 'passho-berry': ['water', 80], 'wacan-berry': ['electric', 80], 'rindo-berry': ['grass', 80],
+  'yache-berry': ['ice', 80], 'chople-berry': ['fighting', 80], 'kebia-berry': ['poison', 80], 'shuca-berry': ['ground', 80],
+  'coba-berry': ['flying', 80], 'payapa-berry': ['psychic', 80], 'tanga-berry': ['bug', 80], 'charti-berry': ['rock', 80],
+  'kasib-berry': ['ghost', 80], 'haban-berry': ['dragon', 80], 'colbur-berry': ['dark', 80], 'babiri-berry': ['steel', 80],
+  'chilan-berry': ['normal', 80], 'roseli-berry': ['fairy', 80],
+  'liechi-berry': ['grass', 100], 'ganlon-berry': ['ice', 100], 'salac-berry': ['fighting', 100], 'petaya-berry': ['poison', 100],
+  'apicot-berry': ['ground', 100], 'lansat-berry': ['flying', 100], 'starf-berry': ['psychic', 100], 'enigma-berry': ['bug', 100],
+  'micle-berry': ['rock', 100], 'custap-berry': ['ghost', 100], 'jaboca-berry': ['dragon', 100], 'rowap-berry': ['dark', 100],
+}
+/** 내던지기: 도구 → 위력 (목록에 없는 도구는 30, 나무열매는 10) */
+const FLING_POWER: Record<string, number> = {
+  'iron-ball': 130, 'hard-stone': 100, 'rare-bone': 100, 'room-service': 100, 'thick-club': 90,
+  'assault-vest': 80, 'quick-claw': 80, 'sticky-barb': 80, 'weakness-policy': 80, 'blunder-policy': 80,
+  'poison-barb': 70, 'dragon-fang': 70, 'rocky-helmet': 60, eviolite: 40,
+  'power-herb': 10, 'white-herb': 10, 'mental-herb': 10, 'choice-band': 10, 'choice-specs': 10, 'choice-scarf': 10,
+  'focus-sash': 10, leftovers: 10, 'expert-belt': 10, 'air-balloon': 10,
+}
+/** 내던지기로 맞힌 상대에게 거는 상태이상 */
+const FLING_STATUS: Record<string, Status> = { 'flame-orb': 'brn', 'toxic-orb': 'tox', 'light-ball': 'par', 'poison-barb': 'psn' }
+
+/** 자연의은혜에 쓰는 나무열매 (없으면 undefined) */
+function giftBerry(b: Battler, foe: Battler): string | undefined {
+  if (klutzed(b, foe)) return undefined
+  return itemsOf(b, foe).find(isBerry)
+}
+/** 내던지기로 던지는 도구 (없으면 undefined) */
+function flingItem(b: Battler, foe: Battler): string | undefined {
+  if (klutzed(b, foe)) return undefined
+  return itemsOf(b, foe)[0]
+}
+/** 상황에 따라 정해지는 위력 (해당 없으면 null) */
+function variablePower(att: Battler, def: Battler, m: MoveData): number | null {
+  const vol = att.vol ?? {}
+  switch (m.id) {
+    case 'spit-up':
+      return 100 * (vol.stockpile ?? 0)
+    case 'natural-gift': {
+      const b = giftBerry(att, def)
+      return b ? (NATURAL_GIFT[b]?.[1] ?? 80) : 0
+    }
+    case 'fling': {
+      const it = flingItem(att, def)
+      return it ? (FLING_POWER[it] ?? (isBerry(it) ? 10 : 30)) : 0
+    }
+    case 'rollout':
+    case 'ice-ball':
+      return (m.power ?? 30) * 2 ** Math.min(4, vol.rolloutMove === m.id ? (vol.rollout ?? 0) : 0)
+  }
+  return null
+}
+
+/** 쓸 수 없는 상황이면 실패 문구 (쓸 수 있으면 null). prevMove = 직전에 쓴 기술 */
+function failReason(att: Battler, def: Battler, m: MoveData, prevMove: string | undefined): string | null {
+  const vol = att.vol ?? {}
+  const fail = '그러나 실패했다!'
+  const noEffect = `${def.name}에게는 효과가 없는 것 같다…`
+  switch (m.id) {
+    case 'dream-eater':
+      return def.status === 'slp' || ab(def, att) === 'comatose' ? null : noEffect
+    case 'fake-out':
+    case 'first-impression':
+      return vol.acted ? fail : null
+    case 'last-resort': {
+      const others = att.moves.filter((id) => id !== 'last-resort')
+      return others.length && others.every((id) => vol.used?.includes(id)) ? null : fail
+    }
+    case 'belch':
+      return vol.ateBerry ? null : fail
+    case 'snore':
+    case 'sleep-talk':
+      return att.status === 'slp' || ab(att, def) === 'comatose' ? null : fail
+    case 'spit-up':
+    case 'swallow':
+      return vol.stockpile ? null : fail
+    case 'stockpile':
+      return (vol.stockpile ?? 0) >= 3 ? fail : null
+    case 'synchronoise':
+      return typesOf(def).some((t) => typesOf(att).includes(t)) ? null : noEffect
+    case 'burn-up':
+      return typesOf(att).includes('fire') ? null : fail
+    case 'double-shock':
+      return typesOf(att).includes('electric') ? null : fail
+    case 'natural-gift':
+      return giftBerry(att, def) ? null : fail
+    case 'fling':
+      return flingItem(att, def) ? null : fail
+    case 'rest': {
+      const a = ab(att, def)
+      if (att.hp >= maxHpOf(att) || att.status === 'slp' || a === 'insomnia' || a === 'vital-spirit' || a === 'comatose') return fail
+      return null
+    }
+    case 'destiny-bond':
+      return prevMove === 'destiny-bond' ? fail : null
+    case 'future-sight':
+    case 'doom-desire':
+      return def.vol?.future ? fail : null
+    case 'perish-song':
+      return att.vol?.perish != null && def.vol?.perish != null ? fail : null
+  }
+  return null
+}
+/** 축축: 자폭 계열·깜짝헤드를 쓸 수 없음 */
+const dampBlocks = (att: Battler, def: Battler, m: MoveData) =>
+  (SELF_KO_MOVES.has(m.id) || m.id === 'mind-blown') && (ab(att, def) === 'damp' || defAb(def, att) === 'damp')
+/** 2턴 기술을 모으지 않고 바로 쓰는지 (비가 올 때 일렉트로빔) */
+const chargeSkipped = (att: Battler, def: Battler, m: MoveData) => m.id === 'electro-shot' && weatherOf(att, def) === 'rain'
 /** 회복 기술 (힐링시프트 대상) */
 const isHealMove = (m: MoveData) => !!m.extra.heal || (m.extra.drain ?? 0) > 0
 /** 부가 효과가 있는 공격기 (우격다짐 대상) */
@@ -535,12 +743,17 @@ export function damageOf(att: Battler, def: Battler, m: MoveData, rand: number, 
   if (eff === 0) return 0
   const fx = m.extra.fixed
   if (fx != null) return fx === 'level' ? att.level : fx === 'half' ? Math.max(1, Math.floor(def.hp / 2)) : fx
+  // 목숨걸기: 자신의 남은 HP만큼
+  if (m.id === 'final-gambit') return Math.max(1, att.hp)
   const a = ab(att, def)
   const d = defAb(def, att)
   const physical = m.cls === 'physical'
 
   // 위력 (테라스탈 타입 기술은 위력 60 미만이면 60, 연속기·선제기 제외)
-  let basePower = m.power ?? 0
+  let basePower = variablePower(att, def, m) ?? m.power ?? 0
+  // 사라진 상대에게 맞는 기술: 위력 2배 (공중날기 중에 회오리 등)
+  const semi = def.vol?.semi
+  if (semi && SEMI_HIT[semi].double.includes(m.id)) basePower *= 2
   if (att.tera === type && m.power != null && basePower < 60 && !m.extra.hits && (m.extra.pri ?? 0) <= 0) basePower = 60
   let power = basePower * pow
   if (a === 'technician' && (m.power ?? 0) <= 60) power *= 1.5
@@ -748,12 +961,43 @@ export interface ChooseOpts {
  * 지금 쓸 만한 변화기 (없으면 null): HP가 절반 이하면 회복, 상대가 상태이상이 아니면 상태이상,
  * HP가 넉넉하면 능력 상승(올릴 능력이 모두 +2 미만일 때), 상대 능력 크게 내리기
  */
+/** 이번 턴에 바로 맞지 않는 기술 (2턴 기술의 첫 턴·미래예지·힘껏펀치·트랩셸) */
+function delayedHit(me: Battler, foe: Battler, m: MoveData): boolean {
+  if (CHARGE_MOVES[m.id] && !me.vol?.charge && !chargeSkipped(me, foe, m) && !nItem(me, 'power-herb', foe)) return true
+  return FUTURE_MOVES.has(m.id) || m.id === 'focus-punch' || m.id === 'shell-trap'
+}
+
+/**
+ * 부작용이 있는 공격기의 가치 배율 (AI 용, 1 = 부작용 없음). e = 기대 데미지.
+ * 자폭 계열은 쓰러뜨릴 수 있거나 HP가 얼마 안 남았을 때만, 반동으로 쉬는 기술은 쓰러뜨릴 수 있을 때 우대
+ */
+function drawbackFactor(me: Battler, foe: Battler, m: MoveData, e: number): number {
+  const hp = me.hp / maxHpOf(me)
+  const ko = e >= foe.hp
+  if (SELF_KO_MOVES.has(m.id) || m.id === 'final-gambit') return ko || hp <= 0.3 ? 1 : 0.1
+  if (RECHARGE_MOVES.has(m.id)) return ko ? 1 : 0.55
+  if (HALF_COST_MOVES.has(m.id)) return ko ? 1 : hp > 0.5 ? 0.7 : 0.25
+  if (m.id === 'shell-trap') return 0.3
+  if (delayedHit(me, foe, m)) return CHARGE_MOVES[m.id]?.semi ? 0.6 : 0.5
+  return 1
+}
+
 function statusPick(me: Battler, foe: Battler, moves: MoveData[]): MoveData | null {
   const hp = me.hp / maxHpOf(me)
   const picks: { m: MoveData; w: number }[] = []
   for (const m of moves) {
     if (m.cls !== 'status') continue
     const ex = m.extra
+    // 특수한 변화기: 잠자기 = HP가 적을 때 / 추억의선물·길동무 = 쓰러지기 직전 / 멸망의노래·치유소원·초승달춤은 쓰지 않음
+    if (m.id === 'rest') {
+      if (hp <= 0.4) picks.push({ m, w: 4 })
+      continue
+    }
+    if (m.id === 'memento' || m.id === 'destiny-bond') {
+      if (hp <= 0.25) picks.push({ m, w: 3 })
+      continue
+    }
+    if (m.id === 'perish-song' || m.id === 'healing-wish' || m.id === 'lunar-dance' || m.id === 'sleep-talk') continue
     const { type } = moveTypeOf(me, foe, m)
     if (blockOf(me, foe, m, type, effOf(me, foe, type))) continue
     if (ex.heal && !ex.stats) {
@@ -790,12 +1034,17 @@ export function chooseMove(
   transform?: (m: MoveData) => MoveData,
   opts: ChooseOpts = {},
 ): string {
-  const moves = selectableMoves(att, att.moves).map(moveData).filter((m): m is MoveData => !!m)
+  const all = selectableMoves(att, att.moves).map(moveData).filter((m): m is MoveData => !!m)
+  // 지금 쓰면 실패하는 기술(꿈먹기·속이기 등)은 빼고 고름
+  const usable = all.filter((m) => !failReason(att, def, m, att.vol?.lastMove))
+  const moves = usable.length ? usable : all
   // 다이맥스 기술처럼 실제로 나가는 기술로 비교 (돌려주는 것은 원래 기술 id)
   const real = new Map(moves.map((m) => [m, transform ? transform(m) : m]))
   const exp = (me: Battler, f: Battler, m: MoveData) => expectedDamage(me, f, real.get(m)!)
   if (!moves.length) return 'struggle'
   if (mode === 'random') return moves[Math.floor(Math.random() * moves.length)]!.id
+  // 잠들어 있으면 잠꼬대
+  if (att.status === 'slp' && (att.sleep ?? 0) > 0 && moves.some((m) => m.id === 'sleep-talk')) return 'sleep-talk'
   // 비교 대상: strong 은 양쪽 특성을 없는 것으로, smart 는 상대 특성 후보 각각 (같은 확률로 가정)
   let me = att
   let foes: Battler[]
@@ -809,7 +1058,8 @@ export function chooseMove(
     foes = (cands.length ? cands : [null]).map((c) => withAbility(def, c))
     // 확정 1타: 어떤 특성 후보든 쓰러뜨리는 기술 중에서 명중률 → (남은 PP) → 부가 효과 순
     if (opts.koPick) {
-      const ko = moves.filter((m) => foes.every((f) => surelyKo(me, f, real.get(m)!)))
+      // 이번 턴에 바로 맞지 않는 기술(2턴 기술·미래예지·힘껏펀치 등)은 확정 1타로 치지 않음
+      const ko = moves.filter((m) => !delayedHit(me, def, real.get(m)!) && foes.every((f) => surelyKo(me, f, real.get(m)!)))
       if (ko.length) {
         const avg = (fn: (f: Battler) => number) => foes.reduce((s, f) => s + fn(f), 0) / foes.length
         const keys = (m: MoveData): number[] => {
@@ -838,7 +1088,11 @@ export function chooseMove(
   let best: MoveData[] = []
   let bestDmg = -Infinity
   for (const m of moves) {
-    const d = foes.reduce((sum, f) => sum + Math.min(exp(me, f, m), f.hp), 0) / foes.length
+    const d =
+      foes.reduce((sum, f) => {
+        const e = Math.min(exp(me, f, m), f.hp)
+        return sum + (e > 0 ? e * drawbackFactor(me, f, real.get(m)!, e) : e)
+      }, 0) / foes.length
     if (d > bestDmg + 1e-9) {
       best = [m]
       bestDmg = d
@@ -1113,7 +1367,8 @@ function canMove(att: Battler, foe: Battler, log: string[], moveId: string): boo
         att.sleep = Math.max(0, (att.sleep ?? 1) - (ab(att, foe) === 'early-bird' ? 2 : 1))
         if (att.sleep > 0 || ab(att, foe) !== 'early-bird') {
           log.push(`${josa(att.name, '은', '는')} 쿨쿨 잠들어 있다.`)
-          return false
+          // 잠꼬대·코골기: 잠든 채로 쓸 수 있음
+          return moveId === 'sleep-talk' || moveId === 'snore'
         }
       }
       cureStatus(att)
@@ -1152,6 +1407,30 @@ function heal(b: Battler, amount: number): number {
 }
 
 /** 턴 종료 시 화상·독 데미지와 특성 효과 */
+/** 턴 종료 시 시간차 효과: 미래예지·파멸의소원이 맞음, 멸망의노래 카운트 */
+function delayedEffects(b: Battler, log: string[]) {
+  const vol = b.vol
+  if (!vol || b.hp <= 0) return
+  const f = vol.future
+  if (f && --f.left <= 0) {
+    vol.future = undefined
+    log.push(`${josa(b.name, '은', '는')} ${f.move} 공격을 받았다!`)
+    if (f.dmg > 0) {
+      const dmg = Math.min(b.hp, f.dmg)
+      b.hp -= dmg
+      log.push(`${josa(b.name, '은', '는')} ${dmg}의 데미지를 입었다.`)
+    } else log.push(`${b.name}에게는 효과가 없는 것 같다…`)
+  }
+  if (vol.perish != null && b.hp > 0) {
+    vol.perish--
+    log.push(`${b.name}의 멸망 카운트가 ${josa(String(vol.perish), '이', '가')} 되었다!`)
+    if (vol.perish <= 0) {
+      vol.perish = undefined
+      b.hp = 0
+    }
+  }
+}
+
 function endOfTurn(b: Battler, foe: Battler, log: string[]) {
   if (b.hp <= 0) return
   const max = maxHpOf(b)
@@ -1285,12 +1564,47 @@ function applyAbsorb(def: Battler, fx: AbsorbFx | undefined, log: string[]) {
 /** 변화기 효과. user = 효과를 주는 쪽, target = 받는 쪽 (매직미러면 서로 바뀜) */
 function applyStatusMove(user: Battler, target: Battler, m: MoveData, log: string[]) {
   const ex = m.extra
+  const uvol = (user.vol ??= {})
+  switch (m.id) {
+    case 'rest':
+      user.hp = maxHpOf(user)
+      cureStatus(user)
+      user.status = 'slp'
+      user.sleep = 2
+      log.push(`${josa(user.name, '은', '는')} 잠들어 체력을 회복했다!`)
+      return
+    case 'destiny-bond':
+      uvol.destinyBond = true
+      log.push(`${josa(user.name, '은', '는')} 상대를 길동무로 삼으려 하고 있다.`)
+      return
+    case 'perish-song':
+      for (const b of [user, target]) {
+        if (b.vol?.perish != null) continue
+        if (b !== user && defAb(b, user) === 'soundproof') {
+          announce(b, log)
+          continue
+        }
+        ;(b.vol ??= {}).perish = 4
+      }
+      log.push('멸망의노래를 들은 포켓몬은 3턴 후에 쓰러진다!')
+      return
+    case 'healing-wish':
+    case 'lunar-dance':
+      uvol.wish = true
+      log.push(`${josa(user.name, '은', '는')} 다음 포켓몬을 위해 소원을 빌었다!`)
+      return
+    case 'stockpile':
+      uvol.stockpile = (uvol.stockpile ?? 0) + 1
+      log.push(`${josa(user.name, '은', '는')} ${uvol.stockpile}개 비축했다!`)
+      break
+  }
   let did = false
   if (ex.heal) {
     const max = maxHpOf(user)
     const before = user.hp
-    // 달빛·광합성·아침햇살: 맑음 이외의 날씨에서는 1/4
-    const pct = SUN_HEAL_MOVES.has(m.id) && weatherOf(user, target) ? 25 : ex.heal
+    // 달빛·광합성·아침햇살: 맑음 이외의 날씨에서는 1/4 / 꿀꺽: 비축한 수만큼 (1/4·1/2·전부)
+    const pct =
+      m.id === 'swallow' ? [0, 25, 50, 100][Math.min(3, uvol.stockpile ?? 0)]! : SUN_HEAL_MOVES.has(m.id) && weatherOf(user, target) ? 25 : ex.heal
     user.hp = Math.min(max, user.hp + Math.floor((max * pct) / 100))
     log.push(user.hp > before ? `${josa(user.name, '은', '는')} 체력을 회복했다!` : `${user.name}의 체력은 이미 가득하다!`)
     did = true
@@ -1315,6 +1629,87 @@ function applyStatusMove(user: Battler, target: Battler, m: MoveData, log: strin
  * override = 실제로 나가는 기술 (Z기술·다이맥스 기술). 없으면 moveId 그대로
  */
 function useMove(att: Battler, def: Battler, moveId: string, log: string[], last: boolean, override?: MoveData) {
+  const vol = (att.vol ??= {})
+  const prev = vol.lastMove
+  // 길동무는 다음에 기술을 쓰면 풀림
+  vol.destinyBond = false
+  const m = override ?? moveData(moveId) ?? STRUGGLE
+  const defHp = def.hp
+  const thrown = m.id === 'fling' ? flingItem(att, def) : undefined
+  const gift = m.id === 'natural-gift' ? giftBerry(att, def) : undefined
+  moveOutcome = 'hit'
+  useMoveInner(att, def, moveId, log, last, override, prev)
+  const out = moveOutcome as MoveOutcome
+  vol.acted = true
+  if (!(vol.used ??= []).includes(moveId)) vol.used.push(moveId)
+  if (out === 'charge') return
+
+  if (out !== 'fail') {
+    // 내던지기: 던진 도구에 따라 상태이상·풀죽음, 도구는 사라짐 / 자연의은혜: 열매가 사라짐
+    if (thrown) {
+      const st = FLING_STATUS[thrown]
+      if (out === 'hit' && def.hp > 0) {
+        if (st && canInflict(def, st, att)) inflictStatus(def, st, log, false, att)
+        if ((thrown === 'kings-rock' || thrown === 'razor-fang') && !last) (def.vol ??= {}).flinch = true
+      }
+      consumeItem(att, thrown, def, log)
+    }
+    if (gift) consumeItem(att, gift, def, log)
+    // 철제광선·깜짝헤드·클로로블라스트: 최대 HP 절반을 잃음
+    if (HALF_COST_MOVES.has(m.id) && att.hp > 0 && indirect(att, def, Math.ceil(maxHpOf(att) / 2)))
+      log.push(`${josa(att.name, '은', '는')} 몸이 깎였다!`)
+    // 자폭 계열·추억의선물·치유소원·초승달춤: 자신이 쓰러짐 / 목숨걸기: 맞혔을 때만
+    if (SELF_KO_MOVES.has(m.id) || m.id === 'memento' || m.id === 'healing-wish' || m.id === 'lunar-dance') att.hp = 0
+    if (m.id === 'final-gambit' && out === 'hit') att.hp = 0
+    // 파괴광선 등: 맞혔으면 다음 턴 움직일 수 없음
+    if (RECHARGE_MOVES.has(m.id) && out === 'hit' && att.hp > 0) vol.recharge = true
+    // 토해내기·꿀꺽: 비축이 사라지고 비축으로 오른 방어·특수방어도 원래대로
+    if ((m.id === 'spit-up' || m.id === 'swallow') && vol.stockpile) {
+      const n = vol.stockpile
+      vol.stockpile = 0
+      for (const k of ['def', 'spd'] as const) att.stages[k] = Math.max(-6, (att.stages[k] ?? 0) - n)
+      log.push(`${att.name}의 비축 효과가 사라졌다!`)
+    }
+    // 불사르기·전광쌍격: 자신의 불꽃·전기 타입이 사라짐
+    if ((m.id === 'burn-up' || m.id === 'double-shock') && out === 'hit' && !att.tera) {
+      const lose = m.id === 'burn-up' ? 'fire' : 'electric'
+      const left = typesOf(att).filter((t) => t !== lose)
+      vol.types = left.length ? left : ['typeless']
+      log.push(`${att.name}의 ${typeKo(lose)} 타입이 사라졌다!`)
+    }
+  }
+  // 구르기·아이스볼: 맞히면 다음 턴에도 이어서 (최대 5턴, 위력 2배씩)
+  if (m.id === 'rollout' || m.id === 'ice-ball') {
+    const n = (vol.rolloutMove === m.id ? (vol.rollout ?? 0) : 0) + 1
+    if (out === 'hit' && n < 5 && att.hp > 0) {
+      vol.rollout = n
+      vol.rolloutMove = moveId
+    } else {
+      vol.rollout = undefined
+      vol.rolloutMove = undefined
+    }
+  }
+  // 길동무: 길동무 상태인 상대를 공격으로 쓰러뜨리면 자신도 쓰러짐
+  if (defHp > 0 && def.hp <= 0 && def.vol?.destinyBond && att.hp > 0) {
+    def.vol.destinyBond = false
+    att.hp = 0
+    log.push(`${josa(def.name, '은', '는')} ${josa(att.name, '을', '를')} 길동무로 삼았다!`)
+  }
+}
+
+/** useMoveInner 의 결과: 맞힘(또는 효과 있음) / 빗나감·막힘 / 실패(쓸 수 없음) / 2턴 기술의 모으는 턴 */
+type MoveOutcome = 'hit' | 'miss' | 'fail' | 'charge'
+let moveOutcome: MoveOutcome = 'hit'
+
+function useMoveInner(
+  att: Battler,
+  def: Battler,
+  moveId: string,
+  log: string[],
+  last: boolean,
+  override: MoveData | undefined,
+  prevMove: string | undefined,
+) {
   const m = override ?? moveData(moveId) ?? STRUGGLE
   const ex = m.extra
   const a = ab(att, def)
@@ -1339,6 +1734,52 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
   }
   log.push(`${att.name}의 ${m.ko}!`)
 
+  // 쓸 수 없는 상황 (꿈먹기·속이기·비장의무기·트림 등)
+  const fail = (msg: string) => {
+    log.push(msg)
+    moveOutcome = 'fail'
+  }
+  const why = failReason(att, def, m, prevMove)
+  if (why) return fail(why)
+  if (dampBlocks(att, def, m)) {
+    const damp = ab(att, def) === 'damp' ? att : def
+    announce(damp, log)
+    return fail(`${damp.name}의 축축 때문에 ${josa(m.ko, '을', '를')} 쓸 수 없다!`)
+  }
+  if (m.id === 'focus-punch' && vol.hurt) return fail(`${josa(att.name, '은', '는')} 집중이 흐트러져서 기술을 쓸 수 없었다!`)
+  if (m.id === 'shell-trap' && !vol.hurtPhys) return fail('그러나 트랩셸이 작동하지 않았다!')
+  // 잠꼬대: 다른 기술 중 하나를 무작위로 씀
+  if (m.id === 'sleep-talk') {
+    const opts = att.moves.filter((id) => !NO_SLEEP_TALK.has(id) && moveData(id))
+    if (!opts.length) return fail('그러나 실패했다!')
+    return useMoveInner(att, def, opts[Math.floor(Math.random() * opts.length)]!, log, last, undefined, prevMove)
+  }
+  // 2턴 기술: 첫 턴은 힘을 모음 (파워풀허브가 있으면 바로 공격)
+  const charge = override ? undefined : CHARGE_MOVES[m.id]
+  if (charge && !vol.releasing) {
+    if (!chargeSkipped(att, def, m)) log.push(`${josa(att.name, '은', '는')} ${charge.msg}`)
+    for (const [k, n] of charge.stats ?? []) changeStage(att, k, n, log)
+    if (!chargeSkipped(att, def, m)) {
+      if (aHas('power-herb')) {
+        log.push(`${josa(att.name, '은', '는')} ${ro(itemKo('power-herb'))} 힘이 넘쳐흐른다!`)
+        consumeItem(att, 'power-herb', def, log)
+      } else {
+        vol.charge = moveId
+        vol.semi = charge.semi
+        moveOutcome = 'charge'
+        return
+      }
+    }
+  }
+  // 미래예지·파멸의소원: 2턴 뒤 턴이 끝날 때 맞음 (데미지는 지금 계산)
+  if (FUTURE_MOVES.has(m.id)) {
+    const { type } = moveTypeOf(att, def, m)
+    const dmg = effOf(att, def, type) === 0 ? 0 : damageOf(att, def, m, 85 + Math.floor(Math.random() * 16), false)
+    ;(def.vol ??= {}).future = { left: 3, dmg, move: m.ko }
+    log.push(m.id === 'future-sight' ? `${josa(att.name, '은', '는')} 미래를 내다보았다!` : `${josa(att.name, '은', '는')} 파멸의소원을 빌었다!`)
+    return
+  }
+
   // 다이월: 이번 턴 상대의 기술을 막음
   if (m.id === MAX_GUARD.id) {
     vol.protect = true
@@ -1347,13 +1788,28 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
   }
   const selfOnly = isSelfMove(m)
   if (!selfOnly && def.vol?.protect) {
-    log.push(`${josa(def.name, '은', '는')} 공격으로부터 몸을 지켰다!`)
+    // 섀도다이브·고스트다이브: 방어를 풀고 공격
+    if (m.id === 'shadow-force' || m.id === 'phantom-force') {
+      def.vol.protect = false
+      log.push(`${def.name}의 방어가 풀렸다!`)
+    } else {
+      log.push(`${josa(def.name, '은', '는')} 공격으로부터 몸을 지켰다!`)
+      moveOutcome = 'miss'
+      return
+    }
+  }
+  // 공중날기·구멍파기 등으로 사라진 상대: 일부 기술만 맞음 (노가드면 맞음)
+  const hidden = def.vol?.semi
+  if (!selfOnly && hidden && !SEMI_HIT[hidden].hit.includes(m.id) && a !== 'no-guard' && ab(def, att) !== 'no-guard') {
+    log.push(`그러나 ${att.name}의 공격은 빗나갔다!`)
+    moveOutcome = 'miss'
     return
   }
   // 명중 판정 (자신에게 쓰는 변화기는 생략)
   const hit = selfOnly || Math.random() < accuracyOf(att, def, m, last)
   if (!selfOnly && vol.micle) vol.micle = false
   if (!hit) {
+    moveOutcome = 'miss'
     log.push(`그러나 ${att.name}의 공격은 빗나갔다!`)
     // 허탕보험: 빗나가면 스피드 +2
     if (aHas('blunder-policy') && m.acc != null) {
@@ -1378,6 +1834,7 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
     } else if (blk.by === 'item') {
       log.push(`${josa(def.name, '은', '는')} ${ro(itemKo(blk.item))} 공격을 막았다!`)
     } else log.push(`${def.name}에게는 효과가 없는 것 같다…`)
+    moveOutcome = 'miss'
     return
   }
 
@@ -1475,6 +1932,8 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
     const helmets = contactFx ? nItem(def, 'rocky-helmet', att) : 0
     if (helmets && indirect(att, def, Math.floor((maxHpOf(att) * helmets) / 6)))
       post.push(`${josa(att.name, '은', '는')} ${ro(itemKo('rocky-helmet'))} 데미지를 입었다!`)
+    // 부리캐논 가열 중인 상대에게 접촉하면 화상
+    if (contactFx && def.vol?.beak && canInflict(att, 'brn', def)) inflictStatus(att, 'brn', post, false, def)
     if (def.hp <= 0) break
     // 맞을 때 능력이 변하는 특성
     if (crit && d === 'anger-point') {
@@ -1549,7 +2008,13 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
       inflictStatus(def, chain, post, false, att)
     }
   }
-  if (total > 0) turnHits?.push({ def, eff: ex.fixed == null ? eff : 1, crit: crits > 0, type })
+  if (total > 0) {
+    turnHits?.push({ def, eff: ex.fixed == null ? eff : 1, crit: crits > 0, type })
+    // 힘껏펀치·트랩셸 판정용
+    const dv = (def.vol ??= {})
+    dv.hurt = true
+    if (physical) dv.hurtPhys = true
+  }
   if (crits) log.push(crits > 1 || landed > 1 ? `급소에 ${crits}번 맞았다!` : '급소에 맞았다!')
   if (ex.fixed == null && eff > 1) log.push('효과가 굉장했다!')
   if (ex.fixed == null && eff < 1) log.push('효과가 별로인 듯하다…')
@@ -1680,6 +2145,10 @@ function useMove(att: Battler, def: Battler, moveId: string, log: string[], last
     if (ex.ail && !shield && def.hp > 0 && total > 0 && (ex.ailChance == null || Math.random() * 100 < ex.ailChance * chanceMult)) {
       inflictStatus(def, ex.ail, log, false, att)
     }
+    // 속이기·코골기: 먼저 맞히면 풀죽음 (정신력이면 무효)
+    const fl = FLINCH_MOVES[m.id]
+    if (fl && !last && !shield && def.hp > 0 && total > 0 && ab(def, att) !== 'inner-focus' && Math.random() * 100 < fl * chanceMult)
+      (def.vol ??= {}).flinch = true
     // 교체·도망 봉쇄 (고스트 타입은 걸리지 않음)
     if (ex.trap && !shield && def.hp > 0 && total > 0 && !def.vol?.trapped && !typesOf(def).includes('ghost')) {
       ;(def.vol ??= {}).trapped = true
@@ -1912,8 +2381,21 @@ export function runTurn(
   turnHits = hits
   let playerMoved = false
   let enemyMoved = false
-  // 다이월은 그 턴에만
-  for (const b of [player, enemy]) if (b.vol) b.vol.protect = false
+  // 다이월·이번 턴 맞았는지는 그 턴에만
+  for (const b of [player, enemy]) {
+    if (!b.vol) continue
+    b.vol.protect = false
+    b.vol.hurt = b.vol.hurtPhys = b.vol.beak = false
+  }
+  // 2턴 기술의 두 번째 턴·구르기 연속 사용: 고른 기술 대신 이어서 씀 (PP 소모 없음)
+  const forcedOf = (b: Battler) => b.vol?.charge ?? b.vol?.rolloutMove
+  const playerForced = playerMove != null ? forcedOf(player) : undefined
+  const enemyForced = forcedOf(enemy)
+  if (playerForced) {
+    playerMove = playerForced
+    playerOverride = undefined
+  }
+  if (enemyForced) enemyMove = enemyForced
   const pri = (att: Battler, def: Battler, id: string | null) => {
     const m = att === player && playerOverride && id ? playerOverride : id ? moveData(id) : null
     return m ? priorityOf(att, def, m) : 0
@@ -1953,20 +2435,38 @@ export function runTurn(
   const mine: [Battler, Battler, string | null] = [player, enemy, playerMove]
   const theirs: [Battler, Battler, string | null] = [enemy, player, enemyMove]
   const order = playerFirst ? [mine, theirs] : [theirs, mine]
+  // 힘껏펀치·트랩셸·부리캐논: 턴이 시작될 때 준비
+  for (const [b, , move] of order) {
+    if (!move || b.hp <= 0 || b.vol?.recharge || !PREP_MOVES[move]) continue
+    log.push(`${josa(b.name, '은', '는')} ${PREP_MOVES[move]}`)
+    if (move === 'beak-blast') (b.vol ??= {}).beak = true
+  }
+  /** 행동하지 못하면 모으던 기술·연속 기술이 끊김 */
+  const breakLock = (v: Volatile) => {
+    v.charge = v.semi = v.rolloutMove = undefined
+    v.rollout = undefined
+  }
   order.forEach(([att, def, move], i) => {
     if (!move || att.hp <= 0 || def.hp <= 0) return
-    // 게으름: 두 턴에 한 번만 행동
     const vol = (att.vol ??= {})
+    // 파괴광선 등의 반동
+    if (vol.recharge) {
+      vol.recharge = false
+      log.push(`${josa(att.name, '은', '는')} 공격의 반동으로 움직일 수 없다!`)
+      return
+    }
+    // 게으름: 두 턴에 한 번만 행동
     if (ab(att, def) === 'truant') {
       if (vol.loaf) {
         vol.loaf = false
         announce(att, log)
         log.push(`${josa(att.name, '은', '는')} 게으름을 피우고 있다.`)
+        breakLock(vol)
         return
       }
       vol.loaf = true
     }
-    if (!canMove(att, def, log, move)) return
+    if (!canMove(att, def, log, move)) return breakLock(vol)
     // 풀죽음 (왕의징표석 등): 먼저 행동한 상대에게 맞아 이번 턴 행동 불가 (다이맥스 중에는 풀죽지 않음)
     if (vol.flinch && att.dynamax) vol.flinch = false
     if (vol.flinch) {
@@ -1976,18 +2476,29 @@ export function runTurn(
         announce(att, log)
         changeStage(att, 'spe', 1, log)
       }
+      breakLock(vol)
       return
     }
-    if (att === player) playerMoved = true
-    else enemyMoved = true
+    const forced = att === player ? playerForced : enemyForced
+    if (att === player) playerMoved = !forced
+    else enemyMoved = !forced
+    // 모아 둔 기술을 씀: 사라진 상태에서 돌아옴
+    if (vol.charge) {
+      vol.releasing = true
+      vol.charge = undefined
+      vol.semi = undefined
+    }
     // 애널라이즈: 상대가 이미 행동했으면 (나중에 행동)
     useMove(att, def, move, log, i === 1 && !!order[0]![2], att === player ? playerOverride : undefined)
+    vol.releasing = false
   })
-  // 턴 종료: 화상·독·특성 (둘 다 살아 있을 때만)
+  // 턴 종료: 화상·독·특성 → 미래예지·멸망의노래 (둘 다 살아 있을 때만)
   if (player.hp > 0 && enemy.hp > 0) {
-    for (const [b, foe] of playerFirst ? [[player, enemy], [enemy, player]] : [[enemy, player], [player, enemy]])
-      endOfTurn(b!, foe!, log)
+    const ends = playerFirst ? [[player, enemy], [enemy, player]] : [[enemy, player], [player, enemy]]
+    for (const [b, foe] of ends) endOfTurn(b!, foe!, log)
+    for (const [b] of ends) delayedEffects(b!, log)
   }
+  for (const b of [player, enemy]) if (b.vol) b.vol.beak = false
   const ppCost = ab(enemy, player) === 'pressure' ? 2 : 1
   const enemyPpCost = ab(player, enemy) === 'pressure' ? 2 : 1
   turnHits = null

@@ -3599,10 +3599,21 @@ export const useGameStore = defineStore('game', {
         return
       }
       // 싸울 수 있는 파티 포켓몬이 있으면 교체
+      const wish = !!this.playerVol?.wish
       const next = this.party.findIndex((m, i) => i > 0 && m.hp !== 0)
       if (next > 0) {
         if (this.enemy) this.setLead(next)
         else this.switchLead(next)
+        // 치유소원·초승달춤: 다음에 나온 포켓몬의 HP·상태이상 회복
+        const nm = this.party[0]
+        if (wish && nm && nm !== member) {
+          nm.hp = this.memberMaxHp(nm)
+          nm.status = null
+          nm.sleep = undefined
+          nm.toxic = undefined
+          const nn = speciesOf(nm.species)?.ko ?? nm.species
+          log.push(`${josa(nn, '은', '는')} 소원을 받아 건강해졌다!`, 'info')
+        }
         return
       }
       log.push('눈앞이 캄캄해졌다…', 'bad')
