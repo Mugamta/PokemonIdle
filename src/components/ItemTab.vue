@@ -406,7 +406,7 @@ function sell(id: string, n: number) {
           </div>
           <p v-if="giveBlock" class="item-text">{{ giveBlock }}</p>
           <p v-if="heldPick && dexData.items[heldPick]?.text" class="item-text">{{ dexData.items[heldPick]!.text }}</p>
-          <p v-if="!holdables.length" class="item-text">가방에 지닐 수 있는 도구가 없습니다. 상점의 지속형·소모성 도구를 사거나 야생 포켓몬에게서 얻을 수 있습니다.</p>
+          <p v-if="!holdables.length" class="item-text">가방에 지닐 수 있는 도구가 없습니다. 도구상점 → 지닌 도구에서 사거나 야생 포켓몬에게서 얻을 수 있습니다.</p>
         </template>
       </template>
       <template v-else-if="cat === 'tm'">

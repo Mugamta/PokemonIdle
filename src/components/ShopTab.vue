@@ -82,37 +82,32 @@ import { GIMMICK_INFO, TERA_SHARD_COST, teraShardType, Z_CRYSTALS, type Gimmick 
 import { regionOfGimmick } from '../data/stages'
 import { isConsumableItem, josa } from '../core/battle'
 
-type Sub = 'items' | 'ball' | 'battle' | 'held' | 'heldUse' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'judge' | 'perks' | 'slots' | 'heldSlots'
+type Sub = 'items' | 'ball' | 'battle' | 'held' | 'tm' | 'evo' | 'train' | 'gimmick' | 'growth' | 'perks' | 'slots'
 /** 하단 탭: 도구상점(item) / 강화상점(upgrade) */
 const props = defineProps<{ kind: 'item' | 'upgrade'; wide?: boolean }>()
 const SUB_LABELS: Record<Sub, string> = {
   items: '회복',
   ball: '볼',
   battle: '배틀',
-  held: '지속형 도구',
-  heldUse: '소모성 도구',
+  held: '지닌 도구',
   tm: '기술머신',
   evo: '진화',
   train: '육성',
   gimmick: '특수 기능',
-  growth: '육성 강화',
-  judge: '판정 강화',
+  growth: '전투·육성 강화',
   perks: '편의성',
-  slots: '기술칸',
-  heldSlots: '도구칸',
+  slots: '포켓몬 강화',
 }
 /** 상단 탭: 비슷한 기능(Sub)을 묶은 것. 묶인 Sub의 분류는 아래 작은 탭으로 나옴 */
 const GROUPS: { id: string; label: string; kind: 'item' | 'upgrade'; subs: Sub[] }[] = [
   { id: 'consumable', label: '소모품', kind: 'item', subs: ['items', 'ball', 'battle'] },
-  { id: 'held', label: '지속형 도구', kind: 'item', subs: ['held'] },
-  { id: 'heldUse', label: '소모성 도구', kind: 'item', subs: ['heldUse'] },
+  { id: 'held', label: '지닌 도구', kind: 'item', subs: ['held'] },
   { id: 'tm', label: '기술머신', kind: 'item', subs: ['tm'] },
   { id: 'evo', label: '진화·변신', kind: 'item', subs: ['evo', 'gimmick'] },
   { id: 'train', label: '육성', kind: 'item', subs: ['train'] },
-  { id: 'growth', label: '육성 강화', kind: 'upgrade', subs: ['growth'] },
-  { id: 'judge', label: '판정 강화', kind: 'upgrade', subs: ['judge'] },
+  { id: 'growth', label: '전투·육성 강화', kind: 'upgrade', subs: ['growth'] },
   { id: 'perks', label: '편의성', kind: 'upgrade', subs: ['perks'] },
-  { id: 'slots', label: '칸 추가', kind: 'upgrade', subs: ['slots', 'heldSlots'] },
+  { id: 'slots', label: '포켓몬 강화', kind: 'upgrade', subs: ['slots'] },
 ]
 const game = useGameStore()
 onMounted(() => {
@@ -131,20 +126,11 @@ const HELD_MINI: { id: HeldGroup; label: string }[] = [
   { id: 'bad', label: '불리한 효과' },
   { id: 'training', label: '경험치·돈' },
 ]
-/** 지속형(false)·소모성(true) 지닌 도구 중 그 분류에 파는 도구가 있는 것만 */
-function heldMini(use: boolean) {
-  return HELD_MINI.filter((m) => HELD_ITEMS.some((i) => i.group === m.id && isConsumableItem(i.id) === use))
-}
+/** 파는 지닌 도구가 있는 분류만 */
+const heldMini = () => HELD_MINI.filter((m) => HELD_ITEMS.some((i) => i.group === m.id))
 /** 상단 탭 아래의 작은 탭 (분류) */
 const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
-  items: [
-    { id: 'heal', label: '체력' },
-    { id: 'revive', label: '기절' },
-    { id: 'pp', label: 'PP' },
-    { id: 'status', label: '상태이상' },
-  ],
-  held: heldMini(false),
-  heldUse: heldMini(true),
+  held: heldMini(),
   evo: [
     { id: 'stone', label: '진화의 돌' },
     { id: 'trade', label: '통신교환' },
@@ -161,8 +147,9 @@ const MINI: Partial<Record<Sub, { id: string; label: string }[]>> = {
     { id: 'nature', label: '민트' },
   ],
   perks: [
-    { id: 'battle', label: '전투·탐색' },
-    { id: 'autoUse', label: '자동 사용' },
+    { id: 'battle', label: '전투' },
+    { id: 'catch', label: '포획·탐색' },
+    { id: 'autoUse', label: '자동 회복' },
     { id: 'info', label: '정보 표시' },
   ],
   gimmick: [
@@ -194,15 +181,18 @@ const curEntry = computed(() => curGroup.value.entries.find((e) => e.key === pic
 const miniTabs = computed(() => (curGroup.value.entries.length > 1 ? curGroup.value.entries : null))
 const sub = computed(() => curEntry.value.sub)
 const cur = computed(() => curEntry.value.mini)
-const catItems = computed(() => SHOP_ITEMS.filter((i) => i.category === cur.value))
+/** 회복 탭: 체력·기절·PP·상태이상 회복을 한 화면에 분류별로 */
+const HEAL_CATS: ItemCategory[] = ['heal', 'revive', 'pp', 'status']
+const healSections = HEAL_CATS.map((c) => ({ c, items: SHOP_ITEMS.filter((i) => i.category === c) }))
 const balls = SHOP_ITEMS.filter((i) => i.category === 'ball')
 const battleItems = SHOP_ITEMS.filter((i) => i.category === 'battle')
 
 const HELD_GROUPS = Object.keys(HELD_GROUP_LABELS) as HeldGroup[]
-const heldGroups = computed(() => {
-  const use = sub.value === 'heldUse'
-  return HELD_GROUPS.map((g) => ({ g, items: HELD_ITEMS.filter((i) => i.group === g && isConsumableItem(i.id) === use) }))
-})
+/** 지닌 도구: 분류별 (한 번 쓰면 사라지는 도구는 1회용 표시) */
+const heldGroups = HELD_GROUPS.map((g) => ({
+  g,
+  items: HELD_ITEMS.filter((i) => i.group === g).map((i) => ({ ...i, once: isConsumableItem(i.id) })),
+}))
 
 // 기술머신: 검색 + 파티가 배울 수 있는 것만
 const tmQuery = ref('')
@@ -269,14 +259,25 @@ const gimmickRows = computed(() => {
   })
 })
 
-/** 편의성 탭에 나오는 차례 구매 기능, 작은 탭별 (노력치 한계 돌파는 육성 강화 탭) */
-const CHAIN_BY_MINI: Record<string, ChainPerk[]> = {
+/** 편의성 탭에 나오는 차례 구매 기능, 작은 탭별 (노력치 한계 돌파는 전투·육성 강화 탭) */
+const CHAIN_BY_MINI: Partial<Record<string, ChainPerk[]>> = {
   battle: [...AI_PERKS, ...SPEED_PERKS],
   info: [...DISPLAY_PERKS, ...STAT_VIEW_PERKS],
 }
 const perkList = computed(() => CHAIN_BY_MINI[cur.value ?? ''] ?? [])
-/** 자동 사용 탭에 나오는 아이템 편의성 */
-const itemPerks = computed(() => (cur.value === 'autoUse' ? PERKS : []))
+const perkOf = (k: AutoUseKey) => PERKS.find((p) => p.id === `autoUse:${k}`)!
+/** 자동 사용 기능 카드: 자동 회복 탭은 같은 회복의 전투 중·전투 후를 한 카드로, 포획·탐색 탭은 몬스터볼 */
+const autoCards = computed((): { title: string; rows: { p: Perk; label: string }[] }[] => {
+  const row = (k: AutoUseKey, label?: string) => ({ p: perkOf(k), label: label ?? perkOf(k).label })
+  if (cur.value === 'catch') return [{ title: '', rows: [row('ball')] }]
+  if (cur.value !== 'autoUse') return []
+  return [
+    { title: '체력 회복', rows: [row('heal', '전투 중 자동 사용·구매'), row('healAfter', '전투 후 자동 사용·구매')] },
+    { title: '기절 회복', rows: [row('revive', '전투 중 자동 사용·구매'), row('reviveAfter', '전투 후 자동 사용·구매')] },
+    { title: 'PP 회복', rows: [row('pp', '자동 사용·구매')] },
+    { title: '상태이상 회복', rows: [row('status', '자동 사용·구매')] },
+  ]
+})
 /** 노력치 한계 돌파 2 다음 구매 정보 */
 const evBreak2 = computed(() => ({
   price: evBreak2Price(game.evBreaks + 1),
@@ -343,15 +344,20 @@ const autoBallStatic = computed(() =>
 const slotHeldProgress = computed(
   () => game.party.filter((m) => heldKindsOf(m) >= HELD_KINDS_MAX && heldStackOf(m) >= HELD_STACK_MAX).length,
 )
-/** 지닌 도구 칸: 포켓몬별 도구 종류 수·같은 도구 개수 늘리기 */
-const heldSlotRows = computed(() =>
+/** 포켓몬 강화: 포켓몬별 기술칸 추가(기본 4칸을 모두 연 뒤) · 도구 종류 수 · 같은 도구 개수 */
+const pokeRows = computed(() =>
   game.party.map((m, i) => {
+    const extra = m.extraSlots ?? 0
     const kinds = heldKindsOf(m)
     const stack = heldStackOf(m)
     return {
       i,
       name: dexData.value?.index.find((p) => p.id === m.species)?.ko ?? m.species,
       level: m.level,
+      slots: game.slotsOf(m),
+      slotsMaxed: extra >= EXTRA_SLOTS,
+      baseDone: game.baseSlots >= BASE_SLOTS_MAX,
+      slotPrice: extraSlotPrice(extra + 1),
       kinds,
       stack,
       kindsMaxed: kinds >= HELD_KINDS_MAX,
@@ -361,26 +367,7 @@ const heldSlotRows = computed(() =>
     }
   }),
 )
-
-/** 기술칸 추가: 기본 4칸을 모두 연 포켓몬만 */
-const slotRows = computed(() =>
-  game.party.map((m, i) => {
-    const name = dexData.value?.index.find((p) => p.id === m.species)?.ko ?? m.species
-    const extra = m.extraSlots ?? 0
-    const baseDone = game.baseSlots >= BASE_SLOTS_MAX
-    return {
-      i,
-      name,
-      level: m.level,
-      slots: game.slotsOf(m),
-      maxed: extra >= EXTRA_SLOTS,
-      baseDone,
-      price: extraSlotPrice(extra + 1),
-      need: SLOT_DEFEATS[SLOT_DEFEATS.length - 1]!,
-      defeats: game.totalDefeats,
-    }
-  }),
-)
+const slotNeed = SLOT_DEFEATS[SLOT_DEFEATS.length - 1]!
 </script>
 
 <template>
@@ -406,10 +393,10 @@ const slotRows = computed(() =>
 
     <!-- 회복 아이템 -->
     <template v-else-if="sub === 'items'">
-      <section class="card">
-        <h4 class="sec">{{ CATEGORY_LABELS[cur as ItemCategory] }}</h4>
+      <section v-for="h in healSections" :key="h.c" class="card">
+        <h4 class="sec">{{ CATEGORY_LABELS[h.c] }}</h4>
         <ul class="rows">
-          <ShopRow v-for="it in catItems" :key="it.id" :id="it.id" :price="it.price" />
+          <ShopRow v-for="it in h.items" :key="it.id" :id="it.id" :price="it.price" />
         </ul>
       </section>
       <p class="note">
@@ -442,19 +429,16 @@ const slotRows = computed(() =>
     </template>
 
     <!-- 지닌 도구 -->
-    <template v-else-if="sub === 'held' || sub === 'heldUse'">
+    <template v-else-if="sub === 'held'">
       <section v-for="g in heldGroups.filter((x) => x.g === cur)" :key="g.g" class="card">
-        <h4 class="sec">{{ HELD_GROUP_LABELS[g.g] }}</h4>
+        <p class="desc top">{{ HELD_GROUP_LABELS[g.g] }}</p>
         <ul class="rows">
-          <ShopRow v-for="it in g.items" :key="it.id" :id="it.id" :price="it.price" />
+          <ShopRow v-for="it in g.items" :key="it.id" :id="it.id" :price="it.price" :tag="it.once ? '1회용' : ''" />
         </ul>
       </section>
       <p class="note">
-        도구 탭 → 지닌 도구에서 파티 포켓몬에게 지니게 합니다.
-        <template v-if="sub === 'heldUse'">
-          열매·주얼·기합의띠처럼 한 번 쓰면 사라지는 도구로, 다음 전투가 시작될 때 가방에 같은 도구가 있으면 자동으로 다시 지닙니다.
-        </template>
-        <template v-else>지니고 있는 동안 효과가 계속되며 써도 사라지지 않습니다.</template>
+        도구 탭 → 지닌 도구에서 파티 포켓몬에게 지니게 합니다. 지니고 있는 동안 효과가 계속되며 써도 사라지지 않습니다.
+        <strong class="once-tag">1회용</strong> 도구(열매·주얼·기합의띠 등)는 한 번 쓰면 사라지고, 다음 전투가 시작될 때 가방에 같은 도구가 있으면 자동으로 다시 지닙니다.
         날씨·필드·교체에 관련된 도구는 이 게임에서 효과가 없어 팔지 않습니다.
       </p>
     </template>
@@ -515,9 +499,10 @@ const slotRows = computed(() =>
       </p>
     </template>
 
-    <!-- 육성 강화 (학습장치·노력치 한계 돌파) -->
+    <!-- 전투·육성 강화 (공용 도구 · 노력치 한계 돌파 · 판정 강화) -->
     <template v-else-if="sub === 'growth'">
       <section class="card">
+        <h4 class="sec">공용 도구</h4>
         <ul class="rows">
           <li>
             <div class="main">
@@ -534,6 +519,30 @@ const slotRows = computed(() =>
             </div>
             <p class="desc item">
               한 번 사면 켜고 끌 수 있는 공용 기능입니다. 켜 두면 싸우지 않은 파티 포켓몬(기절 제외)도 경험치의 절반과 노력치를 얻습니다.
+            </p>
+          </li>
+          <li>
+            <div class="main">
+              <ItemIcon :id="EVERSTONE_ITEM.id" />
+              <span class="grow"><strong>{{ itemName(EVERSTONE_ITEM.id) }}</strong></span>
+              <label v-if="game.everstoneOwned" class="toggle">
+                <input
+                  type="checkbox"
+                  :checked="game.everstone"
+                  @change="game.setEverstone(($event.target as HTMLInputElement).checked)"
+                />
+                켜기
+              </label>
+              <template v-else>
+                <span class="price">{{ won(EVERSTONE_ITEM.price) }}</span>
+                <button type="button" class="buy" :disabled="game.money < EVERSTONE_ITEM.price" @click="game.buyEverstone()">
+                  구매
+                </button>
+              </template>
+            </div>
+            <p class="desc item">
+              한 번 사면 모든 포켓몬에게 공용으로 적용됩니다. 전투 화면 오른쪽 아래에서 켜고 끌 수 있으며, 켜 두면 레벨업으로
+              진화하지 않습니다. (아이템 진화는 가능)
             </p>
           </li>
         </ul>
@@ -583,29 +592,29 @@ const slotRows = computed(() =>
           </li>
         </ul>
       </section>
+      <section class="card">
+        <h4 class="sec">판정 강화</h4>
+        <ul class="rows">
+          <li>
+            <div class="main">
+              <span class="grow"><strong>{{ END_HEAL_PERK.label }}</strong></span>
+              <span v-if="game.hasPerk(END_HEAL_PERK.id)" class="owned">구매함</span>
+              <template v-else>
+                <span class="price">{{ won(END_HEAL_PERK.price) }}</span>
+                <button type="button" class="buy" :disabled="game.money < END_HEAL_PERK.price" @click="game.buyPerk(END_HEAL_PERK.id)">
+                  구매
+                </button>
+              </template>
+            </div>
+            <p class="desc">{{ END_HEAL_PERK.desc }}</p>
+          </li>
+        </ul>
+      </section>
     </template>
-    <!-- 판정 강화 -->
-    <section v-else-if="sub === 'judge'" class="card">
-      <ul class="rows">
-        <li>
-          <div class="main">
-            <span class="grow"><strong>{{ END_HEAL_PERK.label }}</strong></span>
-            <span v-if="game.hasPerk(END_HEAL_PERK.id)" class="owned">구매함</span>
-            <template v-else>
-              <span class="price">{{ won(END_HEAL_PERK.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < END_HEAL_PERK.price" @click="game.buyPerk(END_HEAL_PERK.id)">
-                구매
-              </button>
-            </template>
-          </div>
-          <p class="desc">{{ END_HEAL_PERK.desc }}</p>
-        </li>
-      </ul>
-    </section>
     <!-- 육성 아이템 -->
     <template v-else-if="sub === 'train'">
       <section v-for="g in trainGroups.filter((x) => x.g === cur)" :key="g.g" class="card">
-        <h4 class="sec">{{ TRAIN_GROUP_LABELS[g.g] }}</h4>
+        <p class="desc top">{{ TRAIN_GROUP_LABELS[g.g] }}</p>
         <ul class="rows">
           <ShopRow v-for="it in g.items" :key="it.id" :id="it.id" :price="it.price" />
         </ul>
@@ -619,34 +628,6 @@ const slotRows = computed(() =>
 
     <!-- 진화 아이템 -->
     <template v-else-if="sub === 'evo'">
-      <section v-if="cur === 'etc'" class="card">
-        <ul class="rows">
-          <li>
-            <div class="main">
-              <ItemIcon :id="EVERSTONE_ITEM.id" />
-              <span class="grow"><strong>{{ itemName(EVERSTONE_ITEM.id) }}</strong></span>
-              <label v-if="game.everstoneOwned" class="toggle">
-                <input
-                  type="checkbox"
-                  :checked="game.everstone"
-                  @change="game.setEverstone(($event.target as HTMLInputElement).checked)"
-                />
-                켜기
-              </label>
-              <template v-else>
-                <span class="price">{{ won(EVERSTONE_ITEM.price) }}</span>
-                <button type="button" class="buy" :disabled="game.money < EVERSTONE_ITEM.price" @click="game.buyEverstone()">
-                  구매
-                </button>
-              </template>
-            </div>
-            <p class="desc item">
-              한 번 사면 모든 포켓몬에게 공용으로 적용됩니다. 전투 화면 오른쪽 아래에서 켜고 끌 수 있으며, 켜 두면 레벨업으로
-              진화하지 않습니다. (아이템 진화는 가능)
-            </p>
-          </li>
-        </ul>
-      </section>
       <section v-for="eg in evoGroups.filter((x) => x.g === cur)" :key="eg.g" class="card">
         <h4 class="sec">{{ EVO_GROUP_LABELS[eg.g] }}</h4>
         <ul class="rows">
@@ -677,293 +658,288 @@ const slotRows = computed(() =>
           </li>
         </ul>
       </section>
-      <p class="note">진화 아이템은 도구 탭 → 진화에서 사용합니다.</p>
+      <p class="note">진화 아이템은 도구 탭 → 진화에서 사용합니다. 레벨업 진화를 막는 변함없는돌은 강화상점 → 전투·육성 강화에 있습니다.</p>
     </template>
 
     <!-- 편의성 -->
-    <section v-else-if="sub === 'perks'" class="card">
-      <ul class="rows">
-        <li v-for="r in cur === 'battle' ? ROD_ITEMS : []" :key="r.id">
-          <div class="main">
-            <ItemIcon :id="r.id" />
-            <span class="grow"><strong>{{ itemName(r.id) }}</strong></span>
-            <template v-if="game.rods.includes(r.id)">
-              <span v-if="game.rod === r.id" class="owned">사용 중</span>
-              <button v-else type="button" class="buy" @click="game.selectRod(r.id)">사용</button>
-            </template>
-            <template v-else>
-              <span class="price">{{ won(r.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < r.price" @click="game.buyRod(r.id)">구매</button>
-            </template>
-          </div>
-          <p class="desc item">{{ r.note }}</p>
-        </li>
-        <li v-if="cur === 'battle'">
-          <p class="desc item">
-            수상 스테이지는 파도타기를 아는 파티 포켓몬이나 낚싯대가 있어야 들어갈 수 있고, 낚싯대마다 낚이는 포켓몬이 다릅니다.
-            파도타기와 낚싯대를 함께 쓰면 두 출현표를 반반 섞습니다. 낚싯대는 한 번 사면 계속 쓸 수 있고, 가진 낚싯대 중 하나를 골라 씁니다.
-          </p>
-        </li>
-        <li v-for="p in perkList" :key="p.id">
-          <div class="main">
-            <span class="grow"><strong>{{ p.label }}</strong></span>
-            <span v-if="game.hasPerk(p.id)" class="owned">구매함</span>
-            <template v-else>
-              <span class="price">{{ won(p.price) }}</span>
-              <button
-                type="button"
-                class="buy"
-                :disabled="game.money < p.price || (!!p.requires && !game.hasPerk(p.requires))"
-                @click="game.buyPerk(p.id)"
-              >
-                구매
-              </button>
-            </template>
-          </div>
-          <p class="desc">{{ p.desc }}</p>
-          <p v-if="p.requires && !game.hasPerk(p.requires) && !game.hasPerk(p.id)" class="desc">
-            {{ CHAIN_PERKS.find((x) => x.id === p.requires)?.label }}을 먼저 구매해야 합니다.
-          </p>
-        </li>
-        <li v-if="cur === 'battle'">
-          <div class="main">
-            <span class="grow"><strong>{{ BOSS_INTRO_PERK.label }}</strong></span>
-            <label v-if="game.hasPerk(BOSS_INTRO_PERK.id)" class="toggle">
-              <input v-model="game.skipBossIntro" type="checkbox" />
-              켜기
-            </label>
-            <template v-else>
-              <span class="price">{{ won(BOSS_INTRO_PERK.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < BOSS_INTRO_PERK.price" @click="game.buyPerk(BOSS_INTRO_PERK.id)">
-                구매
-              </button>
-            </template>
-          </div>
-          <p class="desc">{{ BOSS_INTRO_PERK.desc }}</p>
-        </li>
-        <li v-if="cur === 'battle'">
-          <div class="main">
-            <span class="grow"><strong>{{ DEX_ADVANCE_PERK.label }}</strong></span>
-            <span v-if="game.hasPerk(DEX_ADVANCE_PERK.id)" class="owned">구매함</span>
-            <template v-else>
-              <span class="price">{{ won(DEX_ADVANCE_PERK.price) }}</span>
-              <button
-                type="button"
-                class="buy"
-                :disabled="game.money < DEX_ADVANCE_PERK.price || !game.perkRequirementsMet(DEX_ADVANCE_PERK.id)"
-                @click="game.buyPerk(DEX_ADVANCE_PERK.id)"
-              >
-                구매
-              </button>
-            </template>
-          </div>
-          <p class="desc">{{ DEX_ADVANCE_PERK.desc }}</p>
-          <p v-if="!game.hasPerk(DEX_ADVANCE_PERK.id) && !game.perkRequirementsMet(DEX_ADVANCE_PERK.id)" class="desc">
-            몬스터볼 자동 사용(자동 사용 탭)을 먼저 구매해야 합니다.
-          </p>
-        </li>
-        <li v-if="cur === 'battle'">
-          <div class="main">
-            <span class="grow"><strong>{{ AUTO_DEX_PERK.label }}</strong></span>
-            <label v-if="game.hasPerk(AUTO_DEX_PERK.id)" class="toggle">
-              <input v-model="game.autoDex" type="checkbox" />
-              켜기
-            </label>
-            <template v-else>
-              <span class="price">{{ won(AUTO_DEX_PERK.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < AUTO_DEX_PERK.price" @click="game.buyPerk(AUTO_DEX_PERK.id)">
-                구매
-              </button>
-            </template>
-          </div>
-          <p class="desc">{{ AUTO_DEX_PERK.desc }}</p>
-        </li>
-        <li v-if="cur === 'info'">
-          <div class="main">
-            <span class="grow"><strong>{{ DEX_REVEAL_PERK.label }}</strong></span>
-            <span v-if="game.hasPerk(DEX_REVEAL_PERK.id)" class="owned">구매함</span>
-            <template v-else>
-              <span class="price">{{ won(DEX_REVEAL_PERK.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < DEX_REVEAL_PERK.price" @click="game.buyPerk(DEX_REVEAL_PERK.id)">
-                구매
-              </button>
-            </template>
-          </div>
-          <p class="desc">{{ DEX_REVEAL_PERK.desc }}</p>
-        </li>
-        <li v-for="p in itemPerks" :key="p.id">
-          <div class="main">
-            <span class="grow"><strong>{{ p.label }}</strong></span>
-            <template v-if="game.hasPerk(p.id)">
-              <label class="toggle">
-                <input
-                  type="checkbox"
-                  :checked="!!game.autoUse[autoKeyOf(p)]"
-                  @change="game.setAutoUse(autoKeyOf(p), ($event.target as HTMLInputElement).checked)"
-                />
-                켜기
-              </label>
-            </template>
-            <template v-else>
-              <span class="price">{{ won(p.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < p.price" @click="game.buyPerk(p.id)">구매</button>
-            </template>
-          </div>
-          <p class="desc">{{ p.desc }}</p>
-          <!-- 세부 설정 -->
-          <div v-if="game.hasPerk(p.id) && p.id === 'autoUse:ball'" class="opt">
-            보정 배율
-            <select :value="game.autoBall" @change="game.setAutoBall(Number(($event.target as HTMLSelectElement).value))">
-              <option v-for="t in AUTO_BALL_STEPS" :key="t" :value="t">{{ t === 1 ? '제한 없음' : `${t}배 이상` }}</option>
-            </select>
-            인 볼 중 가성비 좋은 볼 사용
-          </div>
-          <template v-if="game.hasPerk(p.id) && p.id === 'autoUse:ball'">
-            <!-- 전투가 바뀌어도 레이아웃이 그대로이도록: 한 줄 요약 + 고정된 후보 목록 (값만 바뀜) -->
-            <p class="desc ball-now">{{ autoBallSummary }}</p>
-            <ol v-if="game.autoBall > 1" class="ball-cands">
-              <li
-                v-for="it in autoBallStatic"
-                :key="it.id"
-                :class="{ pick: autoBallPick?.id === it.id, off: autoBallNowById[it.id] && autoBallNowById[it.id]!.mult < game.autoBall }"
-              >
-                <ItemIcon :id="it.id" :size="20" />
-                <span class="grow">
-                  <span class="line">
-                    <span class="grow">{{ itemName(it.id) }}<small v-if="game.items[it.id]" class="muted"> ×{{ game.items[it.id] }}</small></span>
-                    <span class="price">{{ won(it.price) }}</span>
-                  </span>
-                  <span class="line muted">
-                    <span class="grow clip" :title="BALL_NOTES[it.id]">{{ BALL_NOTES[it.id] }}</span>
-                    <span class="now">{{ ballNowText(it.id) }}</span>
-                  </span>
-                </span>
-              </li>
-            </ol>
-          </template>
-          <div v-if="game.hasPerk(p.id) && healKeyOf(p)" class="opt">
-            HP가
-            <select
-              :value="game.autoHeal[healKeyOf(p)!].start"
-              @change="game.setAutoHeal(healKeyOf(p)!, 'start', Number(($event.target as HTMLSelectElement).value))"
-            >
-              <option v-for="t in AUTO_HEAL_STEPS" :key="t" :value="t">{{ t }}%</option>
-            </select>
-            아래로 떨어지면
-            <select
-              :value="game.autoHeal[healKeyOf(p)!].target"
-              @change="game.setAutoHeal(healKeyOf(p)!, 'target', Number(($event.target as HTMLSelectElement).value))"
-            >
-              <option v-for="t in AUTO_HEAL_STEPS.filter((t) => t >= game.autoHeal[healKeyOf(p)!].start)" :key="t" :value="t">
-                {{ t }}%
-              </option>
-            </select>
-            까지 회복
-          </div>
-          <template v-if="game.hasPerk(p.id) && reviveKeyOf(p)">
-            <div class="opt">
-              가방에 없으면 살 아이템
-              <select
-                :value="game.autoRevive[reviveKeyOf(p)!].item"
-                @change="game.setAutoRevive(reviveKeyOf(p)!, { item: ($event.target as HTMLSelectElement).value })"
-              >
-                <option v-for="it in reviveItems" :key="it.id" :value="it.id">{{ itemName(it.id) }} ({{ won(it.price) }})</option>
-              </select>
+    <template v-else-if="sub === 'perks'">
+      <!-- 포획·탐색: 낚싯대 -->
+      <section v-if="cur === 'catch'" class="card">
+        <h4 class="sec">낚싯대</h4>
+        <ul class="rows">
+          <li v-for="r in ROD_ITEMS" :key="r.id">
+            <div class="main">
+              <ItemIcon :id="r.id" />
+              <span class="grow"><strong>{{ itemName(r.id) }}</strong></span>
+              <template v-if="game.rods.includes(r.id)">
+                <span v-if="game.rod === r.id" class="owned">사용 중</span>
+                <button v-else type="button" class="buy" @click="game.selectRod(r.id)">사용</button>
+              </template>
+              <template v-else>
+                <span class="price">{{ won(r.price) }}</span>
+                <button type="button" class="buy" :disabled="game.money < r.price" @click="game.buyRod(r.id)">구매</button>
+              </template>
             </div>
-            <div class="opt">
-              {{ itemName(SACRED_ASH) }}
-              <select
-                :value="game.autoRevive[reviveKeyOf(p)!].ashAt"
-                @change="game.setAutoRevive(reviveKeyOf(p)!, { ashAt: Number(($event.target as HTMLSelectElement).value) })"
-              >
-                <option v-for="n in AUTO_ASH_STEPS" :key="n" :value="n">{{ n ? `기절 ${n}마리 이상이면 사용·구매` : '쓰지 않음' }}</option>
-              </select>
+            <p class="desc item">{{ r.note }}</p>
+          </li>
+          <li>
+            <p class="desc item">
+              수상 스테이지는 파도타기를 아는 파티 포켓몬이나 낚싯대가 있어야 들어갈 수 있고, 낚싯대마다 낚이는 포켓몬이 다릅니다.
+              파도타기와 낚싯대를 함께 쓰면 두 출현표를 반반 섞습니다. 낚싯대는 한 번 사면 계속 쓸 수 있고, 가진 낚싯대 중 하나를 골라 씁니다.
+            </p>
+          </li>
+        </ul>
+      </section>
+      <!-- 자동 사용 기능 (자동 회복: 회복 종류별 카드 / 포획·탐색: 몬스터볼) -->
+      <section v-for="c in autoCards" :key="c.title" class="card">
+        <h4 v-if="c.title" class="sec">{{ c.title }}</h4>
+        <ul class="rows">
+          <li v-for="{ p, label } in c.rows" :key="p.id">
+            <div class="main">
+              <span class="grow"><strong>{{ label }}</strong></span>
+              <template v-if="game.hasPerk(p.id)">
+                <label class="toggle">
+                  <input
+                    type="checkbox"
+                    :checked="!!game.autoUse[autoKeyOf(p)]"
+                    @change="game.setAutoUse(autoKeyOf(p), ($event.target as HTMLInputElement).checked)"
+                  />
+                  켜기
+                </label>
+              </template>
+              <template v-else>
+                <span class="price">{{ won(p.price) }}</span>
+                <button type="button" class="buy" :disabled="game.money < p.price" @click="game.buyPerk(p.id)">구매</button>
+              </template>
             </div>
-          </template>
-          <!-- 전투 후 파티 전체 회복 (기본 기능을 산 뒤에) -->
-          <template v-for="pp in PARTY_USE_PERKS.filter((x) => x.requires === p.id && game.hasPerk(p.id))" :key="pp.id">
-            <div class="main sub-perk">
-              <span class="grow"><strong>{{ pp.label }}</strong></span>
-              <label v-if="game.hasPerk(pp.id)" class="toggle">
-                <input
-                  type="checkbox"
-                  :checked="!!game.partyUse[partyKeyOf(pp.id)]"
-                  @change="game.setPartyUse(partyKeyOf(pp.id), ($event.target as HTMLInputElement).checked)"
-                />
+            <p class="desc">{{ p.desc }}</p>
+            <!-- 세부 설정 -->
+            <div v-if="game.hasPerk(p.id) && p.id === 'autoUse:ball'" class="opt">
+              보정 배율
+              <select :value="game.autoBall" @change="game.setAutoBall(Number(($event.target as HTMLSelectElement).value))">
+                <option v-for="t in AUTO_BALL_STEPS" :key="t" :value="t">{{ t === 1 ? '제한 없음' : `${t}배 이상` }}</option>
+              </select>
+              인 볼 중 가성비 좋은 볼 사용
+            </div>
+            <template v-if="game.hasPerk(p.id) && p.id === 'autoUse:ball'">
+              <!-- 전투가 바뀌어도 레이아웃이 그대로이도록: 한 줄 요약 + 고정된 후보 목록 (값만 바뀜) -->
+              <p class="desc ball-now">{{ autoBallSummary }}</p>
+              <ol v-if="game.autoBall > 1" class="ball-cands">
+                <li
+                  v-for="it in autoBallStatic"
+                  :key="it.id"
+                  :class="{ pick: autoBallPick?.id === it.id, off: autoBallNowById[it.id] && autoBallNowById[it.id]!.mult < game.autoBall }"
+                >
+                  <ItemIcon :id="it.id" :size="20" />
+                  <span class="grow">
+                    <span class="line">
+                      <span class="grow">{{ itemName(it.id) }}<small v-if="game.items[it.id]" class="muted"> ×{{ game.items[it.id] }}</small></span>
+                      <span class="price">{{ won(it.price) }}</span>
+                    </span>
+                    <span class="line muted">
+                      <span class="grow clip" :title="BALL_NOTES[it.id]">{{ BALL_NOTES[it.id] }}</span>
+                      <span class="now">{{ ballNowText(it.id) }}</span>
+                    </span>
+                  </span>
+                </li>
+              </ol>
+            </template>
+            <div v-if="game.hasPerk(p.id) && healKeyOf(p)" class="opt">
+              HP가
+              <select
+                :value="game.autoHeal[healKeyOf(p)!].start"
+                @change="game.setAutoHeal(healKeyOf(p)!, 'start', Number(($event.target as HTMLSelectElement).value))"
+              >
+                <option v-for="t in AUTO_HEAL_STEPS" :key="t" :value="t">{{ t }}%</option>
+              </select>
+              아래로 떨어지면
+              <select
+                :value="game.autoHeal[healKeyOf(p)!].target"
+                @change="game.setAutoHeal(healKeyOf(p)!, 'target', Number(($event.target as HTMLSelectElement).value))"
+              >
+                <option v-for="t in AUTO_HEAL_STEPS.filter((t) => t >= game.autoHeal[healKeyOf(p)!].start)" :key="t" :value="t">
+                  {{ t }}%
+                </option>
+              </select>
+              까지 회복
+            </div>
+            <template v-if="game.hasPerk(p.id) && reviveKeyOf(p)">
+              <div class="opt">
+                가방에 없으면 살 아이템
+                <select
+                  :value="game.autoRevive[reviveKeyOf(p)!].item"
+                  @change="game.setAutoRevive(reviveKeyOf(p)!, { item: ($event.target as HTMLSelectElement).value })"
+                >
+                  <option v-for="it in reviveItems" :key="it.id" :value="it.id">{{ itemName(it.id) }} ({{ won(it.price) }})</option>
+                </select>
+              </div>
+              <div class="opt">
+                {{ itemName(SACRED_ASH) }}
+                <select
+                  :value="game.autoRevive[reviveKeyOf(p)!].ashAt"
+                  @change="game.setAutoRevive(reviveKeyOf(p)!, { ashAt: Number(($event.target as HTMLSelectElement).value) })"
+                >
+                  <option v-for="n in AUTO_ASH_STEPS" :key="n" :value="n">{{ n ? `기절 ${n}마리 이상이면 사용·구매` : '쓰지 않음' }}</option>
+                </select>
+              </div>
+            </template>
+            <!-- 전투 후 파티 전체 회복 (기본 기능을 산 뒤에) -->
+            <template v-for="pp in PARTY_USE_PERKS.filter((x) => x.requires === p.id && game.hasPerk(p.id))" :key="pp.id">
+              <div class="main sub-perk">
+                <span class="grow"><strong>{{ pp.label }}</strong></span>
+                <label v-if="game.hasPerk(pp.id)" class="toggle">
+                  <input
+                    type="checkbox"
+                    :checked="!!game.partyUse[partyKeyOf(pp.id)]"
+                    @change="game.setPartyUse(partyKeyOf(pp.id), ($event.target as HTMLInputElement).checked)"
+                  />
+                  켜기
+                </label>
+                <template v-else>
+                  <span class="price">{{ won(pp.price) }}</span>
+                  <button type="button" class="buy" :disabled="game.money < pp.price" @click="game.buyPerk(pp.id)">구매</button>
+                </template>
+              </div>
+              <p class="desc">{{ pp.desc }}</p>
+            </template>
+          </li>
+        </ul>
+      </section>
+      <section v-if="cur === 'autoUse'" class="card">
+        <h4 class="sec">포켓몬센터</h4>
+        <ul class="rows">
+          <li>
+            <div class="main">
+              <span class="grow"><strong>{{ AUTO_CENTER_PERK.label }}</strong></span>
+              <label v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="toggle">
+                <input v-model="game.autoCenter" type="checkbox" />
                 켜기
               </label>
               <template v-else>
-                <span class="price">{{ won(pp.price) }}</span>
-                <button type="button" class="buy" :disabled="game.money < pp.price" @click="game.buyPerk(pp.id)">구매</button>
+                <span class="price">{{ won(AUTO_CENTER_PERK.price) }}</span>
+                <button
+                  type="button"
+                  class="buy"
+                  :disabled="game.money < AUTO_CENTER_PERK.price || !game.perkRequirementsMet(AUTO_CENTER_PERK.id)"
+                  @click="game.buyPerk(AUTO_CENTER_PERK.id)"
+                >
+                  구매
+                </button>
               </template>
             </div>
-            <p class="desc">{{ pp.desc }}</p>
-          </template>
-        </li>
-        <li v-if="cur === 'autoUse'">
-          <div class="main">
-            <span class="grow"><strong>{{ AUTO_CENTER_PERK.label }}</strong></span>
-            <label v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="toggle">
-              <input v-model="game.autoCenter" type="checkbox" />
-              켜기
-            </label>
-            <template v-else>
-              <span class="price">{{ won(AUTO_CENTER_PERK.price) }}</span>
-              <button
-                type="button"
-                class="buy"
-                :disabled="game.money < AUTO_CENTER_PERK.price || !game.perkRequirementsMet(AUTO_CENTER_PERK.id)"
-                @click="game.buyPerk(AUTO_CENTER_PERK.id)"
-              >
-                구매
-              </button>
-            </template>
-          </div>
-          <p class="desc">{{ AUTO_CENTER_PERK.desc }}</p>
-          <p v-if="!game.hasPerk(AUTO_CENTER_PERK.id) && !game.perkRequirementsMet(AUTO_CENTER_PERK.id)" class="desc">
-            파티 전체 체력·상태이상·PP 회복(전투 후)을 모두 먼저 구매해야 합니다.
-          </p>
-          <div v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="opt">
-            회복 비용이
-            <select v-model.number="game.autoCenterCost">
-              <option v-for="c in AUTO_CENTER_COST_STEPS" :key="c" :value="c">{{ won(c) }}</option>
-            </select>
-            이상이면 센터 귀환
-            <span class="muted">(지금 {{ won(game.recoverCost()) }})</span>
-          </div>
-        </li>
-      </ul>
-    </section>
+            <p class="desc">{{ AUTO_CENTER_PERK.desc }}</p>
+            <p v-if="!game.hasPerk(AUTO_CENTER_PERK.id) && !game.perkRequirementsMet(AUTO_CENTER_PERK.id)" class="desc">
+              파티 전체 체력·상태이상·PP 회복(전투 후)을 모두 먼저 구매해야 합니다.
+            </p>
+            <div v-if="game.hasPerk(AUTO_CENTER_PERK.id)" class="opt">
+              회복 비용이
+              <select v-model.number="game.autoCenterCost">
+                <option v-for="c in AUTO_CENTER_COST_STEPS" :key="c" :value="c">{{ won(c) }}</option>
+              </select>
+              이상이면 센터 귀환
+              <span class="muted">(지금 {{ won(game.recoverCost()) }})</span>
+            </div>
+          </li>
+        </ul>
+      </section>
+      <section v-if="cur !== 'autoUse'" class="card">
+        <ul class="rows">
+          <li v-for="p in perkList" :key="p.id">
+            <div class="main">
+              <span class="grow"><strong>{{ p.label }}</strong></span>
+              <span v-if="game.hasPerk(p.id)" class="owned">구매함</span>
+              <template v-else>
+                <span class="price">{{ won(p.price) }}</span>
+                <button
+                  type="button"
+                  class="buy"
+                  :disabled="game.money < p.price || (!!p.requires && !game.hasPerk(p.requires))"
+                  @click="game.buyPerk(p.id)"
+                >
+                  구매
+                </button>
+              </template>
+            </div>
+            <p class="desc">{{ p.desc }}</p>
+            <p v-if="p.requires && !game.hasPerk(p.requires) && !game.hasPerk(p.id)" class="desc">
+              {{ CHAIN_PERKS.find((x) => x.id === p.requires)?.label }}을 먼저 구매해야 합니다.
+            </p>
+          </li>
+          <li v-if="cur === 'battle'">
+            <div class="main">
+              <span class="grow"><strong>{{ BOSS_INTRO_PERK.label }}</strong></span>
+              <label v-if="game.hasPerk(BOSS_INTRO_PERK.id)" class="toggle">
+                <input v-model="game.skipBossIntro" type="checkbox" />
+                켜기
+              </label>
+              <template v-else>
+                <span class="price">{{ won(BOSS_INTRO_PERK.price) }}</span>
+                <button type="button" class="buy" :disabled="game.money < BOSS_INTRO_PERK.price" @click="game.buyPerk(BOSS_INTRO_PERK.id)">
+                  구매
+                </button>
+              </template>
+            </div>
+            <p class="desc">{{ BOSS_INTRO_PERK.desc }}</p>
+          </li>
+          <li v-if="cur === 'catch'">
+            <div class="main">
+              <span class="grow"><strong>{{ DEX_ADVANCE_PERK.label }}</strong></span>
+              <span v-if="game.hasPerk(DEX_ADVANCE_PERK.id)" class="owned">구매함</span>
+              <template v-else>
+                <span class="price">{{ won(DEX_ADVANCE_PERK.price) }}</span>
+                <button
+                  type="button"
+                  class="buy"
+                  :disabled="game.money < DEX_ADVANCE_PERK.price || !game.perkRequirementsMet(DEX_ADVANCE_PERK.id)"
+                  @click="game.buyPerk(DEX_ADVANCE_PERK.id)"
+                >
+                  구매
+                </button>
+              </template>
+            </div>
+            <p class="desc">{{ DEX_ADVANCE_PERK.desc }}</p>
+            <p v-if="!game.hasPerk(DEX_ADVANCE_PERK.id) && !game.perkRequirementsMet(DEX_ADVANCE_PERK.id)" class="desc">
+              위의 몬스터볼 자동 사용을 먼저 구매해야 합니다.
+            </p>
+          </li>
+          <li v-if="cur === 'catch'">
+            <div class="main">
+              <span class="grow"><strong>{{ AUTO_DEX_PERK.label }}</strong></span>
+              <label v-if="game.hasPerk(AUTO_DEX_PERK.id)" class="toggle">
+                <input v-model="game.autoDex" type="checkbox" />
+                켜기
+              </label>
+              <template v-else>
+                <span class="price">{{ won(AUTO_DEX_PERK.price) }}</span>
+                <button type="button" class="buy" :disabled="game.money < AUTO_DEX_PERK.price" @click="game.buyPerk(AUTO_DEX_PERK.id)">
+                  구매
+                </button>
+              </template>
+            </div>
+            <p class="desc">{{ AUTO_DEX_PERK.desc }}</p>
+          </li>
+          <li v-if="cur === 'info'">
+            <div class="main">
+              <span class="grow"><strong>{{ DEX_REVEAL_PERK.label }}</strong></span>
+              <span v-if="game.hasPerk(DEX_REVEAL_PERK.id)" class="owned">구매함</span>
+              <template v-else>
+                <span class="price">{{ won(DEX_REVEAL_PERK.price) }}</span>
+                <button type="button" class="buy" :disabled="game.money < DEX_REVEAL_PERK.price" @click="game.buyPerk(DEX_REVEAL_PERK.id)">
+                  구매
+                </button>
+              </template>
+            </div>
+            <p class="desc">{{ DEX_REVEAL_PERK.desc }}</p>
+          </li>
+        </ul>
+      </section>
+    </template>
 
-    <!-- 기술칸 -->
+    <!-- 포켓몬 강화: 포켓몬별 기술칸 · 지닐 수 있는 도구 -->
     <section v-else-if="sub === 'slots'" class="card">
       <p class="desc top">
-        계정 전체에서 {{ SLOT_DEFEATS.join('·') }}마리를 쓰러뜨리면 모든 포켓몬의 기본 기술칸이 늘어납니다.
-        기본 4칸이 모두 열리면 포켓몬별로 상점에서 최대 {{ EXTRA_SLOTS }}칸을 더 열 수 있습니다 (도감으로 보내도 기록에 남음).
-      </p>
-      <p v-if="!slotRows.length" class="msg">파티에 포켓몬이 없습니다.</p>
-      <ul v-else class="rows">
-        <li v-for="r in slotRows" :key="r.i">
-          <div class="main">
-            <span class="grow">
-              {{ r.name }} <small class="muted">Lv.{{ r.level }} · {{ r.slots }}칸</small>
-            </span>
-            <span v-if="r.maxed" class="muted">모두 열림</span>
-            <span v-else-if="!r.baseDone" class="muted">계정 격파 {{ r.defeats }}/{{ r.need }}</span>
-            <template v-else>
-              <span class="price">{{ won(r.price) }}</span>
-              <button type="button" class="buy" :disabled="game.money < r.price" @click="game.buyExtraSlot(r.i)">
-                칸 추가
-              </button>
-            </template>
-          </div>
-        </li>
-      </ul>
-    </section>
-
-    <section v-else-if="sub === 'heldSlots'" class="card">
-      <p class="desc top">
-        포켓몬별로 지닐 수 있는 도구를 늘립니다 (도감으로 보내도 기록에 남음).
+        포켓몬별로 기술칸과 지닐 수 있는 도구를 늘립니다 (도감으로 보내도 기록에 남음).
+        기술칸은 계정 전체에서 {{ SLOT_DEFEATS.join('·') }}마리를 쓰러뜨려 모든 포켓몬의 기본 4칸이 열린 뒤 포켓몬별로 최대 {{ EXTRA_SLOTS }}칸을 더 열 수 있습니다.
         서로 다른 도구는 기본 1종류에서 최대 {{ HELD_KINDS_MAX }}종류, 같은 도구는 기본 1개에서 최대 {{ HELD_STACK_MAX }}개까지 지닐 수 있습니다.
       </p>
       <p class="desc">
@@ -971,15 +947,24 @@ const slotRows = computed(() =>
         회복량·확률·급소 랭크는 개수만큼 늘어나며, 열매·주얼처럼 쓰면 사라지는 도구는 개수만큼 여러 번 발동합니다.
         서로 다른 도구의 효과는 각각 곱해집니다.
       </p>
-      <p v-if="!heldSlotRows.length" class="msg">파티에 포켓몬이 없습니다.</p>
+      <p v-if="!pokeRows.length" class="msg">파티에 포켓몬이 없습니다.</p>
       <ul v-else class="rows">
-        <li v-for="r in heldSlotRows" :key="r.i">
+        <li v-for="r in pokeRows" :key="r.i">
           <div class="main">
             <span class="grow">
-              {{ r.name }} <small class="muted">Lv.{{ r.level }}</small>
+              <strong>{{ r.name }}</strong> <small class="muted">Lv.{{ r.level }}</small>
             </span>
           </div>
-          <div class="main">
+          <div class="main stat-line">
+            <span class="grow">기술칸 <small class="muted">{{ r.slots }}칸</small></span>
+            <span v-if="r.slotsMaxed" class="muted">모두 열림</span>
+            <span v-else-if="!r.baseDone" class="muted">계정 격파 {{ game.totalDefeats }}/{{ slotNeed }}</span>
+            <template v-else>
+              <span class="price">{{ won(r.slotPrice) }}</span>
+              <button type="button" class="buy" :disabled="game.money < r.slotPrice" @click="game.buyExtraSlot(r.i)">칸 +1</button>
+            </template>
+          </div>
+          <div class="main stat-line">
             <span class="grow">도구 종류 <small class="muted">{{ r.kinds }}/{{ HELD_KINDS_MAX }}종류</small></span>
             <span v-if="r.kindsMaxed" class="muted">최대</span>
             <template v-else>
@@ -987,7 +972,7 @@ const slotRows = computed(() =>
               <button type="button" class="buy" :disabled="game.money < r.kindPrice" @click="game.buyHeldKind(r.i)">종류 +1</button>
             </template>
           </div>
-          <div class="main">
+          <div class="main stat-line">
             <span class="grow">같은 도구 개수 <small class="muted">{{ r.stack }}/{{ HELD_STACK_MAX }}개</small></span>
             <span v-if="r.stackMaxed" class="muted">최대</span>
             <template v-else>
@@ -1116,6 +1101,20 @@ const slotRows = computed(() =>
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.main.stat-line {
+  margin-top: 4px;
+  padding-left: 10px;
+}
+
+.once-tag {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #4a3a2a;
+  color: #e8b878;
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .main.sub-perk {

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-// 상점 상품 한 줄: 아이콘 · 이름 · 보유 수 · 가격 · 1개/10개 구매 · 설명
+// 상점 상품 한 줄: 아이콘 · 이름 · 표시(1회용 등) · 보유 수 · 가격 · 1개/10개 구매 · 설명
 import { computed } from 'vue'
 import { dexData } from '../data/dex'
 import { useGameStore } from '../stores/game'
 import ItemIcon from './ItemIcon.vue'
 import { afterBuy } from './quickUse'
 
-const props = withDefaults(defineProps<{ id: string; price: number; note?: string; multi?: boolean; label?: string }>(), {
+const props = withDefaults(defineProps<{ id: string; price: number; note?: string; multi?: boolean; label?: string; tag?: string }>(), {
   note: '',
+  tag: '',
   multi: true,
   label: '',
 })
@@ -26,6 +27,7 @@ function buy(n: number) {
       <ItemIcon :id="id" lazy />
       <span class="grow">
         {{ label || info?.ko || id }}
+        <span v-if="tag" class="tag">{{ tag }}</span>
         <span class="muted">보유 {{ game.items[id] ?? 0 }}</span>
       </span>
       <span class="price">{{ won(price) }}</span>
@@ -90,6 +92,14 @@ li:last-child {
   margin: 2px 0 0 36px;
   color: #8a8a96;
   font-size: 12px;
+}
+
+.tag {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #4a3a2a;
+  color: #e8b878;
+  font-size: 11px;
 }
 
 .note-line {
