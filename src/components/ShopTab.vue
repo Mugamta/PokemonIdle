@@ -344,6 +344,16 @@ const autoBallStatic = computed(() =>
 const slotHeldProgress = computed(
   () => game.party.filter((m) => heldKindsOf(m) >= HELD_KINDS_MAX && heldStackOf(m) >= HELD_STACK_MAX).length,
 )
+/** 파티 슬롯 도구 조건을 못 채운 이유: 파티 수가 모자람 / 아직 최대가 아닌 포켓몬 */
+const slotHeldMissing = computed(() => {
+  const out: string[] = []
+  if (game.party.length < PARTY_MAX) out.push(`파티가 ${game.party.length}마리 (${PARTY_MAX}마리 필요)`)
+  for (const r of pokeRows.value) {
+    const lack = [!r.kindsMaxed && `종류 ${r.kinds}/${HELD_KINDS_MAX}`, !r.stackMaxed && `개수 ${r.stack}/${HELD_STACK_MAX}`].filter(Boolean)
+    if (lack.length) out.push(`${r.name} ${lack.join('·')}`)
+  }
+  return out
+})
 /** 포켓몬 강화: 포켓몬별 기술칸 추가(기본 4칸을 모두 연 뒤) · 도구 종류 수 · 같은 도구 개수 */
 const pokeRows = computed(() =>
   game.party.map((m, i) => {
@@ -1002,6 +1012,7 @@ const slotNeed = SLOT_DEFEATS[SLOT_DEFEATS.length - 1]!
           <p v-if="!game.slotHeldActive" class="desc">
             조건: 파티 {{ PARTY_MAX }}마리 모두 도구 {{ HELD_KINDS_MAX }}종류·같은 도구 {{ HELD_STACK_MAX }}개 (총 {{ PARTY_MAX * HELD_KINDS_MAX * HELD_STACK_MAX }}개)까지 지닐 수 있음
             <small class="muted">· 지금 {{ slotHeldProgress }}/{{ PARTY_MAX }}마리</small>
+            <template v-if="slotHeldMissing.length"><br /><small class="muted">부족: {{ slotHeldMissing.join(', ') }}</small></template>
             <template v-if="game.hasPerk(SLOT_HELD_PERK.id)"><br />지닐 수 있는 도구 최대치가 바뀌어 효과가 꺼졌습니다. 새 조건을 채우면 돈을 내지 않고 다시 적용할 수 있습니다.</template>
           </p>
         </li>
