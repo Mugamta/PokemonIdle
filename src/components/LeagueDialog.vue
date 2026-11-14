@@ -34,11 +34,9 @@ const teamOf = (i: number) => {
 
 const auto = ref(game.auto)
 const busy = computed(() => !!game.faint || !!game.league)
-const noParty = computed(() => !game.party.some((m) => m.hp !== 0))
 const reason = computed(() => {
   if (game.league) return '이미 포켓몬 리그에 도전 중입니다.'
   if (game.faint) return '회복 중에는 도전할 수 없습니다.'
-  if (noParty.value) return '싸울 수 있는 포켓몬이 없습니다.'
   return ''
 })
 
@@ -67,7 +65,7 @@ const hpOf = (i: number) => {
 
       <template v-if="home">
         <h3>상대</h3>
-        <p class="muted">사천왕 4명과 챔피언을 연달아 상대합니다. 트레이너 사이에 회복하지 않으며, 포켓몬센터에 가면(패배·회복 버튼 포함) 처음부터 다시 도전해야 합니다. 가방 아이템은 쓸 수 있습니다.</p>
+        <p class="muted">사천왕 4명과 챔피언을 연달아 상대합니다. 도전을 시작하면 파티 전원의 HP·PP·상태이상이 회복됩니다. 트레이너 사이에는 회복하지 않으며, 포켓몬센터에 가면(패배·회복 버튼 포함) 처음부터 다시 도전해야 합니다. 가방 아이템은 쓸 수 있습니다.</p>
         <ol class="trainers">
           <li v-for="(t, i) in trainers" :key="t.id" :class="{ now: game.league?.region === home.key && game.league.trainer === i, done: game.league?.region === home.key && game.league.trainer > i }">
             <div class="who">
@@ -105,7 +103,7 @@ const hpOf = (i: number) => {
       </template>
 
       <div class="actions">
-        <button v-if="ready" type="button" class="go" :disabled="busy || noParty" @click="challenge">도전</button>
+        <button v-if="ready" type="button" class="go" :disabled="busy" @click="challenge">도전</button>
         <button type="button" class="later" @click="emit('close')">{{ ready ? '취소' : '닫기' }}</button>
       </div>
     </div>

@@ -3518,15 +3518,21 @@ export const useGameStore = defineStore('game', {
       const trainers = region && leagueOf(region)
       const stage = region && leagueStage(region)
       if (!region || !trainers || !stage || this.league || this.faint || !this.party.length || !this.leagueReady(region)) return false
-      if (!this.party.some((m) => m.hp !== 0)) return false
       const champion = trainers[trainers.length - 1]!
       this.travel = null
       this.arrive(stage.id)
+      // 도전 시작 시 파티 전원 HP·PP·상태이상 회복 (패배하면 일반 패배처럼 포켓몬센터로)
+      for (const m of this.party) {
+        m.hp = null
+        m.pp = {}
+        cureStatus(m)
+      }
+      this.playerStages = {}
       this.league = { region: regionKey, trainer: 0, mon: 0, variant: pickVariant(champion, this.party[0]?.species) }
       if (auto !== undefined) this.setAuto(auto)
       const log = useBattleLogStore()
       log.divider()
-      log.push(`${region.title} 포켓몬 리그 도전 시작! 사천왕 4명과 챔피언을 연달아 상대한다.`, 'good')
+      log.push(`${region.title} 포켓몬 리그 도전 시작! 포켓몬이 모두 회복되었다. 사천왕 4명과 챔피언을 연달아 상대한다.`, 'good')
       this.nextEncounterAt = Date.now() + this.searchMs
       return true
     },
