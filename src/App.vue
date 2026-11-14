@@ -35,6 +35,13 @@ const wide = ref(localStorage.getItem('wide-view') === '1')
 watch(wide, (v) => localStorage.setItem('wide-view', v ? '1' : '0'))
 const canWide = computed(() => activeTab.value !== 'battle')
 const isWide = computed(() => wide.value && canWide.value)
+// 포켓몬 리그 도전을 시작하면 전투 화면으로 이동
+watch(
+  () => !!game.league,
+  (on) => {
+    if (on) activeTab.value = 'battle'
+  },
+)
 
 // 배경음악: 포켓몬센터 회복 중 / 보스전 / 그 외
 const music = computed(() => (!loaded.value ? null : game.faint ? 'center' : game.enemy?.boss ? 'boss' : 'field'))
