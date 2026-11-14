@@ -34,6 +34,7 @@ import { moveEffectText } from '../data/moveText'
 import { findStage } from '../data/stages'
 import { useStageViewStore } from '../stores/stageView'
 import BattleControls from './BattleControls.vue'
+import BattleLog from './BattleLog.vue'
 import HScroll from './HScroll.vue'
 import HpBar from './HpBar.vue'
 import StageDetail from './StageDetail.vue'
@@ -41,9 +42,10 @@ import StageMap from './StageMap.vue'
 import ItemIcon from './ItemIcon.vue'
 import PokeSprite from './PokeSprite.vue'
 
-type SubTab = 'fight' | 'party' | 'stats' | 'moves' | 'map'
+type SubTab = 'fight' | 'log' | 'party' | 'stats' | 'moves' | 'map'
 const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'fight', label: '배틀' },
+  { id: 'log', label: '기록' },
   { id: 'party', label: '파티' },
   { id: 'stats', label: '능력치' },
   { id: 'moves', label: '기술' },
@@ -368,7 +370,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
 </script>
 
 <template>
-  <div class="battle" :class="{ fill: sub === 'fight' && dexData }">
+  <div class="battle" :class="{ fill: (sub === 'fight' || sub === 'log') && dexData }">
     <!-- 상단 하위 탭 -->
     <nav class="sub-tabs">
       <button
@@ -386,6 +388,7 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
     <p v-else-if="!dexData" class="msg">불러오는 중…</p>
 
     <BattleControls v-else-if="sub === 'fight'" />
+    <BattleLog v-else-if="sub === 'log'" />
 
     <!-- 파티: 순서·싸우는 포켓몬·도감으로 보내기 -->
     <section v-else-if="sub === 'party'" class="card">
@@ -1075,7 +1078,8 @@ const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
   height: 100%;
 }
 
-.battle.fill > .controls {
+.battle.fill > .controls,
+.battle.fill > .log-wrap {
   flex: 1;
   min-height: 0;
 }

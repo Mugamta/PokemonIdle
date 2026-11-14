@@ -881,6 +881,17 @@ function accuracyOf(att: Battler, def: Battler, m: MoveData, last = false): numb
   return Math.min(1, acc)
 }
 
+/**
+ * 화면 표시용 실제 명중률 (0~1, 명중 판정이 없는 기술은 null).
+ * 상대 특성은 드러났을 때만, 상대 도구는 foeItems 일 때만 반영 (포커스렌즈처럼 행동 순서에 따른 보정은 제외)
+ */
+export function shownAccuracy(att: Battler, def: Battler, m: MoveData, foeItems: boolean): number | null {
+  if (m.acc == null) return null
+  let d = def.intel?.known ? def : withAbility(def, null)
+  if (!foeItems) d = { ...d, held: {} }
+  return accuracyOf(att, d, m)
+}
+
 /** 기대 데미지 (명중률·타수·특성 반영, 급소 제외, 난수 평균). 흡수 특성에 막히면 회복량만큼 음수 */
 export function expectedDamage(att: Battler, def: Battler, m: MoveData): number {
   if (!isDamaging(m)) return 0

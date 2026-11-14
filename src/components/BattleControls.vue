@@ -1,11 +1,11 @@
 <script setup lang="ts">
-// 전투 탭 > 배틀: 특수 기능 버튼, 기술 버튼(수동 전투)과 전투 로그
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import HScroll from './HScroll.vue'
-import { moveData, typeEffect, type MoveData } from '../core/battle'
+// 전투 탭 > 배틀: 특수 기능 버튼, 기술 버튼(수동 전투). 전투 로그는 기록 탭 (BattleLog)
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { moveData, shownAccuracy, typeEffect, type MoveData } from '../core/battle'
 import { GIMMICK_INFO, GIMMICKS, maxMove, maxMoveFx, zEligible, zMove, type Gimmick } from '../core/gimmicks'
 import { dexData, TYPE_COLORS } from '../data/dex'
 import { findStage, regionOfGimmick } from '../data/stages'
+import { moveEffectText } from '../data/moveText'
 import { useBattleLogStore } from '../stores/battleLog'
 import {
   AUTO_GIMMICK_LABELS,
@@ -13,6 +13,7 @@ import {
   heldOf,
   MAX_MOVE_SLOTS,
   maxPpOf,
+  moveNumOf,
   ppOf,
   SLOT_DEFEATS,
   teraTypeOf,
@@ -100,6 +101,8 @@ function useMove(id: string) {
   armed.value = null
 }
 
+/** 상점: 실제 명중률 표시 */
+const realAcc = computed(() => game.hasPerk('accView:real'))
 /** 기술칸 8칸: 장착 기술 / 빈 칸 / 잠긴 칸(해금 조건 표시) */
 const slots = computed(() => {
   const member = game.party[0]
@@ -122,7 +125,13 @@ const slots = computed(() => {
     }
     const max = maxPpOf(m.id, member)
     const pp = member ? ppOf(member, m.id) : max
-    return { kind: 'move' as const, m, v, tag, special: v !== m, hint, pp, max, out: game.ppActive && pp === 0 }
+    // 실제 명중률 (상점: 실제 명중률 표시): 랭크·도구·특성·날씨 보정
+    const real = realAcc.value && foe.value && me.value ? shownAccuracy(me.value, foe.value, v, game.foeItemView) : null
+    const realAccText = real == null ? '' : `${Math.round(real * 100)}`
+    // 설명: 다이맥스·Z기술은 그 효과, 아니면 기술 설명(부가 효과 포함)
+    const num = moveNumOf(m.id)
+    const desc = v !== m ? tag : num != null ? moveEffectText(m.id, num) : ''
+    return { kind: 'move' as const, m, v, tag, special: v !== m, hint, pp, max, out: game.ppActive && pp === 0, realAccText, desc }
   })
 })
 /** 모든 기술의 PP가 0이면 발버둥 */
@@ -145,21 +154,6 @@ const autoHint = computed(() => {
 })
 
 const CLS_LABEL = { physical: '물리', special: '특수', status: '변화' }
-
-// 자동 전투 중에는 로그를 그리지 않음 (기록은 계속 쌓이고, 끄면 확인 가능)
-const hideLog = computed(() => game.auto)
-
-// 로그 자동 스크롤 (탭을 바꾸거나 보고 있는 전투에 줄이 추가될 때, 로그가 다시 보일 때)
-const logEl = ref<HTMLElement>()
-const latestId = computed(() => log.battles[log.battles.length - 1]?.id)
-watch(
-  () => [log.current?.id, hideLog.value || log.current?.lines.length],
-  async () => {
-    await nextTick()
-    if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
-  },
-  { immediate: true },
-)
 </script>
 
 <template>
@@ -200,18 +194,22 @@ watch(
           :style="{ '--c': TYPE_COLORS[s.v.type] ?? '#666' }"
           :class="{ out: s.out, special: s.special }"
           :disabled="!canAct || s.out"
-          :title="s.special ? `원래 기술: ${s.m.ko}` : ''"
+          :title="s.special ? `원래 기술: ${s.m.ko}` : s.desc"
           @click="useMove(s.m.id)"
         >
-          <span class="name">{{ s.v.ko }} <small v-if="s.hint" class="hint">{{ s.hint }}</small></span>
-          <span v-if="s.max != null" class="pp" :class="{ low: s.pp != null && s.pp <= s.max / 4 }">PP {{ s.pp }}/{{ s.max }}</span>
+          <span class="head">
+            <span class="name">{{ s.v.ko }}</span>
+            <small v-if="s.hint" class="hint">{{ s.hint }}</small>
+            <span v-if="s.max != null" class="pp" :class="{ low: s.pp != null && s.pp <= s.max / 4 }">PP {{ s.pp }}/{{ s.max }}</span>
+          </span>
           <span class="meta">
             <span class="type">{{ dexData?.types[s.v.type] ?? s.v.type }}</span>
             <span class="cls">{{ CLS_LABEL[s.v.cls] }}</span>
             <span>· 위력 <span class="num">{{ s.v.power ?? '-' }}</span></span>
             <span>· 명중 <span class="num">{{ s.v.acc ?? '-' }}</span></span>
-            <span v-if="s.tag">· {{ s.tag }}</span>
+            <span v-if="s.realAccText" class="real-acc" title="랭크·도구·특성·날씨 보정을 반영한 실제 명중률">→ {{ s.realAccText }}</span>
           </span>
+          <span v-if="s.desc" class="desc" :title="s.desc">{{ s.desc }}</span>
         </button>
         <div v-else-if="s.kind === 'empty'" class="move slot">빈 칸 (기술 탭에서 장착)</div>
         <div v-else class="move slot locked">🔒 {{ s.cond }}</div>
@@ -228,30 +226,6 @@ watch(
       <span class="meta">쓸 수 있는 기술이 없습니다. 반동으로 최대 HP의 1/4 데미지를 받습니다.</span>
     </button>
     <p v-if="status" class="status">{{ status }}</p>
-
-    <div class="log-wrap">
-      <HScroll class="log-tabs" :active="log.current?.id">
-        <button
-          v-for="b in hideLog ? [] : log.battles"
-          :key="b.id"
-          type="button"
-          class="log-tab"
-          :class="{ active: b.id === log.current?.id, boss: b.boss, live: b.id === latestId }"
-          :title="b.id === latestId ? '현재 전투' : ''"
-          @click="log.select(b.id)"
-        >
-          {{ b.label }}
-        </button>
-      </HScroll>
-      <div ref="logEl" class="log">
-        <p v-if="hideLog" class="empty">자동 전투 중에는 로그를 표시하지 않습니다. 자동 전투를 끄면 최근 전투 기록을 확인할 수 있습니다.</p>
-        <p v-else-if="!log.current?.lines.length" class="empty">전투 기록이 여기에 표시됩니다.</p>
-        <template v-for="l in hideLog ? [] : (log.current?.lines ?? [])" :key="l.id">
-          <hr v-if="l.kind === 'divider'" class="divider" />
-          <p v-else :class="l.kind">{{ l.text }}</p>
-        </template>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -275,7 +249,8 @@ watch(
 
 .moves {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …): 긴 설명이 칸을 넓히지 않고 … 으로 잘리도록 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -284,9 +259,9 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
-  min-height: 58px;
-  padding: 8px 10px;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 8px;
   border: 1px solid #3a3a44;
   border-left: 4px solid var(--c, #3a3a44);
   border-radius: 6px;
@@ -306,15 +281,39 @@ watch(
   background: #34343f;
 }
 
+.move .head {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
 .move .name {
-  max-width: calc(100% - 64px);
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   font-size: 15px;
   font-weight: 700;
-  height: 20px;
   line-height: 20px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* 기술 설명·부가 효과: 한 줄, 넘치면 … */
+.move .desc {
+  width: 100%;
+  overflow: hidden;
+  color: #b4b4c0;
+  font-size: 11px;
+  line-height: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.move .real-acc {
+  color: #7fe0a0;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 타입·분류·위력·명중을 칸 너비로 고정해 버튼끼리 세로로 줄이 맞도록 */
@@ -350,18 +349,18 @@ watch(
 }
 
 .move .hint {
-  vertical-align: top;
+  flex: none;
   color: #ffcb05;
   font-size: 11px;
-  line-height: 20px;
   font-weight: 400;
+  white-space: nowrap;
 }
 
 .move .pp {
-  position: absolute;
-  top: 7px;
-  right: 8px;
+  flex: none;
+  margin-left: auto;
   color: #c8c8d0;
+  white-space: nowrap;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -480,98 +479,5 @@ watch(
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.log-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-/* 전투 기록이 없어도 탭 줄 높이를 유지 */
-.log-tabs {
-  --hs-arrow-size: 16px;
-  flex: none;
-  height: 20px;
-  gap: 2px;
-}
-
-.log-tab {
-  flex: none;
-  padding: 2px 8px;
-  border: none;
-  border-radius: 5px 5px 0 0;
-  background: #24242b;
-  color: #7a7a86;
-  font: inherit;
-  font-size: 11px;
-  line-height: 1.5;
-  cursor: pointer;
-}
-
-.log-tab.boss {
-  color: #d9a441;
-}
-
-.log-tab.live::after {
-  content: '';
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-left: 4px;
-  border-radius: 50%;
-  background: #7fe0a0;
-  vertical-align: middle;
-}
-
-.log-tab.active {
-  background: #18181d;
-  color: #eee;
-  font-weight: 700;
-}
-
-.log-tab.boss.active {
-  color: #ffcb05;
-}
-
-.log {
-  flex: 1;
-  min-height: 72px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  padding: 8px 10px;
-  border-radius: 6px;
-  border-top-left-radius: 0;
-  background: #18181d;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.log p {
-  margin: 0;
-  color: #c8c8d0;
-}
-
-.log .info {
-  color: #81b9ef;
-}
-
-.log .good {
-  color: #7fe0a0;
-}
-
-.log .bad {
-  color: #ff8a80;
-}
-
-.log .divider {
-  margin: 6px 0;
-  border: none;
-  border-top: 1px dashed #3a3a48;
-}
-
-.log .empty {
-  color: #6a6a76;
 }
 </style>

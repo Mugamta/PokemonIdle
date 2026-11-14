@@ -373,7 +373,7 @@ export type ItemPerkId = `autoUse:${AutoUseKey}`
  */
 export type AiPerkId = 'ai:strong' | 'ai:smart' | 'ai:ko' | 'ai:pp'
 /** 전투 화면 표시 개선: ratio = 비율, full = 현재/최대와 비율 (ratio 필요) / 상대 기술: list = 기술, pp = 남은 PP (list 필요) */
-export type DisplayPerkId = `${'foeHp' | 'exp'}:${'ratio' | 'full'}` | `foeMoves:${'list' | 'pp'}` | 'foeItem:show'
+export type DisplayPerkId = `${'foeHp' | 'exp'}:${'ratio' | 'full'}` | `foeMoves:${'list' | 'pp'}` | 'foeItem:show' | 'accView:real'
 /** 속도 가속: battle = 기술 선택 대기, search = 상대 포켓몬 찾는 시간. 1~4단계 */
 export type SpeedKind = 'battle' | 'search'
 export type SpeedLevel = 1 | 2 | 3 | 4
@@ -609,6 +609,14 @@ export const DISPLAY_PERKS: ChainPerk<DisplayPerkId>[] = [
       '전투 화면에 상대 포켓몬이 지속형 도구나 소모성 도구(나무열매·주얼·기합의띠 등)를 가졌는지 표시합니다. ' +
       '파티에 통찰 특성을 가진 포켓몬이 있으면 가진 도구를 정확히 알 수 있습니다.',
     price: 5000,
+  },
+  {
+    id: 'accView:real',
+    label: '실제 명중률 표시',
+    desc:
+      '전투 중 기술 버튼의 명중 옆에 명중률·회피율 랭크, 광각렌즈 같은 도구, 특성, 날씨 보정을 반영한 실제 명중률을 함께 표시합니다. ' +
+      '상대 특성은 드러났을 때만, 상대가 지닌 회피 도구는 상대 도구 표시가 있을 때만 반영합니다.',
+    price: 10000,
   },
 ]
 /** 속도 가속 단계별 대기 시간 (0단계 = 기본) */
