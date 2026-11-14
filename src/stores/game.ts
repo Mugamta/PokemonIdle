@@ -2439,6 +2439,15 @@ export const useGameStore = defineStore('game', {
       else delete m.held![itemId]
       if (memberIndex === 0) this.playerVol = { ...this.playerVol, choice: undefined }
     },
+    /** 지닌 도구의 개수를 n개로 맞춤 (모자라면 가방에서 꺼내고, 넘치면 가방으로). 성공 여부 반환 */
+    setHeldCount(memberIndex: number, itemId: string, n: number): boolean {
+      const m = this.party[memberIndex]
+      if (!m || this.faint) return false
+      const have = m.held?.[itemId] ?? 0
+      if (n < have) this.takeHeld(memberIndex, itemId, have - n)
+      else while ((m.held?.[itemId] ?? 0) < n) if (!this.giveHeld(memberIndex, itemId)) break
+      return (m.held?.[itemId] ?? 0) === n
+    },
     /** 지닌 도구를 모두 가방으로 */
     takeAllHeld(memberIndex: number) {
       const m = this.party[memberIndex]

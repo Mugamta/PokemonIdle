@@ -383,10 +383,21 @@ function sell(id: string, n: number) {
                 >({{ h.n > 1 ? `${h.spent}개 ` : '' }}이번 전투에서 사용함 · 다음 전투에 가방에 있으면 다시 지님)</span
               >
             </span>
-            <button type="button" class="small-btn" :disabled="!!game.faint" @click="game.takeHeld(targetIdx, h.id, 1)">
-              {{ h.n > 1 ? '1개 빼기' : '가방에 넣기' }}
-            </button>
-            <button v-if="h.n > 1" type="button" class="small-btn" :disabled="!!game.faint" @click="game.takeHeld(targetIdx, h.id)">모두 빼기</button>
+            <!-- 같은 도구를 여러 개 지닐 수 있으면 개수를 바로 고름 (가방에 있는 만큼까지) -->
+            <span v-if="heldLimits.stack > 1" class="count-pick">
+              <button
+                v-for="k in heldLimits.stack"
+                :key="k"
+                type="button"
+                :class="{ active: k === h.n }"
+                :disabled="!!game.faint || k > h.n + (game.items[h.id] ?? 0)"
+                :title="k > h.n + (game.items[h.id] ?? 0) ? '가방에 도구가 모자랍니다' : `${k}개 지니기`"
+                @click="game.setHeldCount(targetIdx, h.id, k)"
+              >
+                {{ k }}
+              </button>
+            </span>
+            <button type="button" class="small-btn" :disabled="!!game.faint" @click="game.takeHeld(targetIdx, h.id)">가방에 넣기</button>
           </div>
           <p class="item-text">지닌 도구는 파티 슬롯에 묶여 있어 이 슬롯에 다른 포켓몬이 들어와도 그대로 남습니다.</p>
           <div v-if="!heldList.length" class="held-box"><span class="muted grow">지니고 있는 도구가 없습니다.</span></div>
@@ -648,6 +659,41 @@ function sell(id: string, n: number) {
 .chance {
   margin-left: 4px;
   color: #c8b46a;
+}
+
+.count-pick {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid #3a3a44;
+  border-radius: 4px;
+}
+
+.count-pick button {
+  min-width: 26px;
+  padding: 2px 0;
+  border: none;
+  border-left: 1px solid #3a3a44;
+  background: #24242c;
+  color: #ccc;
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.count-pick button:first-child {
+  border-left: none;
+}
+
+.count-pick button.active {
+  background: #ffcb05;
+  color: #18181d;
+  font-weight: 700;
+}
+
+.count-pick button:disabled:not(.active) {
+  color: #55555f;
+  cursor: default;
 }
 
 .small-btn {
