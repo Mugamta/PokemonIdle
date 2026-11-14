@@ -14,7 +14,6 @@ import {
   DEX_ADVANCE_PERK,
   DEX_REVEAL_PERK,
   END_HEAL_PERK,
-  SLOT_HELD_PERK,
   AI_PERKS,
   CHAIN_PERKS,
   DISPLAY_PERKS,
@@ -340,26 +339,30 @@ const autoBallStatic = computed(() =>
 )
 
 
-/** 파티 슬롯 도구 조건: 도구 종류·같은 도구 개수를 모두 최대로 늘린 파티 포켓몬 수 */
-const slotHeldProgress = computed(
-  () => game.party.filter((m) => heldKindsOf(m) >= HELD_KINDS_MAX && heldStackOf(m) >= HELD_STACK_MAX).length,
+/** 파티 슬롯별 지닐 수 있는 도구: 도구 종류 수 · 같은 도구 개수 */
+const heldSlotRows = computed(() =>
+  Array.from({ length: PARTY_MAX }, (_, i) => {
+    const m = game.party[i]
+    const kindUp = game.slotHeldKinds[i] ?? 0
+    const stackUp = game.slotHeldStack[i] ?? 0
+    const kinds = heldKindsOf(kindUp)
+    const stack = heldStackOf(stackUp)
+    return {
+      i,
+      name: m ? (dexData.value?.index.find((p) => p.id === m.species)?.ko ?? m.species) : '',
+      kinds,
+      stack,
+      kindsMaxed: kinds >= HELD_KINDS_MAX,
+      stackMaxed: stack >= HELD_STACK_MAX,
+      kindPrice: heldKindPrice(kindUp + 1),
+      stackPrice: heldStackPrice(stackUp + 1),
+    }
+  }),
 )
-/** 파티 슬롯 도구 조건을 못 채운 이유: 파티 수가 모자람 / 아직 최대가 아닌 포켓몬 */
-const slotHeldMissing = computed(() => {
-  const out: string[] = []
-  if (game.party.length < PARTY_MAX) out.push(`파티가 ${game.party.length}마리 (${PARTY_MAX}마리 필요)`)
-  for (const r of pokeRows.value) {
-    const lack = [!r.kindsMaxed && `종류 ${r.kinds}/${HELD_KINDS_MAX}`, !r.stackMaxed && `개수 ${r.stack}/${HELD_STACK_MAX}`].filter(Boolean)
-    if (lack.length) out.push(`${r.name} ${lack.join('·')}`)
-  }
-  return out
-})
-/** 포켓몬 강화: 포켓몬별 기술칸 추가(기본 4칸을 모두 연 뒤) · 도구 종류 수 · 같은 도구 개수 */
+/** 포켓몬 강화: 포켓몬별 기술칸 추가(기본 4칸을 모두 연 뒤) */
 const pokeRows = computed(() =>
   game.party.map((m, i) => {
     const extra = m.extraSlots ?? 0
-    const kinds = heldKindsOf(m)
-    const stack = heldStackOf(m)
     return {
       i,
       name: dexData.value?.index.find((p) => p.id === m.species)?.ko ?? m.species,
@@ -368,12 +371,6 @@ const pokeRows = computed(() =>
       slotsMaxed: extra >= EXTRA_SLOTS,
       baseDone: game.baseSlots >= BASE_SLOTS_MAX,
       slotPrice: extraSlotPrice(extra + 1),
-      kinds,
-      stack,
-      kindsMaxed: kinds >= HELD_KINDS_MAX,
-      stackMaxed: stack >= HELD_STACK_MAX,
-      kindPrice: heldKindPrice((m.heldKinds ?? 0) + 1),
-      stackPrice: heldStackPrice((m.heldStack ?? 0) + 1),
     }
   }),
 )
@@ -945,12 +942,16 @@ const slotNeed = SLOT_DEFEATS[SLOT_DEFEATS.length - 1]!
       </section>
     </template>
 
-    <!-- 포켓몬 강화: 포켓몬별 기술칸 · 지닐 수 있는 도구 -->
+    <!-- 포켓몬 강화: 포켓몬별 기술칸 · 파티 슬롯별 지닐 수 있는 도구 -->
     <section v-else-if="sub === 'slots'" class="card">
       <p class="desc top">
-        포켓몬별로 기술칸과 지닐 수 있는 도구를 늘립니다 (도감으로 보내도 기록에 남음).
-        기술칸은 계정 전체에서 {{ SLOT_DEFEATS.join('·') }}마리를 쓰러뜨려 모든 포켓몬의 기본 4칸이 열린 뒤 포켓몬별로 최대 {{ EXTRA_SLOTS }}칸을 더 열 수 있습니다.
-        서로 다른 도구는 기본 1종류에서 최대 {{ HELD_KINDS_MAX }}종류, 같은 도구는 기본 1개에서 최대 {{ HELD_STACK_MAX }}개까지 지닐 수 있습니다.
+        기술칸은 포켓몬별로 늘립니다 (도감으로 보내도 기록에 남음).
+        계정 전체에서 {{ SLOT_DEFEATS.join('·') }}마리를 쓰러뜨려 모든 포켓몬의 기본 4칸이 열린 뒤 포켓몬별로 최대 {{ EXTRA_SLOTS }}칸을 더 열 수 있습니다.
+      </p>
+      <p class="desc">
+        지닌 도구와 도구 한도는 파티 슬롯에 묶입니다. 슬롯의 포켓몬을 바꿔도(싸우는 포켓몬 교체·도감으로 보내기·불러오기·포획) 도구와 한도는 슬롯에 그대로 남고,
+        새로 들어온 포켓몬이 원래 지니고 있던 도구는 가방에 들어갑니다.
+        슬롯마다 서로 다른 도구는 기본 1종류에서 최대 {{ HELD_KINDS_MAX }}종류, 같은 도구는 기본 1개에서 최대 {{ HELD_STACK_MAX }}개까지 늘릴 수 있습니다.
       </p>
       <p class="desc">
         같은 도구를 여러 개 지니면 효과가 합산됩니다: 배율은 더해지고(구애머리띠 2개 = 1.5배 → 2배, 생명의구슬 2개 = 1.3배 → 1.6배),
@@ -974,6 +975,15 @@ const slotNeed = SLOT_DEFEATS[SLOT_DEFEATS.length - 1]!
               <button type="button" class="buy" :disabled="game.money < r.slotPrice" @click="game.buyExtraSlot(r.i)">칸 +1</button>
             </template>
           </div>
+        </li>
+      </ul>
+      <ul class="rows">
+        <li v-for="r in heldSlotRows" :key="r.i">
+          <div class="main">
+            <span class="grow">
+              <strong>{{ r.i + 1 }}번 슬롯</strong> <small class="muted">{{ r.name || '비어 있음' }}</small>
+            </span>
+          </div>
           <div class="main stat-line">
             <span class="grow">도구 종류 <small class="muted">{{ r.kinds }}/{{ HELD_KINDS_MAX }}종류</small></span>
             <span v-if="r.kindsMaxed" class="muted">최대</span>
@@ -990,31 +1000,6 @@ const slotNeed = SLOT_DEFEATS[SLOT_DEFEATS.length - 1]!
               <button type="button" class="buy" :disabled="game.money < r.stackPrice" @click="game.buyHeldStack(r.i)">개수 +1</button>
             </template>
           </div>
-        </li>
-      </ul>
-      <ul class="rows">
-        <li>
-          <div class="main">
-            <span class="grow"><strong>{{ SLOT_HELD_PERK.label }}</strong></span>
-            <span v-if="game.slotHeldActive" class="owned">적용 중</span>
-            <template v-else-if="game.slotHeldReady">
-              <template v-if="game.hasPerk(SLOT_HELD_PERK.id)">
-                <button type="button" class="buy" @click="game.buySlotHeld()">다시 적용</button>
-              </template>
-              <template v-else>
-                <span class="price">{{ won(SLOT_HELD_PERK.price) }}</span>
-                <button type="button" class="buy" :disabled="game.money < SLOT_HELD_PERK.price" @click="game.buySlotHeld()">구매</button>
-              </template>
-            </template>
-            <span v-else class="muted">조건 미달</span>
-          </div>
-          <p class="desc">{{ SLOT_HELD_PERK.desc(HELD_KINDS_MAX, HELD_STACK_MAX) }}</p>
-          <p v-if="!game.slotHeldActive" class="desc">
-            조건: 파티 {{ PARTY_MAX }}마리 모두 도구 {{ HELD_KINDS_MAX }}종류·같은 도구 {{ HELD_STACK_MAX }}개 (총 {{ PARTY_MAX * HELD_KINDS_MAX * HELD_STACK_MAX }}개)까지 지닐 수 있음
-            <small class="muted">· 지금 {{ slotHeldProgress }}/{{ PARTY_MAX }}마리</small>
-            <template v-if="slotHeldMissing.length"><br /><small class="muted">부족: {{ slotHeldMissing.join(', ') }}</small></template>
-            <template v-if="game.hasPerk(SLOT_HELD_PERK.id)"><br />지닐 수 있는 도구 최대치가 바뀌어 효과가 꺼졌습니다. 새 조건을 채우면 돈을 내지 않고 다시 적용할 수 있습니다.</template>
-          </p>
         </li>
       </ul>
     </section>

@@ -125,7 +125,7 @@ import {
   extraSlotPrice,
   heldKindPrice,
   heldStackPrice,
-  SLOT_HELD_PERK,
+  OLD_SLOT_HELD_PRICE,
   gimmickItemOf,
   PERKS,
   priceOf,
@@ -284,13 +284,12 @@ export interface PartyMember {
   abilitySlot?: number
   /** 숨겨진 특성 */
   hiddenAbility?: boolean
-  /** 지닌 도구: identifier → 개수 (종류 수는 heldKindsOf, 같은 도구 개수는 heldStackOf 까지) */
+  /** 지닌 도구: identifier → 개수 (종류 수·같은 도구 개수는 이 포켓몬이 있는 파티 슬롯의 한도까지) */
   held?: Record<string, number>
   /** 지닌 도구 중 이번 전투에서 써서 사라진 개수 (다음 전투 시작 때 가방에 있으면 다시 지님) */
   heldSpent?: Record<string, number>
-  /** 상점에서 늘린 지닐 수 있는 도구 종류 수 (0~HELD_KINDS_MAX-1) */
+  /** 이전 저장 데이터 호환: 포켓몬별 도구 한도 강화 시절 (불러올 때 파티 슬롯 강화로 옮김) */
   heldKinds?: number
-  /** 상점에서 늘린 같은 도구를 지닐 수 있는 개수 (0~HELD_STACK_MAX-1) */
   heldStack?: number
   /** 잡은 볼 (스타팅·진화 포켓몬은 없음) */
   ball?: string
@@ -341,7 +340,7 @@ export interface DexRecord {
   ppUps: Record<string, number>
   /** 상점에서 연 추가 기술칸 최대 */
   extraSlots: number
-  /** 상점에서 늘린 지닌 도구 종류 수·같은 도구 개수 최대 */
+  /** 이전 저장 데이터 호환: 포켓몬별 도구 한도 강화 시절 (불러올 때 파티 슬롯 강화로 옮김) */
   heldKinds?: number
   heldStack?: number
   /** 얻은 성별 (알 기술: 등록된 성별은 성비 계산 없이 100%) */
@@ -381,10 +380,10 @@ function migrateHeld(m: PartyMember) {
 export const HELD_KINDS_MAX = 6
 /** 같은 도구를 지닐 수 있는 개수 최대 (기본 1개, 상점에서 늘림) */
 export const HELD_STACK_MAX = 3
-/** 이 포켓몬이 지닐 수 있는 도구 종류 수 */
-export const heldKindsOf = (m: Pick<PartyMember, 'heldKinds'>) => Math.min(HELD_KINDS_MAX, 1 + (m.heldKinds ?? 0))
-/** 이 포켓몬이 같은 도구를 지닐 수 있는 개수 */
-export const heldStackOf = (m: Pick<PartyMember, 'heldStack'>) => Math.min(HELD_STACK_MAX, 1 + (m.heldStack ?? 0))
+/** 슬롯 강화 횟수 → 지닐 수 있는 도구 종류 수 */
+export const heldKindsOf = (up = 0) => Math.min(HELD_KINDS_MAX, 1 + up)
+/** 슬롯 강화 횟수 → 같은 도구를 지닐 수 있는 개수 */
+export const heldStackOf = (up = 0) => Math.min(HELD_STACK_MAX, 1 + up)
 /** 지금 효과가 있는 지닌 도구: identifier → 개수 (써서 사라진 것 제외, 새 객체) */
 export function heldOf(m: Pick<PartyMember, 'held' | 'heldSpent'>): Record<string, number> {
   const out: Record<string, number> = {}
@@ -399,14 +398,12 @@ export const heldN = (m: Pick<PartyMember, 'held' | 'heldSpent'>, id: string): n
   Math.max(0, (m.held?.[id] ?? 0) - (m.heldSpent?.[id] ?? 0))
 /** 지닌 도구 identifier 목록 (써서 사라진 것 포함, 지닌 순서) */
 export const heldIds = (m: Pick<PartyMember, 'held'>): string[] => Object.keys(m.held ?? {}).filter((id) => (m.held![id] ?? 0) > 0)
-/** 파티 슬롯 도구가 산 때의 최대치 (종류×개수). 최대치가 바뀌면 효과가 꺼짐 */
-export const SLOT_HELD_CAP = `${HELD_KINDS_MAX}x${HELD_STACK_MAX}`
 /** 파티 슬롯에 묶인 도구 (비어 있는 슬롯에 남은 것) */
 export interface SlotHeld {
   held: Record<string, number>
   heldSpent?: Record<string, number>
 }
-/** 파티 슬롯 도구: 파티를 바꾸는 중 (안쪽 호출은 바깥 호출이 한 번에 처리) */
+/** 파티를 바꾸는 중 (안쪽 호출은 바깥 호출이 한 번에 처리) */
 let slotHeldDepth = 0
 
 /** 지닐 수 있는(효과가 있는) 도구인지: 전투 효과 또는 경험치·돈·친밀도·노력치 도구 */
@@ -869,9 +866,11 @@ export const useGameStore = defineStore('game', {
     items: {} as Record<string, number>,
     /** 구매한 편의성 기능 */
     perks: [] as PerkId[],
-    /** 파티 슬롯 도구를 산(다시 적용한) 때의 최대치 (SLOT_HELD_CAP 과 다르면 효과 없음) */
-    slotHeldCap: '',
-    /** 파티 슬롯 도구: 포켓몬이 없는 슬롯에 남은 도구 (슬롯 번호별) */
+    /** 파티 슬롯별로 상점에서 늘린 지닐 수 있는 도구 종류 수 (0~HELD_KINDS_MAX-1) */
+    slotHeldKinds: [0, 0, 0, 0, 0, 0] as number[],
+    /** 파티 슬롯별로 상점에서 늘린 같은 도구를 지닐 수 있는 개수 (0~HELD_STACK_MAX-1) */
+    slotHeldStack: [0, 0, 0, 0, 0, 0] as number[],
+    /** 지닌 도구는 파티 슬롯에 묶임: 포켓몬이 없는 슬롯에 남은 도구 (슬롯 번호별) */
     slotHeldSpare: [] as (SlotHeld | null)[],
     /** 노력치 한계 돌파 2 구매 횟수 */
     evBreaks: 0,
@@ -1053,16 +1052,11 @@ export const useGameStore = defineStore('game', {
     foeMoveView: (s): 0 | 1 | 2 => (s.perks.includes('foeMoves:pp') ? 2 : s.perks.includes('foeMoves:list') ? 1 : 0),
     /** 상대 도구 표시 (지속형/소모성만, 파티에 통찰이 있으면 정확한 도구) */
     foeItemView: (s): boolean => s.perks.includes('foeItem:show'),
-    /** 파티 슬롯 도구 효과가 켜져 있음 (산 뒤 최대치가 바뀌지 않음) */
-    slotHeldActive: (s): boolean => s.perks.includes(SLOT_HELD_PERK.id) && s.slotHeldCap === SLOT_HELD_CAP,
-    /** 파티 슬롯 도구를 사거나 다시 적용할 수 있는 조건: 파티 6마리 모두 도구 종류·같은 도구 개수 최대 */
-    slotHeldReady: (s): boolean =>
-      s.party.length === PARTY_MAX && s.party.every((m) => heldKindsOf(m) >= HELD_KINDS_MAX && heldStackOf(m) >= HELD_STACK_MAX),
-    /** 이 포켓몬(슬롯)이 지닐 수 있는 도구 종류 수·같은 도구 개수 (파티 슬롯 도구가 켜져 있으면 최대) */
-    heldLimitsOf(): (m: PartyMember) => { kinds: number; stack: number } {
-      const slot = this.slotHeldActive
-      return (m) => (slot ? { kinds: HELD_KINDS_MAX, stack: HELD_STACK_MAX } : { kinds: heldKindsOf(m), stack: heldStackOf(m) })
-    },
+    /** 이 파티 슬롯에서 지닐 수 있는 도구 종류 수·같은 도구 개수 */
+    heldLimitsAt: (s) => (slot: number): { kinds: number; stack: number } => ({
+      kinds: heldKindsOf(s.slotHeldKinds[slot]),
+      stack: heldStackOf(s.slotHeldStack[slot]),
+    }),
     /** 파티에 이 특성을 가진 포켓몬이 있는지 (위험예지: 상대 기술 전부, 통찰: 상대 도구) */
     partyHasAbility: (s) => (id: string): boolean => s.party.some((m) => memberAbility(m) === id),
     /** 속도 가속 단계 (0 = 기본) */
@@ -1378,19 +1372,48 @@ export const useGameStore = defineStore('game', {
       const oldBox = Array.isArray(st.box) ? (st.box as PartyMember[]) : []
       for (const m of [...this.party, ...oldBox]) migrateHeld(m)
       delete st.box
-      // 파티 슬롯 도구: 비어 있는 슬롯의 도구 정리. 효과가 꺼졌으면(최대치가 바뀜) 슬롯 도구는 가방으로, 한도를 넘는 도구도 가방으로
-      if (typeof this.slotHeldCap !== 'string') this.slotHeldCap = ''
+      // 지닌 도구 한도는 파티 슬롯별
+      const slotUps = (v: unknown, max: number) =>
+        Array.from({ length: PARTY_MAX }, (_, i) => {
+          const n = Array.isArray(v) ? v[i] : 0
+          return Number.isInteger(n) ? Math.min(max - 1, Math.max(0, n)) : 0
+        })
+      this.slotHeldKinds = slotUps(this.slotHeldKinds, HELD_KINDS_MAX)
+      this.slotHeldStack = slotUps(this.slotHeldStack, HELD_STACK_MAX)
+      // 이전 저장 데이터 호환: 포켓몬별 도구 한도 강화 → 파티·박스·도감 기록 전체에서 가장 높은 6개를 1~6번 슬롯에
+      const oldHolders: { heldKinds?: number; heldStack?: number }[] = [
+        ...this.party,
+        ...oldBox,
+        ...(this.dexRecords && typeof this.dexRecords === 'object' ? Object.values(this.dexRecords) : []),
+      ]
+      const topUps = (key: 'heldKinds' | 'heldStack') =>
+        oldHolders.map((h) => (Number.isInteger(h[key]) ? h[key]! : 0)).sort((a, b) => b - a)
+      const oldKinds = topUps('heldKinds')
+      const oldStack = topUps('heldStack')
+      for (let i = 0; i < PARTY_MAX; i++) {
+        this.slotHeldKinds[i] = Math.max(this.slotHeldKinds[i]!, Math.min(HELD_KINDS_MAX - 1, oldKinds[i] ?? 0))
+        this.slotHeldStack[i] = Math.max(this.slotHeldStack[i]!, Math.min(HELD_STACK_MAX - 1, oldStack[i] ?? 0))
+      }
+      for (const h of oldHolders) {
+        delete h.heldKinds
+        delete h.heldStack
+      }
+      // 이전 저장 데이터 호환: 파티 슬롯 도구가 따로 산 기능이던 시절 → 기본이 되었으므로 산 값을 돌려줌
+      const oldSlotHeld = (this.perks as string[]).indexOf('heldSlot:bind')
+      if (oldSlotHeld >= 0) {
+        this.perks.splice(oldSlotHeld, 1)
+        this.money += OLD_SLOT_HELD_PRICE
+      }
+      delete st.slotHeldCap
+      // 비어 있는 슬롯의 도구 정리, 슬롯 한도를 넘는 도구는 가방으로
       if (!Array.isArray(this.slotHeldSpare)) this.slotHeldSpare = []
       this.slotHeldSpare = Array.from({ length: PARTY_MAX }, (_, i) => {
         const s = this.slotHeldSpare[i]
         if (!s || typeof s.held !== 'object' || i < this.party.length) return null
-        if (!this.slotHeldActive) {
-          for (const [id, n] of Object.entries(heldOf(s))) this.addToBag(id, n)
-          return null
-        }
+        this.trimHeld(s, i)
         return heldIds(s).length ? s : null
       })
-      if (!this.slotHeldActive) for (const m of this.party) this.trimHeld(m)
+      this.party.forEach((m, i) => this.trimHeld(m, i))
       // 이전 저장 데이터 호환: 성별이 없던 시절의 파티 포켓몬은 성비대로 정하고 도감에 성별 기록
       for (const m of this.party)
         if (m.gender === undefined) {
@@ -1535,8 +1558,8 @@ export const useGameStore = defineStore('game', {
           sleep: m.sleep,
           toxic: 0,
           ability: memberAbility(m),
-          // 파티 슬롯 도구: 나오면 맨 앞 슬롯의 도구를 지님
-          held: heldOf(this.slotHeldActive ? this.party[0]! : m),
+          // 지닌 도구는 슬롯에 묶임: 나오면 맨 앞 슬롯의 도구를 지님
+          held: heldOf(this.party[0]!),
           vol: {},
           boost: this.dexBoost,
         }
@@ -2385,7 +2408,7 @@ export const useGameStore = defineStore('game', {
       const m = this.party[memberIndex]
       if (!m || (this.items[itemId] ?? 0) <= 0 || this.faint) return false
       const n = m.held?.[itemId] ?? 0
-      const lim = this.heldLimitsOf(m)
+      const lim = this.heldLimitsAt(memberIndex)
       if (n > 0) return n < lim.stack
       return heldIds(m).length < lim.kinds
     },
@@ -2611,8 +2634,6 @@ export const useGameStore = defineStore('game', {
           moves,
           ppUps: { ...(m.ppUps ?? {}) },
           extraSlots: m.extraSlots ?? 0,
-          heldKinds: m.heldKinds ?? 0,
-          heldStack: m.heldStack ?? 0,
           genders: m.gender ? [m.gender] : [],
         }
         return
@@ -2633,8 +2654,6 @@ export const useGameStore = defineStore('game', {
       for (const id of moves) if (!r.moves.includes(id)) r.moves.push(id)
       for (const [id, n] of Object.entries(m.ppUps ?? {})) r.ppUps[id] = Math.max(r.ppUps[id] ?? 0, n)
       r.extraSlots = Math.max(r.extraSlots, m.extraSlots ?? 0)
-      r.heldKinds = Math.max(r.heldKinds ?? 0, m.heldKinds ?? 0)
-      r.heldStack = Math.max(r.heldStack ?? 0, m.heldStack ?? 0)
     },
     /** 도감에서 파티로 불러오기: 기록된 범위 밖의 값은 범위 안으로 맞춤. 성공 여부 반환 */
     summonFromDex(species: string, c: SummonChoice): boolean {
@@ -2666,8 +2685,6 @@ export const useGameStore = defineStore('game', {
         pp: {},
         ppUps: Object.fromEntries(Object.entries(r.ppUps).filter(([id]) => r.moves.includes(id))),
         extraSlots,
-        heldKinds: r.heldKinds ?? 0,
-        heldStack: r.heldStack ?? 0,
         status: null,
         friendship: clamp(Math.round(c.friendship), r.friendshipMin, r.friendshipMax),
         abilitySlot: c.ability === HIDDEN_ABILITY_SLOT ? 0 : c.ability,
@@ -2678,11 +2695,11 @@ export const useGameStore = defineStore('game', {
       return true
     },
     /**
-     * 파티 슬롯 도구: 파티를 바꾸는 동안 지닌 도구를 슬롯 번호에 묶어 둠.
+     * 지닌 도구는 파티 슬롯에 묶임: 파티를 바꾸는 동안 지닌 도구를 슬롯 번호에 묶어 둠.
      * 바꾼 뒤 각 슬롯의 포켓몬이 그 슬롯의 도구를 지니고, 새로 들어온 포켓몬이 원래 지닌 도구는 가방으로
      */
     keepSlotHeld<T>(fn: () => T): T {
-      if (!this.slotHeldActive || slotHeldDepth > 0) return fn()
+      if (slotHeldDepth > 0) return fn()
       const slots: SlotHeld[] = Array.from({ length: PARTY_MAX }, (_, i) => {
         const m = this.party[i]
         if (!m) return this.slotHeldSpare[i] ?? { held: {} }
@@ -2710,20 +2727,9 @@ export const useGameStore = defineStore('game', {
       this.slotHeldSpare = spare
       return r
     },
-    /** 파티 슬롯 도구를 사거나 (최대치가 바뀐 뒤) 다시 적용. 처음 살 때만 돈이 듦 */
-    buySlotHeld(): boolean {
-      if (this.slotHeldActive || !this.slotHeldReady) return false
-      if (!this.perks.includes(SLOT_HELD_PERK.id)) {
-        if (this.money < SLOT_HELD_PERK.price) return false
-        this.money -= SLOT_HELD_PERK.price
-        this.perks.push(SLOT_HELD_PERK.id)
-      }
-      this.slotHeldCap = SLOT_HELD_CAP
-      return true
-    },
-    /** 지닐 수 있는 한도를 넘는 지닌 도구는 가방으로 (파티 슬롯 도구가 꺼졌을 때) */
-    trimHeld(m: PartyMember) {
-      const { kinds, stack } = this.heldLimitsOf(m)
+    /** 이 슬롯에서 지닐 수 있는 한도를 넘는 지닌 도구는 가방으로 */
+    trimHeld(m: Pick<PartyMember, 'held' | 'heldSpent'>, slot: number) {
+      const { kinds, stack } = this.heldLimitsAt(slot)
       heldIds(m).forEach((id, k) => {
         const over = k < kinds ? (m.held![id] ?? 0) - stack : (m.held![id] ?? 0)
         if (over <= 0) return
@@ -2804,7 +2810,7 @@ export const useGameStore = defineStore('game', {
       if (this.party.length < PARTY_MAX) {
         this.keepSlotHeld(() => this.party.push(caught))
         log.push(`${josa(name, '은', '는')} 파티에 들어갔다!`, 'info')
-        if (heldItem && this.slotHeldActive) {
+        if (heldItem) {
           const itemName = dexData.value?.items[heldItem]?.ko ?? heldItem
           log.push(`${josa(name, '이', '가')} 지니고 있던 ${josa(itemName, '은', '는')} 가방에 넣었다.`, 'info')
         }
@@ -2972,24 +2978,24 @@ export const useGameStore = defineStore('game', {
     setEverstone(on: boolean) {
       if (this.everstoneOwned) this.everstone = on
     },
-    /** 지닐 수 있는 도구 종류 +1 구매 */
-    buyHeldKind(memberIndex: number): boolean {
-      const m = this.party[memberIndex]
-      if (!m || heldKindsOf(m) >= HELD_KINDS_MAX) return false
-      const price = heldKindPrice((m.heldKinds ?? 0) + 1)
+    /** 이 파티 슬롯의 지닐 수 있는 도구 종류 +1 구매 */
+    buyHeldKind(slot: number): boolean {
+      const up = this.slotHeldKinds[slot]
+      if (up === undefined || heldKindsOf(up) >= HELD_KINDS_MAX) return false
+      const price = heldKindPrice(up + 1)
       if (this.money < price) return false
       this.money -= price
-      m.heldKinds = (m.heldKinds ?? 0) + 1
+      this.slotHeldKinds[slot] = up + 1
       return true
     },
-    /** 같은 도구를 지닐 수 있는 개수 +1 구매 */
-    buyHeldStack(memberIndex: number): boolean {
-      const m = this.party[memberIndex]
-      if (!m || heldStackOf(m) >= HELD_STACK_MAX) return false
-      const price = heldStackPrice((m.heldStack ?? 0) + 1)
+    /** 이 파티 슬롯의 같은 도구를 지닐 수 있는 개수 +1 구매 */
+    buyHeldStack(slot: number): boolean {
+      const up = this.slotHeldStack[slot]
+      if (up === undefined || heldStackOf(up) >= HELD_STACK_MAX) return false
+      const price = heldStackPrice(up + 1)
       if (this.money < price) return false
       this.money -= price
-      m.heldStack = (m.heldStack ?? 0) + 1
+      this.slotHeldStack[slot] = up + 1
       return true
     },
     buyExtraSlot(memberIndex: number): boolean {

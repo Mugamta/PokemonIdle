@@ -250,47 +250,36 @@ describe('지닌 도구 여러 개', () => {
     game.takeAllHeld(0)
     expect(game.party[0]!.held).toEqual({})
     expect(game.items).toEqual({ leftovers: 5, 'choice-band': 2 })
-    // 도감 기록에 남아 다시 불러와도 유지
-    expect(game.dexRecords.charmander!.heldKinds ?? 0).toBe(0)
-    game.recordToDex(game.party[0]!)
-    expect(game.dexRecords.charmander!.heldKinds).toBe(1)
-    expect(game.dexRecords.charmander!.heldStack).toBe(1)
   })
 
-  test('파티 슬롯 도구: 파티 6마리 모두 최대일 때 사고, 도구가 슬롯을 따라감', () => {
+  test('지닌 도구와 한도는 파티 슬롯에 묶임', () => {
     const game = useGameStore()
     game.validate()
     game.chooseStarter(starter())
-    const maxed = (sp: string): PartyMember => ({ ...starter(sp), heldKinds: 5, heldStack: 2, held: {}, hp: null })
-    for (const sp of ['squirtle', 'bulbasaur', 'pidgey', 'rattata']) game.party.push(maxed(sp))
-    game.money = 2_000_000
-    expect(game.slotHeldReady).toBe(false) // 5마리
-    game.party.push(maxed('caterpie'))
-    expect(game.slotHeldReady).toBe(false) // 스타팅이 최대가 아님
-    Object.assign(game.party[0]!, { heldKinds: 5, heldStack: 2 })
-    expect(game.slotHeldReady).toBe(true)
-    expect(game.buySlotHeld()).toBe(true)
-    expect(game.slotHeldActive).toBe(true)
-    expect(game.money).toBe(1_000_000)
-    game.items = { leftovers: 3, 'choice-band': 1 }
+    for (const sp of ['squirtle', 'bulbasaur', 'pidgey', 'rattata', 'caterpie']) game.party.push({ ...starter(sp), held: {}, hp: null })
+    game.money = 10_000_000
+    expect(game.buyHeldKind(1)).toBe(true)
+    expect(game.buyHeldKind(5)).toBe(true)
+    expect(game.slotHeldKinds).toEqual([0, 1, 0, 0, 0, 1])
+    game.items = { leftovers: 3, 'choice-band': 2 }
     expect(game.giveHeld(0, 'leftovers')).toBe(true)
     expect(game.giveHeld(1, 'choice-band')).toBe(true)
+    expect(game.giveHeld(1, 'leftovers')).toBe(true) // 2번 슬롯은 2종류
     // 맨 앞 교체: 도구는 슬롯에 남음
     expect(game.setLead(1)).toBe(true)
     expect(game.party[0]!.species).toBe('squirtle')
     expect(game.party[0]!.held).toEqual({ leftovers: 1 })
-    expect(game.party[1]!.held).toEqual({ 'choice-band': 1 })
+    expect(game.party[1]!.held).toEqual({ 'choice-band': 1, leftovers: 1 })
     // 도감으로 보내면 뒤 포켓몬이 앞으로 당겨져 그 슬롯의 도구를 지니고, 빈 슬롯(6번)에 도구가 남음
     expect(game.giveHeld(5, 'leftovers')).toBe(true)
     game.party[2]!.held = { leftovers: 1 }
     game.items.leftovers = 0
     expect(game.sendToDex(2)).toBe(true)
-    expect(game.party.map((m) => m.held)).toEqual([{ leftovers: 1 }, { 'choice-band': 1 }, { leftovers: 1 }, {}, {}])
+    expect(game.party.map((m) => m.held)).toEqual([{ leftovers: 1 }, { 'choice-band': 1, leftovers: 1 }, { leftovers: 1 }, {}, {}])
     expect(game.slotHeldSpare[5]?.held).toEqual({ leftovers: 1 })
     expect(game.items.leftovers).toBe(0)
-    // 새 포켓몬이 들어오면 빈 슬롯의 도구를 지님 (원래 지닌 도구는 가방으로)
+    // 새 포켓몬이 들어오면 빈 슬롯의 도구를 지님
     game.recordToDex({ ...starter('bulbasaur') })
-    game.dexRecords.bulbasaur!.heldKinds = 0
     const r = game.dexRecords.bulbasaur!
     expect(
       game.summonFromDex('bulbasaur', {
@@ -305,24 +294,41 @@ describe('지닌 도구 여러 개', () => {
     ).toBe(true)
     expect(game.party[5]!.held).toEqual({ leftovers: 1 })
     expect(game.slotHeldSpare[5]).toBeFalsy()
-    // 슬롯 한도는 들어온 포켓몬과 무관하게 최대
-    game.items = { 'choice-band': 1 }
+    // 한도는 들어온 포켓몬과 무관하게 6번 슬롯의 한도 (2종류)
+    game.items = { 'choice-band': 2 }
     expect(game.giveHeld(5, 'choice-band')).toBe(true)
+    expect(game.giveHeld(5, 'choice-band')).toBe(false)
   })
 
-  test('파티 슬롯 도구: 최대치가 바뀐 저장 데이터면 효과가 꺼지고 넘치는 도구는 가방으로', () => {
+  test('이전 저장 데이터: 포켓몬별 한도 강화는 가장 높은 값부터 슬롯에, 파티 슬롯 도구는 환불', () => {
     const game = useGameStore()
     game.$patch({
-      party: [{ ...starter(), held: { leftovers: 2, 'choice-band': 1 } }],
-      perks: ['heldSlot:bind'],
-      slotHeldCap: '5x3',
-      slotHeldSpare: [null, { held: { 'life-orb': 1 } }],
-    })
+      money: 0,
+      party: [
+        { ...starter(), heldKinds: 1, held: { leftovers: 2, 'choice-band': 1, 'life-orb': 1 } },
+        { ...starter('squirtle'), heldKinds: 5, heldStack: 2, held: {} },
+      ],
+      dexRecords: { bulbasaur: { heldKinds: 3, heldStack: 1 } },
+      perks: ['heldSlot:bind'] as never,
+      slotHeldCap: '6x3',
+      slotHeldSpare: [null, null, { held: { 'life-orb': 1 } }],
+    } as never)
     game.validate()
-    expect(game.slotHeldActive).toBe(false)
+    expect(game.slotHeldKinds).toEqual([5, 3, 1, 0, 0, 0])
+    expect(game.slotHeldStack).toEqual([2, 1, 0, 0, 0, 0])
+    expect(game.perks).not.toContain('heldSlot:bind')
+    expect(game.money).toBe(1_000_000)
+    expect(game.party[0]!.held).toEqual({ leftovers: 2, 'choice-band': 1, 'life-orb': 1 })
+    expect('heldKinds' in game.party[1]!).toBe(false)
+    expect(game.slotHeldSpare[2]?.held).toEqual({ 'life-orb': 1 })
+  })
+
+  test('슬롯 한도를 넘는 도구는 가방으로', () => {
+    const game = useGameStore()
+    game.$patch({ party: [{ ...starter(), held: { leftovers: 2, 'choice-band': 1 } }] })
+    game.validate()
     expect(game.party[0]!.held).toEqual({ leftovers: 1 })
-    expect(game.items).toEqual({ leftovers: 1, 'choice-band': 1, 'life-orb': 1 })
-    expect(game.slotHeldSpare.every((s) => !s)).toBe(true)
+    expect(game.items).toEqual({ leftovers: 1, 'choice-band': 1 })
   })
 
   test('써서 사라진 도구는 가방에 있는 만큼 다시 지님', () => {
@@ -330,7 +336,7 @@ describe('지닌 도구 여러 개', () => {
     game.validate()
     game.chooseStarter(starter())
     const m = game.party[0]!
-    m.heldStack = 2
+    game.slotHeldStack[0] = 2
     m.held = { 'sitrus-berry': 3 }
     m.heldSpent = { 'sitrus-berry': 2 }
     game.items = { 'sitrus-berry': 1 }

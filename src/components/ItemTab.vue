@@ -123,8 +123,7 @@ const heldList = computed(() => {
   return heldIds(m).map((id) => ({ id, n: m.held![id]!, spent: m.heldSpent?.[id] ?? 0 }))
 })
 const heldLimits = computed(() => {
-  const m = targetMember.value
-  return m ? game.heldLimitsOf(m) : { kinds: 1, stack: 1 }
+  return targetMember.value ? game.heldLimitsAt(targetIdx.value) : { kinds: 1, stack: 1 }
 })
 const holdables = computed(() =>
   Object.entries(game.items)
@@ -146,8 +145,8 @@ const giveBlock = computed(() => {
   const id = heldPick.value
   if (!m || !id) return ''
   const n = m.held?.[id] ?? 0
-  const { kinds, stack } = game.heldLimitsOf(m)
-  const more = game.slotHeldActive ? '' : ' 강화상점에서 늘릴 수 있습니다.'
+  const { kinds, stack } = game.heldLimitsAt(targetIdx.value)
+  const more = ' 강화상점에서 슬롯별로 늘릴 수 있습니다.'
   if (n > 0 && n >= stack) return `같은 도구는 ${stack}개까지 지닐 수 있습니다.${more}`
   if (!n && heldIds(m).length >= kinds) return `도구는 ${kinds}종류까지 지닐 수 있습니다.${more}`
   return ''
@@ -373,7 +372,7 @@ function sell(id: string, n: number) {
       <template v-else-if="cat === 'held'">
         <template v-if="targetMember">
           <h4 class="sec">
-            {{ game.slotHeldActive ? `${targetIdx + 1}번 슬롯 도구` : '지닌 도구' }}
+            {{ targetIdx + 1 }}번 슬롯 도구
             <small>{{ species(targetMember.species)?.ko }} · {{ heldList.length }}/{{ heldLimits.kinds }}종류 · 같은 도구 {{ heldLimits.stack }}개까지</small>
           </h4>
           <div v-for="h in heldList" :key="h.id" class="held-box">
@@ -389,7 +388,7 @@ function sell(id: string, n: number) {
             </button>
             <button v-if="h.n > 1" type="button" class="small-btn" :disabled="!!game.faint" @click="game.takeHeld(targetIdx, h.id)">모두 빼기</button>
           </div>
-          <p v-if="game.slotHeldActive" class="item-text">파티 슬롯 도구: 이 슬롯에 다른 포켓몬이 들어와도 도구는 슬롯에 그대로 남습니다.</p>
+          <p class="item-text">지닌 도구는 파티 슬롯에 묶여 있어 이 슬롯에 다른 포켓몬이 들어와도 그대로 남습니다.</p>
           <div v-if="!heldList.length" class="held-box"><span class="muted grow">지니고 있는 도구가 없습니다.</span></div>
           <div v-if="holdables.length" class="held-box">
             <select v-model="heldPick" class="train-select grow">
