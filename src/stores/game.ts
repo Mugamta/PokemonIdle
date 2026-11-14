@@ -3641,10 +3641,16 @@ export const useGameStore = defineStore('game', {
       this.goRecover(FAINT_MS, false)
     },
 
-    /** 회복 버튼: 현재 배틀을 포기하고 회복하러 감 (패배와 같은 처리, 시간만 RETREAT_MS) */
+    /** 회복 버튼: 현재 배틀을 포기하고 회복하러 감 (패배와 같은 처리, 시간만 RETREAT_MS). 리그 도전 중엔 포기 버튼 = 패배 */
     retreat() {
       if (this.faint || this.travel || !this.party.length) return
       const log = useBattleLogStore()
+      // 리그 등 일반 배틀이 아닌 도전 중에는 포기 = 패배 (포켓몬센터로, 패배와 같은 시간)
+      if (this.league) {
+        log.push('도전을 포기했다… 눈앞이 캄캄해졌다…', 'bad')
+        this.goRecover(FAINT_MS, false)
+        return
+      }
       log.push(this.enemy ? '배틀을 포기하고 회복하러 돌아갔다.' : '회복하러 돌아갔다.', 'info')
       this.goRecover(RETREAT_MS, true)
     },

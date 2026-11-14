@@ -336,10 +336,11 @@ const foeItem = computed(() => {
         v-if="!game.faint && !game.travel"
         type="button"
         class="heal-btn"
-        title="현재 배틀을 포기하고 5초 동안 회복한 뒤 돌아옵니다"
+        :class="{ forfeit: game.league }"
+        :title="game.league ? '도전을 포기합니다. 패배로 처리되어 포켓몬센터로 갑니다' : '현재 배틀을 포기하고 5초 동안 회복한 뒤 돌아옵니다'"
         @click="game.retreat()"
       >
-        ✚ 회복
+        {{ game.league ? '🏳 포기' : '✚ 회복' }}
       </button>
     </div>
 
@@ -806,6 +807,12 @@ const foeItem = computed(() => {
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
+}
+
+.heal-btn.forfeit {
+  border-color: #3a3a44;
+  background: #d8d8e0;
+  color: #2a2a33;
 }
 
 .heal-btn:active {
